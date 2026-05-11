@@ -1,0 +1,261 @@
+{% extends "base.html" %}
+{% block title %}{{ action }} Location – Location Tracker{% endblock %}
+
+{% block extra_head %}
+<style>
+  #pick-map { height: 380px; }
+  .form-input {
+    display: block; width: 100%;
+    border: 1px solid #e2e8f0; border-radius: 0.5rem;
+    padding: 0.5rem 0.75rem; font-size: 0.875rem;
+    outline: none; transition: border-color 150ms, box-shadow 150ms;
+    background: white;
+  }
+  .form-input:focus { border-color: #6366f1; box-shadow: 0 0 0 3px #e0e7ff; }
+  select.form-input { appearance: none; }
+  textarea.form-input { resize: vertical; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="max-w-3xl mx-auto">
+  <!-- Breadcrumb -->
+  <nav class="text-sm text-slate-400 mb-5">
+    <a href="/" class="hover:text-brand">Locations</a>
+    {% if location %}
+    <span class="mx-1.5">/</span>
+    <a href="{% url 'location_detail' location.pk %}" class="hover:text-brand">{{ location.name }}</a>
+    {% endif %}
+    <span class="mx-1.5">/</span>
+    <span class="text-slate-600">{{ action }}</span>
+  </nav>
+
+  <div class="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+    <div class="px-6 py-5 border-b border-slate-100">
+      <h1 class="text-xl font-bold text-slate-900">{{ action }} Location</h1>
+      <p class="text-sm text-slate-500 mt-1">All fields except Name are optional.</p>
+    </div>
+
+    <form method="post" class="p-6 space-y-8">
+      {% csrf_token %}
+      {{ form.latitude }}
+      {{ form.longitude }}
+      {{ form.overall_rating }}
+
+      <!-- Basic info -->
+      <fieldset class="space-y-4">
+        <legend class="text-sm font-semibold text-slate-700 uppercase tracking-wide pb-2 border-b border-slate-100 w-full">
+          Basic Information
+        </legend>
+
+        <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          <div class="sm:col-span-2">
+            <label class="block text-sm font-medium text-slate-700 mb-1">
+              Name <span class="text-red-400">*</span>
+            </label>
+            {{ form.name }}
+            {% if form.name.errors %}
+            <p class="text-red-500 text-xs mt-1">{{ form.name.errors|join:", " }}</p>
+            {% endif %}
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-slate-700 mb-1">Category</label>
+            {{ form.category }}
+          </div>
+        </div>
+
+        <div>
+          <label class="block text-sm font-medium text-slate-700 mb-1">Overall Rating</label>
+          {% include "tracker/partials/star_input.html" with field_name="overall_rating" current_value=form.overall_rating.value %}
+          {% if form.overall_rating.errors %}
+          <p class="text-red-500 text-xs mt-1">{{ form.overall_rating.errors|join:", " }}</p>
+          {% endif %}
+        </div>
+      </fieldset>
+
+      <!-- Location / map -->
+      <fieldset class="space-y-4">
+        <legend class="text-sm font-semibold text-slate-700 uppercase tracking-wide pb-2 border-b border-slate-100 w-full">
+          Location on Map
+        </legend>
+
+        <p class="text-sm text-slate-500">
+          Search for an address or click anywhere on the map to drop a pin. You can skip this entirely.
+        </p>
+
+        <!-- Address search bar -->
+        <div class="flex gap-2">
+          <input type="text" id="addr-search" placeholder="Search address or place name…"
+                 class="form-input flex-1">
+          <button type="button" id="addr-search-btn"
+                  class="bg-slate-800 hover:bg-slate-700 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors shrink-0">
+            Search
+          </button>
+        </div>
+        <div id="addr-error" class="hidden text-red-500 text-xs">No results found for that address.</div>
+
+        <!-- Address text field -->
+        <div>
+          <label class="block text-sm font-medium text-slate-700 mb-1">Address (text)</label>
+          {{ form.address }}
+          <p class="text-xs text-slate-400 mt-1">Auto-filled from map search, or type freely.</p>
+        </div>
+
+        <!-- Coordinates display -->
+        <div class="flex gap-4 text-xs text-slate-500" id="coords-display"
+             {% if not form.latitude.value %}style="display:none!important"{% endif %}>
+          <span>Lat: <span id="lat-display" class="font-mono text-slate-700">{{ form.latitude.value }}</span></span>
+          <span>Lng: <span id="lng-display" class="font-mono text-slate-700">{{ form.longitude.value }}</span></span>
+          <button type="button" id="clear-pin" class="text-red-400 hover:text-red-600 ml-2">
+            ✕ Remove pin
+          </button>
+        </div>
+
+        <!-- Map -->
+        <div id="pick-map" class="rounded-xl border border-slate-200 overflow-hidden shadow-sm"></div>
+      </fieldset>
+
+      <!-- Notes -->
+      <fieldset class="space-y-4">
+        <legend class="text-sm font-semibold text-slate-700 uppercase tracking-wide pb-2 border-b border-slate-100 w-full">
+          Notes
+        </legend>
+
+        <div>
+          <label class="block text-sm font-medium text-slate-700 mb-1">Public Notes</label>
+          <p class="text-xs text-slate-400 mb-1.5">Visible to everyone, including visitors who aren't signed in.</p>
+          {{ form.public_notes }}
+        </div>
+
+        <div>
+          <label class="block text-sm font-medium text-slate-700 mb-1">
+            <span class="inline-flex items-center gap-1.5">
+              <svg class="w-3.5 h-3.5 text-amber-500" fill="currentColor" viewBox="0 0 20 20">
+                <path fill-rule="evenodd"
+                      d="M5 9V7a5 5 0 0110 0v2a2 2 0 012 2v5a2 2 0 01-2 2H5a2 2 0 01-2-2v-5a2 2 0 012-2zm8-2v2H7V7a3 3 0 016 0z"
+                      clip-rule="evenodd"/>
+              </svg>
+              Private Notes
+            </span>
+          </label>
+          <p class="text-xs text-slate-400 mb-1.5">Only shown to signed-in users.</p>
+          {{ form.private_notes }}
+        </div>
+      </fieldset>
+
+      <!-- Submit -->
+      <div class="flex items-center gap-3 pt-2">
+        <button type="submit"
+                class="bg-brand hover:bg-brand-dark text-white font-semibold px-6 py-2.5 rounded-lg transition-colors">
+          {% if action == "Add" %}Add Location{% else %}Save Changes{% endif %}
+        </button>
+        <a href="{% if location %}{% url 'location_detail' location.pk %}{% else %}/{% endif %}"
+           class="text-sm text-slate-500 hover:text-slate-700 px-3 py-2">
+          Cancel
+        </a>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Apply Tailwind classes to Django-rendered inputs -->
+<script>
+  document.querySelectorAll('input[type="text"], input[type="email"], textarea, select').forEach(el => {
+    if (!el.id.startsWith('id_latitude') && !el.id.startsWith('id_longitude') && !el.id.startsWith('id_overall')) {
+      el.classList.add('form-input');
+    }
+  });
+</script>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+(function() {
+  const latInput  = document.getElementById('id_latitude');
+  const lngInput  = document.getElementById('id_longitude');
+  const addrInput = document.getElementById('id_address');
+  const coordsDiv = document.getElementById('coords-display');
+  const latSpan   = document.getElementById('lat-display');
+  const lngSpan   = document.getElementById('lng-display');
+
+  // Initial center: existing pin or world view
+  const initLat = parseFloat(latInput.value) || 39.5;
+  const initLng = parseFloat(lngInput.value) || -98.35;
+  const initZoom = latInput.value ? 14 : 4;
+
+  const map = L.map('pick-map').setView([initLat, initLng], initZoom);
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
+    maxZoom: 19
+  }).addTo(map);
+
+  let marker = null;
+
+  function placeMarker(latlng, address) {
+    if (marker) map.removeLayer(marker);
+    marker = L.marker(latlng, { draggable: true }).addTo(map);
+    marker.on('dragend', () => setCoords(marker.getLatLng()));
+    setCoords(latlng);
+    if (address) addrInput.value = address;
+  }
+
+  function setCoords(latlng) {
+    const lat = latlng.lat.toFixed(7);
+    const lng = latlng.lng.toFixed(7);
+    latInput.value  = lat;
+    lngInput.value  = lng;
+    latSpan.textContent = lat;
+    lngSpan.textContent = lng;
+    coordsDiv.style.display = '';
+  }
+
+  function clearPin() {
+    if (marker) { map.removeLayer(marker); marker = null; }
+    latInput.value = '';
+    lngInput.value = '';
+    coordsDiv.style.display = 'none';
+  }
+
+  // Restore existing pin
+  if (latInput.value && lngInput.value) {
+    placeMarker(L.latLng(parseFloat(latInput.value), parseFloat(lngInput.value)), null);
+  }
+
+  // Click map to place / move pin
+  map.on('click', e => {
+    placeMarker(e.latlng, null);
+    map.setView(e.latlng, Math.max(map.getZoom(), 14));
+  });
+
+  // Address search via Nominatim
+  async function searchAddress() {
+    const q = document.getElementById('addr-search').value.trim();
+    const errDiv = document.getElementById('addr-error');
+    if (!q) return;
+    errDiv.classList.add('hidden');
+    try {
+      const res = await fetch(
+        `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(q)}&format=json&limit=1`,
+        { headers: { 'Accept-Language': 'en' } }
+      );
+      const results = await res.json();
+      if (results.length === 0) { errDiv.classList.remove('hidden'); return; }
+      const r = results[0];
+      const latlng = L.latLng(parseFloat(r.lat), parseFloat(r.lon));
+      map.setView(latlng, 15);
+      placeMarker(latlng, r.display_name);
+    } catch (err) {
+      errDiv.textContent = 'Search failed. Check your connection.';
+      errDiv.classList.remove('hidden');
+    }
+  }
+
+  document.getElementById('addr-search-btn').addEventListener('click', searchAddress);
+  document.getElementById('addr-search').addEventListener('keydown', e => {
+    if (e.key === 'Enter') { e.preventDefault(); searchAddress(); }
+  });
+
+  document.getElementById('clear-pin').addEventListener('click', clearPin);
+})();
+</script>
+{% endblock %}

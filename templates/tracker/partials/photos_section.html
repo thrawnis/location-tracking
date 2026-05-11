@@ -1,0 +1,101 @@
+<div id="photos-section">
+  <div class="flex items-center justify-between mb-3">
+    <h3 class="text-base font-semibold text-slate-800">Photos</h3>
+    {% if user.is_authenticated and not show_form %}
+    <button hx-get="{% url 'photo_add' location.pk %}"
+            hx-target="#photos-section"
+            hx-swap="outerHTML"
+            class="text-xs font-medium text-brand hover:text-brand-dark flex items-center gap-1 transition-colors">
+      <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+              d="M12 4v16m8-8H4"/>
+      </svg>
+      Upload photo
+    </button>
+    {% endif %}
+  </div>
+
+  {% if location.photos.all %}
+  <div class="grid grid-cols-2 sm:grid-cols-3 gap-3">
+    {% for photo in location.photos.all %}
+    <div class="relative group rounded-xl overflow-hidden bg-slate-100 aspect-square">
+      <img src="{{ photo.image.url }}" alt="{{ photo.caption|default:'Photo' }}"
+           class="w-full h-full object-cover">
+      {% if photo.caption %}
+      <div class="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/60 to-transparent px-2 py-1.5">
+        <p class="text-xs text-white truncate">{{ photo.caption }}</p>
+      </div>
+      {% endif %}
+      {% if user.is_authenticated %}
+      <div class="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors flex items-start justify-end p-2">
+        <button hx-post="{% url 'photo_delete' location.pk photo.pk %}"
+                hx-target="#photos-section"
+                hx-swap="outerHTML"
+                hx-confirm="Delete this photo?"
+                class="opacity-0 group-hover:opacity-100 bg-red-500 hover:bg-red-600 text-white rounded-lg p-1.5 transition-all shadow-lg"
+                title="Delete photo">
+          <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                  d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
+          </svg>
+        </button>
+      </div>
+      {% endif %}
+    </div>
+    {% endfor %}
+  </div>
+  {% else %}
+  <p class="text-sm text-slate-400 italic">No photos yet.</p>
+  {% endif %}
+
+  {% if show_form %}
+  <form hx-post="{% url 'photo_add' location.pk %}"
+        hx-target="#photos-section"
+        hx-swap="outerHTML"
+        hx-encoding="multipart/form-data"
+        class="mt-4 bg-white border border-slate-200 rounded-xl p-4 space-y-3 shadow-sm">
+    <h4 class="text-sm font-semibold text-slate-700">Upload a Photo</h4>
+    <p class="text-xs text-slate-400">Images are automatically resized to 2 megapixels.</p>
+
+    <div>
+      <label class="block text-xs font-medium text-slate-600 mb-1">Photo *</label>
+      {{ photo_form.image }}
+      {% if photo_form.image.errors %}
+      <p class="text-red-500 text-xs mt-1">{{ photo_form.image.errors|join:", " }}</p>
+      {% endif %}
+    </div>
+
+    <div>
+      <label class="block text-xs font-medium text-slate-600 mb-1">Caption</label>
+      {{ photo_form.caption }}
+      {% if photo_form.caption.errors %}
+      <p class="text-red-500 text-xs mt-1">{{ photo_form.caption.errors|join:", " }}</p>
+      {% endif %}
+    </div>
+
+    <div class="flex gap-2">
+      <button type="submit"
+              class="bg-brand text-white text-sm font-medium px-4 py-2 rounded-lg hover:bg-brand-dark transition-colors">
+        Upload
+      </button>
+      <button type="button"
+              hx-get="{% url 'photo_add' location.pk %}"
+              hx-target="#photos-section"
+              hx-swap="outerHTML"
+              class="text-sm text-slate-500 hover:text-slate-700 px-3 py-2">
+        Cancel
+      </button>
+    </div>
+    {% csrf_token %}
+  </form>
+  {% endif %}
+</div>
+
+<style>
+  #photos-section input[type="text"] {
+    display: block; width: 100%; font-size: 0.8125rem;
+    border: 1px solid #e2e8f0; border-radius: 0.5rem;
+    padding: 0.375rem 0.625rem; outline: none;
+  }
+  #photos-section input:focus { border-color: #6366f1; box-shadow: 0 0 0 2px #e0e7ff; }
+</style>

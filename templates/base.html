@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="en" class="h-full bg-slate-50">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{% block title %}Location Tracker{% endblock %}</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            brand: { DEFAULT: '#6366f1', dark: '#4f46e5', light: '#e0e7ff' }
+          }
+        }
+      }
+    }
+  </script>
+  <script src="https://unpkg.com/htmx.org@1.9.12" integrity="sha384-ujb1lZYygJmzgSwoxRggbCHcjc0rB2uiTATFMUEGEPNGSYgTmNRqO0ubh0H0gsE" crossorigin="anonymous"></script>
+  <script src="https://unpkg.com/alpinejs@3.x.x/dist/cdn.min.js" defer></script>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <style>
+    [x-cloak] { display: none !important; }
+    .htmx-indicator { opacity: 0; transition: opacity 200ms ease-in; }
+    .htmx-request .htmx-indicator { opacity: 1; }
+    .htmx-request.htmx-indicator { opacity: 1; }
+  </style>
+  {% block extra_head %}{% endblock %}
+</head>
+<body class="h-full flex flex-col font-sans text-slate-800 antialiased">
+
+  <!-- Navbar -->
+  <nav class="bg-white border-b border-slate-200 shadow-sm sticky top-0 z-40">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+      <div class="flex items-center justify-between h-14">
+        <!-- Logo -->
+        <a href="/" class="flex items-center gap-2 font-bold text-brand text-lg tracking-tight">
+          <svg class="w-6 h-6" fill="currentColor" viewBox="0 0 24 24">
+            <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z"/>
+          </svg>
+          Location Tracker
+        </a>
+
+        <!-- Right side -->
+        <div class="flex items-center gap-3">
+          {% if user.is_authenticated %}
+            <a href="{% url 'location_create' %}"
+               class="hidden sm:inline-flex items-center gap-1.5 bg-brand text-white text-sm font-medium px-3 py-1.5 rounded-lg hover:bg-brand-dark transition-colors">
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
+              </svg>
+              Add Location
+            </a>
+            <div class="relative" x-data="{ open: false }">
+              <button @click="open = !open" @keydown.escape="open = false"
+                      class="flex items-center gap-2 text-sm text-slate-600 hover:text-slate-900 transition-colors">
+                <span class="w-7 h-7 rounded-full bg-brand-light text-brand flex items-center justify-center font-semibold text-xs uppercase">
+                  {{ user.username|slice:":1" }}
+                </span>
+                <span class="hidden sm:block">{{ user.username }}</span>
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
+                </svg>
+              </button>
+              <div x-show="open" x-cloak @click.outside="open = false"
+                   class="absolute right-0 mt-2 w-44 bg-white rounded-xl shadow-lg border border-slate-100 py-1 z-50">
+                {% if user.is_staff %}
+                <a href="{% url 'audit_log' %}"
+                   class="flex items-center gap-2 px-4 py-2 text-sm text-slate-700 hover:bg-slate-50">
+                  <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                          d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/>
+                  </svg>
+                  Audit Log
+                </a>
+                <a href="/admin/"
+                   class="flex items-center gap-2 px-4 py-2 text-sm text-slate-700 hover:bg-slate-50">
+                  <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                          d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0..."/>
+                  </svg>
+                  Django Admin
+                </a>
+                <hr class="my-1 border-slate-100">
+                {% endif %}
+                <form method="post" action="{% url 'logout' %}">
+                  {% csrf_token %}
+                  <button type="submit"
+                          class="w-full text-left flex items-center gap-2 px-4 py-2 text-sm text-red-600 hover:bg-red-50">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                            d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"/>
+                    </svg>
+                    Sign out
+                  </button>
+                </form>
+              </div>
+            </div>
+          {% else %}
+            <a href="{% url 'login' %}"
+               class="text-sm text-slate-600 hover:text-slate-900 transition-colors">Sign in</a>
+            <a href="{% url 'register' %}"
+               class="bg-brand text-white text-sm font-medium px-3 py-1.5 rounded-lg hover:bg-brand-dark transition-colors">
+              Register
+            </a>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+  </nav>
+
+  <!-- Flash messages -->
+  {% if messages %}
+  <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 w-full mt-4" x-data>
+    {% for message in messages %}
+    <div x-data="{ show: true }" x-show="show" x-transition
+         class="flex items-center justify-between gap-3 mb-2 px-4 py-3 rounded-lg text-sm font-medium
+                {% if message.tags == 'success' %}bg-emerald-50 text-emerald-800 border border-emerald-200
+                {% elif message.tags == 'error' %}bg-red-50 text-red-800 border border-red-200
+                {% else %}bg-blue-50 text-blue-800 border border-blue-200{% endif %}">
+      <span>{{ message }}</span>
+      <button @click="show = false" class="opacity-60 hover:opacity-100">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+        </svg>
+      </button>
+    </div>
+    {% endfor %}
+  </div>
+  {% endif %}
+
+  <!-- Main content -->
+  <main class="flex-1 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 w-full py-6">
+    {% block content %}{% endblock %}
+  </main>
+
+  <footer class="text-center text-xs text-slate-400 py-4 border-t border-slate-100 mt-auto">
+    Location Tracker &mdash; self-hosted
+  </footer>
+
+  <!-- HTMX CSRF setup -->
+  <script>
+    document.body.addEventListener("htmx:configRequest", (e) => {
+      e.detail.headers["X-CSRFToken"] = "{{ csrf_token }}";
+    });
+  </script>
+  {% block extra_js %}{% endblock %}
+</body>
+</html>

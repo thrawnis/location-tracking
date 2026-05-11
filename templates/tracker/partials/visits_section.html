@@ -1,0 +1,90 @@
+<div id="visits-section">
+  <div class="flex items-center justify-between mb-3">
+    <h3 class="text-base font-semibold text-slate-800">Visit Log</h3>
+    {% if user.is_authenticated and not show_form %}
+    <button hx-get="{% url 'visit_add' location.pk %}"
+            hx-target="#visits-section"
+            hx-swap="outerHTML"
+            class="text-xs font-medium text-brand hover:text-brand-dark flex items-center gap-1 transition-colors">
+      <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
+      </svg>
+      Log visit
+    </button>
+    {% endif %}
+  </div>
+
+  {% if location.visits.all %}
+  <div class="space-y-1.5">
+    {% for visit in location.visits.all %}
+    <div class="flex items-center justify-between text-sm bg-slate-50 rounded-lg px-3 py-2">
+      <div class="flex items-center gap-2">
+        <svg class="w-4 h-4 text-slate-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/>
+        </svg>
+        <span class="font-medium text-slate-700">{{ visit.date|date:"N j, Y" }}</span>
+        {% if visit.user %}
+        <span class="text-slate-400 text-xs">by {{ visit.user.username }}</span>
+        {% endif %}
+      </div>
+      {% if user.is_authenticated %}
+      <button hx-post="{% url 'visit_delete' location.pk visit.pk %}"
+              hx-target="#visits-section"
+              hx-swap="outerHTML"
+              hx-confirm="Remove this visit?"
+              class="text-slate-400 hover:text-red-500 transition-colors" title="Remove">
+        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
+        </svg>
+      </button>
+      {% endif %}
+    </div>
+    {% endfor %}
+  </div>
+  {% else %}
+  <p class="text-sm text-slate-400 italic">No visits logged yet.</p>
+  {% endif %}
+
+  {% if show_form %}
+  <form hx-post="{% url 'visit_add' location.pk %}"
+        hx-target="#visits-section"
+        hx-swap="outerHTML"
+        class="mt-4 bg-white border border-slate-200 rounded-xl p-4 space-y-3 shadow-sm">
+    <h4 class="text-sm font-semibold text-slate-700">Log a Visit</h4>
+    <div>
+      <label class="block text-xs font-medium text-slate-600 mb-1">Date *</label>
+      {{ visit_form.date }}
+      {% if visit_form.date.errors %}
+      <p class="text-red-500 text-xs mt-1">{{ visit_form.date.errors|join:", " }}</p>
+      {% endif %}
+    </div>
+    <div class="flex gap-2">
+      <button type="submit"
+              class="bg-brand text-white text-sm font-medium px-4 py-2 rounded-lg hover:bg-brand-dark transition-colors">
+        Save
+      </button>
+      <button type="button"
+              hx-get="{% url 'visit_add' location.pk %}"
+              hx-target="#visits-section"
+              hx-swap="outerHTML"
+              class="text-sm text-slate-500 hover:text-slate-700 px-3 py-2">
+        Cancel
+      </button>
+    </div>
+    {% csrf_token %}
+  </form>
+  {% endif %}
+</div>
+
+<style>
+  #visits-section input[type="date"] {
+    display: block; font-size: 0.8125rem;
+    border: 1px solid #e2e8f0; border-radius: 0.5rem;
+    padding: 0.375rem 0.625rem; outline: none;
+  }
+  #visits-section input[type="date"]:focus {
+    border-color: #6366f1; box-shadow: 0 0 0 2px #e0e7ff;
+  }
+</style>

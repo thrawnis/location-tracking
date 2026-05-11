@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+{% block title %}Sign In – Location Tracker{% endblock %}
+
+{% block content %}
+<div class="min-h-[60vh] flex items-center justify-center">
+  <div class="w-full max-w-sm">
+    <div class="bg-white rounded-2xl shadow-sm border border-slate-200 p-8">
+      <h1 class="text-2xl font-bold text-slate-900 mb-1">Welcome back</h1>
+      <p class="text-sm text-slate-500 mb-6">Sign in to add or edit locations.</p>
+
+      <form method="post" class="space-y-4">
+        {% csrf_token %}
+        {% for field in form %}
+        <div>
+          <label class="block text-sm font-medium text-slate-700 mb-1">{{ field.label }}</label>
+          {{ field }}
+          {% if field.errors %}
+          <p class="text-red-500 text-xs mt-1">{{ field.errors|join:", " }}</p>
+          {% endif %}
+        </div>
+        {% endfor %}
+        {% if form.non_field_errors %}
+        <p class="text-red-500 text-sm">{{ form.non_field_errors|join:", " }}</p>
+        {% endif %}
+        <button type="submit"
+                class="w-full bg-brand hover:bg-brand-dark text-white font-semibold py-2.5 rounded-lg transition-colors">
+          Sign in
+        </button>
+      </form>
+
+      <p class="text-sm text-slate-500 text-center mt-5">
+        No account?
+        <a href="{% url 'register' %}" class="text-brand font-medium hover:underline">Register</a>
+      </p>
+    </div>
+  </div>
+</div>
+
+<style>
+  input[type="text"], input[type="password"] {
+    display: block; width: 100%;
+    border: 1px solid #e2e8f0; border-radius: 0.5rem;
+    padding: 0.5rem 0.75rem; font-size: 0.875rem;
+    outline: none; transition: border-color 150ms;
+  }
+  input:focus { border-color: #6366f1; box-shadow: 0 0 0 2px #e0e7ff; }
+</style>
+{% endblock %}
