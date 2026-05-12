@@ -20,6 +20,8 @@ class LocationForm(forms.ModelForm):
             "name",
             "category",
             "address",
+            "city",
+            "state",
             "latitude",
             "longitude",
             "overall_rating",
@@ -29,6 +31,8 @@ class LocationForm(forms.ModelForm):
         widgets = {
             "name": forms.TextInput(attrs={"placeholder": "Location name"}),
             "address": forms.TextInput(attrs={"placeholder": "Address (optional — use map to set)"}),
+            "city": forms.HiddenInput(),
+            "state": forms.HiddenInput(),
             "latitude": forms.HiddenInput(),
             "longitude": forms.HiddenInput(),
             "public_notes": forms.Textarea(attrs={"rows": 4, "placeholder": "Visible to everyone"}),

@@ -40,6 +40,8 @@
       {% csrf_token %}
       {{ form.latitude }}
       {{ form.longitude }}
+      {{ form.city }}
+      {{ form.state }}
       {{ form.overall_rating }}
 
       <!-- Basic info -->
@@ -173,14 +175,15 @@
 (function() {
   const latInput  = document.getElementById('id_latitude');
   const lngInput  = document.getElementById('id_longitude');
+  const cityInput = document.getElementById('id_city');
+  const stateInput= document.getElementById('id_state');
   const addrInput = document.getElementById('id_address');
   const coordsDiv = document.getElementById('coords-display');
   const latSpan   = document.getElementById('lat-display');
   const lngSpan   = document.getElementById('lng-display');
 
-  // Initial center: existing pin or world view
-  const initLat = parseFloat(latInput.value) || 39.5;
-  const initLng = parseFloat(lngInput.value) || -98.35;
+  const initLat  = parseFloat(latInput.value) || 39.5;
+  const initLng  = parseFloat(lngInput.value) || -98.35;
   const initZoom = latInput.value ? 14 : 4;
 
   const map = L.map('pick-map').setView([initLat, initLng], initZoom);
@@ -191,12 +194,21 @@
 
   let marker = null;
 
-  function placeMarker(latlng, address) {
-    if (marker) map.removeLayer(marker);
-    marker = L.marker(latlng, { draggable: true }).addTo(map);
-    marker.on('dragend', () => setCoords(marker.getLatLng()));
-    setCoords(latlng);
-    if (address) addrInput.value = address;
+  function parseCityState(addr) {
+    if (!addr) return;
+    cityInput.value  = addr.city || addr.town || addr.village || addr.county || '';
+    stateInput.value = addr.state || '';
+  }
+
+  async function reverseGeocode(lat, lng) {
+    try {
+      const res  = await fetch(
+        `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json&addressdetails=1`,
+        { headers: { 'Accept-Language': 'en' } }
+      );
+      const data = await res.json();
+      parseCityState(data.address);
+    } catch (e) {}
   }
 
   function setCoords(latlng) {
@@ -207,42 +219,55 @@
     latSpan.textContent = lat;
     lngSpan.textContent = lng;
     coordsDiv.style.display = '';
+    reverseGeocode(lat, lng);
+  }
+
+  function placeMarker(latlng, address) {
+    if (marker) map.removeLayer(marker);
+    marker = L.marker(latlng, { draggable: true }).addTo(map);
+    marker.on('dragend', () => setCoords(marker.getLatLng()));
+    setCoords(latlng);
+    if (address) addrInput.value = address;
   }
 
   function clearPin() {
     if (marker) { map.removeLayer(marker); marker = null; }
-    latInput.value = '';
-    lngInput.value = '';
+    latInput.value  = '';
+    lngInput.value  = '';
+    cityInput.value = '';
+    stateInput.value= '';
     coordsDiv.style.display = 'none';
   }
 
-  // Restore existing pin
   if (latInput.value && lngInput.value) {
     placeMarker(L.latLng(parseFloat(latInput.value), parseFloat(lngInput.value)), null);
   }
 
-  // Click map to place / move pin
   map.on('click', e => {
     placeMarker(e.latlng, null);
     map.setView(e.latlng, Math.max(map.getZoom(), 14));
   });
 
-  // Address search via Nominatim
   async function searchAddress() {
-    const q = document.getElementById('addr-search').value.trim();
+    const q      = document.getElementById('addr-search').value.trim();
     const errDiv = document.getElementById('addr-error');
     if (!q) return;
     errDiv.classList.add('hidden');
     try {
       const res = await fetch(
-        `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(q)}&format=json&limit=1`,
+        `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(q)}&format=json&limit=1&addressdetails=1`,
         { headers: { 'Accept-Language': 'en' } }
       );
       const results = await res.json();
-      if (results.length === 0) { errDiv.classList.remove('hidden'); return; }
-      const r = results[0];
+      if (!results.length) { errDiv.classList.remove('hidden'); return; }
+      const r      = results[0];
       const latlng = L.latLng(parseFloat(r.lat), parseFloat(r.lon));
       map.setView(latlng, 15);
+      // Populate city/state from search result so we don't need a second API call
+      if (r.address) {
+        cityInput.value  = r.address.city || r.address.town || r.address.village || r.address.county || '';
+        stateInput.value = r.address.state || '';
+      }
       placeMarker(latlng, r.display_name);
     } catch (err) {
       errDiv.textContent = 'Search failed. Check your connection.';
@@ -254,7 +279,6 @@
   document.getElementById('addr-search').addEventListener('keydown', e => {
     if (e.key === 'Enter') { e.preventDefault(); searchAddress(); }
   });
-
   document.getElementById('clear-pin').addEventListener('click', clearPin);
 })();
 </script>

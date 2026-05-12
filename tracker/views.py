@@ -35,6 +35,8 @@ def _location_diff(old, new_data):
         "name": "Name",
         "category": "Category",
         "address": "Address",
+        "city": "City",
+        "state": "State",
         "latitude": "Latitude",
         "longitude": "Longitude",
         "overall_rating": "Rating",
@@ -83,17 +85,9 @@ def register_view(request):
 # ── Locations ─────────────────────────────────────────────────────────────────
 
 def location_list(request):
-    q = request.GET.get("q", "").strip()
-    category = request.GET.get("category", "")
     locations = Location.objects.all()
-    if q:
-        locations = locations.filter(Q(name__icontains=q) | Q(address__icontains=q))
-    if category:
-        locations = locations.filter(category=category)
     return render(request, "tracker/location_list.html", {
         "locations": locations,
-        "q": q,
-        "category": category,
         "category_choices": Location.CATEGORY_CHOICES,
     })
 
@@ -166,12 +160,6 @@ def location_delete(request, pk):
 
 def locations_geojson(request):
     qs = Location.objects.exclude(latitude=None).exclude(longitude=None)
-    q = request.GET.get("q", "").strip()
-    category = request.GET.get("category", "")
-    if q:
-        qs = qs.filter(Q(name__icontains=q) | Q(address__icontains=q))
-    if category:
-        qs = qs.filter(category=category)
     features = []
     for loc in qs:
         features.append({
@@ -187,6 +175,9 @@ def locations_geojson(request):
                 "category_display": loc.get_category_display(),
                 "rating": str(loc.overall_rating) if loc.overall_rating else None,
                 "address": loc.address,
+                "city": loc.city,
+                "state": loc.state,
+                "city_state": ", ".join(filter(None, [loc.city, loc.state])),
                 "url": "/locations/{}/".format(loc.pk),
             },
         })

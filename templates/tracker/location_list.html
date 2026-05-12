@@ -4,150 +4,215 @@
 
 {% block extra_head %}
 <style>
-  #list-map { height: 560px; }
+  .search-layout { height: calc(100vh - 130px); min-height: 560px; }
+  #main-map      { height: 100%; border-radius: 0.75rem; }
+
+  /* Result cards */
+  .loc-card {
+    display: flex; gap: 10px;
+    padding: 12px; border-radius: 10px;
+    border: 1.5px solid #e2e8f0;
+    background: white; cursor: pointer;
+    transition: border-color 150ms, box-shadow 150ms;
+    text-decoration: none; color: inherit;
+  }
+  .loc-card:hover { border-color: #a5b4fc; box-shadow: 0 2px 8px rgba(99,102,241,.12); }
+  .loc-card.active { border-color: #6366f1; background: #eef2ff; box-shadow: 0 2px 10px rgba(99,102,241,.18); }
+  .loc-card.hidden-card { display: none; }
+
+  /* Map name labels */
+  .loc-name-tag {
+    background: white !important;
+    border: 1.5px solid #6366f1 !important;
+    border-radius: 5px !important;
+    color: #1e293b !important;
+    font-size: 11px !important;
+    font-weight: 600 !important;
+    padding: 2px 6px !important;
+    white-space: nowrap !important;
+    cursor: pointer !important;
+    box-shadow: 0 1px 4px rgba(0,0,0,.12) !important;
+  }
+  .loc-name-tag::before { display: none !important; }
+  .loc-name-tag.active-tag {
+    background: #6366f1 !important;
+    color: white !important;
+  }
+
+  /* User dot */
+  .user-dot {
+    width: 14px; height: 14px;
+    background: #3b82f6; border: 3px solid white; border-radius: 50%;
+    box-shadow: 0 0 0 5px rgba(59,130,246,.25);
+    animation: gpulse 2s ease-in-out infinite;
+  }
+  @keyframes gpulse {
+    0%,100% { box-shadow: 0 0 0 5px rgba(59,130,246,.25); }
+    50%      { box-shadow: 0 0 0 9px rgba(59,130,246,.08); }
+  }
+
+  /* Mobile toggle */
+  @media (min-width: 768px) { #mobile-toggle { display: none; } }
+  @media (max-width: 767px) {
+    .search-layout { height: auto; }
+    #side-list { max-height: 50vh; overflow-y: auto; }
+    #map-panel  { height: 55vh; }
+  }
 </style>
 {% endblock %}
 
 {% block content %}
-<div x-data="{ view: 'cards' }" class="space-y-5">
+<div class="space-y-3">
 
-  <!-- Search / filter bar -->
-  <div class="flex flex-wrap gap-3 items-center">
-    <form method="get" class="flex flex-1 min-w-0 gap-2">
-      <div class="relative flex-1 min-w-0">
-        <svg class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" fill="none"
-             stroke="currentColor" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                d="M21 21l-4.35-4.35M17 11A6 6 0 105 11a6 6 0 0012 0z"/>
-        </svg>
-        <input type="search" name="q" value="{{ q }}" placeholder="Search by name or address…"
-               class="w-full pl-9 pr-4 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand/30 focus:border-brand bg-white">
-      </div>
-      <select name="category"
-              class="text-sm border border-slate-200 rounded-lg px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-brand/30 focus:border-brand"
-              onchange="this.form.submit()">
-        <option value="">All categories</option>
-        {% for val, label in category_choices %}
-        <option value="{{ val }}" {% if category == val %}selected{% endif %}>{{ label }}</option>
-        {% endfor %}
-      </select>
-      <button type="submit"
-              class="bg-brand text-white text-sm px-4 py-2 rounded-lg hover:bg-brand-dark transition-colors">
-        Search
-      </button>
-      {% if q or category %}
-      <a href="/" class="text-sm text-slate-500 hover:text-slate-700 px-3 py-2">Clear</a>
-      {% endif %}
-    </form>
+  <!-- ── Search bar ─────────────────────────────────────────────── -->
+  <div class="flex flex-wrap gap-2 items-center">
 
-    <!-- View toggle -->
-    <div class="flex rounded-lg border border-slate-200 overflow-hidden bg-white shrink-0">
-      <button @click="view = 'cards'"
-              :class="view === 'cards' ? 'bg-brand text-white' : 'text-slate-500 hover:bg-slate-50'"
-              class="flex items-center gap-1.5 px-3 py-2 text-sm font-medium transition-colors">
-        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zm10 0a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zm10 0a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z"/>
-        </svg>
-        Cards
-      </button>
-      <button @click="view = 'map'; $nextTick(() => initListMap())"
-              :class="view === 'map' ? 'bg-brand text-white' : 'text-slate-500 hover:bg-slate-50'"
-              class="flex items-center gap-1.5 px-3 py-2 text-sm font-medium transition-colors">
-        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7"/>
-        </svg>
-        Map
-      </button>
+    <!-- Name search -->
+    <div class="relative flex-1 min-w-[160px]">
+      <svg class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none"
+           fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+              d="M21 21l-4.35-4.35M17 11A6 6 0 105 11a6 6 0 0012 0z"/>
+      </svg>
+      <input type="search" id="name-search" placeholder="Restaurant, store, attraction…"
+             class="w-full pl-9 pr-4 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand/30 focus:border-brand bg-white">
     </div>
+
+    <!-- City / state / zip -->
+    <div class="relative flex-1 min-w-[160px]">
+      <svg class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none"
+           fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+              d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"/>
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"/>
+      </svg>
+      <input type="search" id="location-search" placeholder="City, state, or zip…"
+             class="w-full pl-9 pr-9 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand/30 focus:border-brand bg-white">
+      <span id="geo-spinner" class="hidden absolute right-3 top-1/2 -translate-y-1/2">
+        <svg class="w-4 h-4 text-brand animate-spin" fill="none" viewBox="0 0 24 24">
+          <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
+          <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/>
+        </svg>
+      </span>
+    </div>
+
+    <!-- Category -->
+    <select id="category-filter"
+            class="text-sm border border-slate-200 rounded-lg px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-brand/30 focus:border-brand shrink-0">
+      <option value="">All categories</option>
+      {% for val, label in category_choices %}
+      <option value="{{ val }}">{{ label }}</option>
+      {% endfor %}
+    </select>
+
+    <!-- Mobile: map/list toggle -->
+    <button id="mobile-toggle"
+            class="md:hidden text-sm border border-slate-200 rounded-lg px-3 py-2 bg-white shrink-0"
+            onclick="toggleMobileView(this)">
+      Show Map
+    </button>
 
     {% if user.is_authenticated %}
     <a href="{% url 'location_create' %}"
-       class="sm:hidden bg-brand text-white text-sm font-medium px-3 py-2 rounded-lg hover:bg-brand-dark transition-colors">
+       class="bg-brand text-white text-sm font-medium px-3 py-2 rounded-lg hover:bg-brand-dark transition-colors shrink-0">
       + Add
     </a>
     {% endif %}
   </div>
 
-  <!-- Result count -->
-  <p class="text-sm text-slate-500">
-    {{ locations|length }} location{{ locations|length|pluralize }}{% if q %} matching <em>"{{ q }}"</em>{% endif %}
-  </p>
+  <!-- ── Side-by-side: list + map ───────────────────────────────── -->
+  <div class="flex gap-3 search-layout">
 
-  <!-- Card grid -->
-  <div x-show="view === 'cards'" x-cloak>
-    {% if locations %}
-    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+    <!-- Left: scrollable result list -->
+    <div id="side-list"
+         class="w-80 xl:w-96 shrink-0 flex flex-col overflow-y-auto pr-1 space-y-2">
+
+      <p id="result-count" class="text-xs text-slate-500 px-1 pb-1 shrink-0">
+        Loading…
+      </p>
+
       {% for loc in locations %}
-      {% with cat=loc.category %}
-      <a href="{% url 'location_detail' loc.pk %}"
-         class="group bg-white rounded-xl border border-slate-200 hover:border-brand/40 hover:shadow-md transition-all overflow-hidden">
-        <!-- Photo or placeholder -->
-        {% with first_photo=loc.photos.first %}
+      <div class="loc-card"
+           data-id="{{ loc.pk }}"
+           data-name="{{ loc.name|lower }}"
+           data-city="{{ loc.city|lower }}"
+           data-state="{{ loc.state|lower }}"
+           data-address="{{ loc.address|lower }}"
+           data-category="{{ loc.category }}"
+           data-lat="{{ loc.latitude|default:'' }}"
+           data-lng="{{ loc.longitude|default:'' }}"
+           onclick="cardClicked(this)"
+           onmouseenter="cardHovered(this)"
+           onmouseleave="cardLeft(this)">
+
+        <!-- Thumbnail / icon -->
+        {% with first_photo=loc.photos.first cat=loc.category %}
         {% if first_photo %}
-        <div class="h-40 overflow-hidden">
+        <div class="w-16 h-16 shrink-0 rounded-lg overflow-hidden">
           <img src="{{ first_photo.image.url }}" alt="{{ loc.name }}"
-               class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300">
+               class="w-full h-full object-cover">
         </div>
         {% else %}
-        <div class="h-40 flex items-center justify-center
+        <div class="w-16 h-16 shrink-0 rounded-lg flex items-center justify-center text-2xl
                     {% if cat == 'restaurant' %}bg-indigo-50
                     {% elif cat == 'store' %}bg-emerald-50
                     {% elif cat == 'attraction' %}bg-violet-50
                     {% else %}bg-slate-100{% endif %}">
-          <span class="text-5xl">{{ loc.category|category_icon }}</span>
+          {{ loc.category|category_icon }}
         </div>
         {% endif %}
         {% endwith %}
-        <div class="p-4">
-          <div class="flex items-start justify-between gap-2">
-            <div class="min-w-0">
-              <h2 class="font-semibold text-slate-900 truncate group-hover:text-brand transition-colors">
-                {{ loc.name }}
-              </h2>
-              {% if loc.address %}
-              <p class="text-xs text-slate-400 truncate mt-0.5">{{ loc.address }}</p>
-              {% endif %}
-            </div>
-            <span class="shrink-0 text-xs font-medium px-2 py-0.5 rounded-full
+
+        <!-- Info -->
+        <div class="min-w-0 flex-1">
+          <div class="flex items-start gap-1 justify-between">
+            <p class="font-semibold text-slate-900 text-sm leading-tight truncate">{{ loc.name }}</p>
+            <span class="shrink-0 text-[10px] font-medium px-1.5 py-0.5 rounded-full ml-1
+                         {% with cat=loc.category %}
                          {% if cat == 'restaurant' %}bg-indigo-100 text-indigo-700
                          {% elif cat == 'store' %}bg-emerald-100 text-emerald-700
                          {% elif cat == 'attraction' %}bg-violet-100 text-violet-700
-                         {% else %}bg-slate-100 text-slate-600{% endif %}">
+                         {% else %}bg-slate-100 text-slate-600{% endif %}
+                         {% endwith %}">
               {{ loc.get_category_display }}
             </span>
           </div>
-          <div class="flex items-center justify-between mt-3">
-            {% stars_display loc.overall_rating %}
-            <span class="text-xs text-slate-400">
+          {% if loc.city or loc.state %}
+          <p class="text-xs text-slate-500 mt-0.5">
+            {{ loc.city }}{% if loc.city and loc.state %}, {% endif %}{{ loc.state }}
+          </p>
+          {% elif loc.address %}
+          <p class="text-xs text-slate-400 mt-0.5 truncate">{{ loc.address }}</p>
+          {% endif %}
+          <div class="flex items-center gap-2 mt-1">
+            {% stars_display loc.overall_rating "sm" %}
+            <span class="text-[10px] text-slate-400">
               {{ loc.visits.count }} visit{{ loc.visits.count|pluralize }}
             </span>
           </div>
+          <a href="{% url 'location_detail' loc.pk %}"
+             onclick="event.stopPropagation()"
+             class="text-[11px] text-brand hover:underline mt-1 inline-block">
+            View details →
+          </a>
         </div>
-      </a>
-      {% endwith %}
+      </div>
+      {% empty %}
+      <div class="text-center py-16 text-slate-400">
+        <p class="text-sm font-medium">No locations yet.</p>
+        {% if user.is_authenticated %}
+        <a href="{% url 'location_create' %}" class="text-brand hover:underline text-sm">Add the first one</a>
+        {% endif %}
+      </div>
       {% endfor %}
     </div>
-    {% else %}
-    <div class="text-center py-20 text-slate-400">
-      <svg class="w-12 h-12 mx-auto mb-3 opacity-40" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"
-              d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"/>
-        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"
-              d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"/>
-      </svg>
-      <p class="text-lg font-medium text-slate-500 mb-1">No locations found</p>
-      {% if user.is_authenticated %}
-      <a href="{% url 'location_create' %}" class="text-brand hover:underline text-sm">Add the first one</a>
-      {% endif %}
-    </div>
-    {% endif %}
-  </div>
 
-  <!-- Map view -->
-  <div x-show="view === 'map'" x-cloak>
-    <div id="list-map" class="rounded-xl border border-slate-200 shadow-sm overflow-hidden"></div>
+    <!-- Right: map -->
+    <div id="map-panel" class="flex-1 min-w-0 relative">
+      <div id="main-map"></div>
+      <p id="geo-error" class="hidden absolute bottom-3 left-1/2 -translate-x-1/2
+                                bg-white/90 text-amber-600 text-xs px-3 py-1.5 rounded-full shadow z-[1000]"></p>
+    </div>
   </div>
 
 </div>
@@ -155,55 +220,268 @@
 
 {% block extra_js %}
 <script>
-let listMap = null;
+(function () {
+  // ── constants ──────────────────────────────────────────────────
+  const CAT_COLORS = {
+    restaurant: '#6366f1',
+    store:      '#10b981',
+    attraction: '#8b5cf6',
+    other:      '#64748b',
+  };
 
-function initListMap() {
-  if (listMap) { listMap.invalidateSize(); return; }
+  // ── state ──────────────────────────────────────────────────────
+  let mainMap       = null;
+  let markerMap     = {};   // id → {marker, tooltip}
+  let activeId      = null;
+  let nameFilter    = '';
+  let boundsFilter  = null;
+  let catFilter     = '';
 
-  listMap = L.map('list-map').setView([39.5, -98.35], 4);
-  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-    attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
-    maxZoom: 19
-  }).addTo(listMap);
+  // ── card helpers ───────────────────────────────────────────────
+  const allCards = () => [...document.querySelectorAll('.loc-card')];
 
-  const q = "{{ q|escapejs }}";
-  const cat = "{{ category|escapejs }}";
-  fetch(`/locations/geojson/?q=${encodeURIComponent(q)}&category=${encodeURIComponent(cat)}`)
-    .then(r => r.json())
-    .then(data => {
-      if (!data.features.length) return;
-      const catColors = {
-        restaurant: '#6366f1',
-        store: '#10b981',
-        attraction: '#8b5cf6',
-        other: '#64748b'
-      };
-      const layer = L.geoJSON(data, {
-        pointToLayer(feature, latlng) {
-          const color = catColors[feature.properties.category] || '#64748b';
-          return L.circleMarker(latlng, {
-            radius: 9,
-            fillColor: color,
-            color: '#fff',
-            weight: 2,
-            fillOpacity: 0.9
+  function highlightCard(id, scroll) {
+    allCards().forEach(c => c.classList.toggle('active', c.dataset.id === String(id)));
+    if (scroll) {
+      const card = document.querySelector(`.loc-card[data-id="${id}"]`);
+      if (card) card.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
+  }
+
+  function clearCardHighlight() {
+    allCards().forEach(c => c.classList.remove('active'));
+  }
+
+  // ── marker helpers ─────────────────────────────────────────────
+  function highlightMarker(id) {
+    Object.entries(markerMap).forEach(([mid, { marker, tooltip }]) => {
+      const isActive = String(mid) === String(id);
+      marker.setStyle({ radius: isActive ? 11 : 8 });
+      if (tooltip) {
+        const el = tooltip.getElement();
+        if (el) el.classList.toggle('active-tag', isActive);
+      }
+    });
+  }
+
+  function clearMarkerHighlight() {
+    Object.values(markerMap).forEach(({ marker, tooltip }) => {
+      marker.setStyle({ radius: 8 });
+      const el = tooltip && tooltip.getElement();
+      if (el) el.classList.remove('active-tag');
+    });
+  }
+
+  // ── card events ────────────────────────────────────────────────
+  window.cardClicked = function (card) {
+    const id  = card.dataset.id;
+    const lat = parseFloat(card.dataset.lat);
+    const lng = parseFloat(card.dataset.lng);
+
+    activeId = id;
+    highlightCard(id, false);
+    highlightMarker(id);
+
+    if (!isNaN(lat) && !isNaN(lng)) {
+      mainMap.setView([lat, lng], Math.max(mainMap.getZoom(), 15), { animate: true });
+      const entry = markerMap[id];
+      if (entry) entry.marker.openPopup();
+    }
+  };
+
+  window.cardHovered = function (card) {
+    highlightMarker(card.dataset.id);
+  };
+
+  window.cardLeft = function (card) {
+    if (card.dataset.id !== activeId) clearMarkerHighlight();
+    if (activeId) highlightMarker(activeId);
+  };
+
+  // ── filter ─────────────────────────────────────────────────────
+  function applyFilters() {
+    let visible = 0;
+    allCards().forEach(card => {
+      const name    = card.dataset.name    || '';
+      const city    = card.dataset.city    || '';
+      const state   = card.dataset.state   || '';
+      const address = card.dataset.address || '';
+      const cat     = card.dataset.category;
+      const lat     = parseFloat(card.dataset.lat);
+      const lng     = parseFloat(card.dataset.lng);
+      const id      = card.dataset.id;
+
+      const nameOk   = !nameFilter   || name.includes(nameFilter);
+      const catOk    = !catFilter    || cat === catFilter;
+      const boundsOk = !boundsFilter || (
+        !isNaN(lat) && !isNaN(lng) && boundsFilter.contains([lat, lng])
+      );
+      // City/state/zip text match when no geocoded bounds (typed but not geocoded yet)
+      const show = nameOk && catOk && boundsOk;
+
+      card.classList.toggle('hidden-card', !show);
+
+      const entry = markerMap[id];
+      if (entry) {
+        if (show) {
+          if (!mainMap.hasLayer(entry.marker)) entry.marker.addTo(mainMap);
+        } else {
+          if (mainMap.hasLayer(entry.marker)) entry.marker.remove();
+        }
+      }
+      if (show) visible++;
+    });
+
+    document.getElementById('result-count').textContent =
+      `${visible} location${visible !== 1 ? 's' : ''}`;
+  }
+
+  // ── city/state/zip geocode ─────────────────────────────────────
+  let geoDebounce = null;
+  async function geocodeLocation(q) {
+    if (!q) {
+      boundsFilter = null;
+      applyFilters();
+      return;
+    }
+    document.getElementById('geo-spinner').classList.remove('hidden');
+    try {
+      const res  = await fetch(
+        `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(q)}&format=json&limit=1`,
+        { headers: { 'Accept-Language': 'en' } }
+      );
+      const data = await res.json();
+      if (data.length) {
+        const r    = data[0];
+        const bbox = r.boundingbox; // [S, N, W, E]
+        boundsFilter = L.latLngBounds(
+          [parseFloat(bbox[0]), parseFloat(bbox[2])],
+          [parseFloat(bbox[1]), parseFloat(bbox[3])]
+        );
+        mainMap.fitBounds(boundsFilter, { padding: [40, 40], maxZoom: 13 });
+        applyFilters();
+      }
+    } catch (e) {}
+    document.getElementById('geo-spinner').classList.add('hidden');
+  }
+
+  // ── init map ───────────────────────────────────────────────────
+  function initMap() {
+    mainMap = L.map('main-map').setView([39.5, -98.35], 4);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
+      maxZoom: 19,
+    }).addTo(mainMap);
+
+    // Try to center on user
+    if (navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(
+        pos => {
+          mainMap.setView([pos.coords.latitude, pos.coords.longitude], 12);
+          const icon = L.divIcon({
+            className: '', html: '<div class="user-dot"></div>',
+            iconSize: [14, 14], iconAnchor: [7, 7],
           });
+          L.marker([pos.coords.latitude, pos.coords.longitude], { icon, interactive: false })
+            .addTo(mainMap)
+            .bindTooltip('You are here', { direction: 'top' });
         },
-        onEachFeature(feature, layer) {
-          const p = feature.properties;
-          const stars = p.rating ? `★ ${p.rating}` : 'No rating';
-          layer.bindPopup(`
-            <div style="min-width:160px">
-              <p style="font-weight:600;margin:0 0 2px">${p.name}</p>
-              <p style="font-size:12px;color:#64748b;margin:0 0 6px">${p.category_display}${p.address ? ' · ' + p.address : ''}</p>
-              <p style="font-size:12px;color:#f59e0b;margin:0 0 6px">${stars}</p>
-              <a href="${p.url}" style="font-size:12px;color:#6366f1">View details →</a>
+        () => {
+          const el = document.getElementById('geo-error');
+          if (el) {
+            el.textContent = 'Location access denied — showing default view.';
+            el.classList.remove('hidden');
+            setTimeout(() => el.classList.add('hidden'), 4000);
+          }
+        },
+        { timeout: 8000 }
+      );
+    }
+
+    // Load markers
+    fetch('/locations/geojson/')
+      .then(r => r.json())
+      .then(data => {
+        data.features.forEach(feature => {
+          const [lng, lat] = feature.geometry.coordinates;
+          const p          = feature.properties;
+          const color      = CAT_COLORS[p.category] || '#64748b';
+
+          const marker = L.circleMarker([lat, lng], {
+            radius: 8, fillColor: color,
+            color: '#fff', weight: 2, fillOpacity: 0.9,
+          });
+
+          const tooltip = marker.bindTooltip(p.name, {
+            permanent: true, direction: 'top',
+            offset: [0, -10], className: 'loc-name-tag',
+          }).getTooltip();
+
+          const stars    = p.rating ? `★ ${p.rating}` : 'No rating';
+          const place    = p.city_state || p.address || '';
+          marker.bindPopup(`
+            <div style="min-width:190px;font-family:inherit">
+              <p style="font-weight:700;font-size:14px;margin:0 0 3px">${p.name}</p>
+              <p style="font-size:11px;color:#64748b;margin:0 0 3px">${p.category_display}</p>
+              ${place ? `<p style="font-size:12px;color:#475569;margin:0 0 3px">📍 ${place}</p>` : ''}
+              <p style="font-size:12px;color:#f59e0b;margin:0 0 8px">${stars}</p>
+              <a href="${p.url}" style="font-size:12px;color:#6366f1;font-weight:600">View details →</a>
             </div>
           `);
-        }
-      }).addTo(listMap);
-      listMap.fitBounds(layer.getBounds(), { padding: [40, 40] });
+
+          marker.on('click', () => {
+            activeId = String(p.id);
+            highlightCard(p.id, true);
+            highlightMarker(p.id);
+          });
+
+          marker.addTo(mainMap);
+          markerMap[p.id] = { marker, tooltip };
+        });
+
+        applyFilters();
+      });
+  }
+
+  // ── mobile toggle ──────────────────────────────────────────────
+  let mobileMapVisible = false;
+  window.toggleMobileView = function (btn) {
+    mobileMapVisible = !mobileMapVisible;
+    document.getElementById('side-list').style.display = mobileMapVisible ? 'none' : '';
+    document.getElementById('map-panel').style.display  = mobileMapVisible ? '' : 'none';
+    btn.textContent = mobileMapVisible ? 'Show List' : 'Show Map';
+    if (mobileMapVisible && mainMap) mainMap.invalidateSize();
+  };
+
+  // ── boot ───────────────────────────────────────────────────────
+  document.addEventListener('DOMContentLoaded', () => {
+    initMap();
+
+    document.getElementById('name-search').addEventListener('input', e => {
+      nameFilter = e.target.value.trim().toLowerCase();
+      applyFilters();
     });
-}
+
+    const locInput = document.getElementById('location-search');
+    locInput.addEventListener('input', () => {
+      clearTimeout(geoDebounce);
+      geoDebounce = setTimeout(() => geocodeLocation(locInput.value.trim()), 700);
+    });
+    locInput.addEventListener('keydown', e => {
+      if (e.key === 'Enter') {
+        clearTimeout(geoDebounce);
+        geocodeLocation(locInput.value.trim());
+      }
+    });
+    locInput.addEventListener('search', () => {
+      if (!locInput.value) { boundsFilter = null; applyFilters(); }
+    });
+
+    document.getElementById('category-filter').addEventListener('change', e => {
+      catFilter = e.target.value;
+      applyFilters();
+    });
+  });
+})();
 </script>
 {% endblock %}
