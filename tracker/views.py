@@ -1,3 +1,6 @@
+import json
+import urllib.request
+
 from django.contrib import messages
 from django.contrib.auth import authenticate, login, logout
 from django.contrib.auth.decorators import login_required, user_passes_test
@@ -348,6 +351,35 @@ def photo_delete(request, pk, photo_pk):
         photo.image.delete(save=False)
     photo.delete()
     return _render_photos_section(request, location)
+
+
+# ── Server-side IP geolocation (fallback when browser denies location) ────────
+
+_PRIVATE_PREFIXES = ("10.", "172.16.", "172.17.", "172.18.", "172.19.",
+                     "172.20.", "172.21.", "172.22.", "172.23.", "172.24.",
+                     "172.25.", "172.26.", "172.27.", "172.28.", "172.29.",
+                     "172.30.", "172.31.", "192.168.")
+
+def geoip_view(request):
+    ip = _get_ip(request)
+    is_private = ip in ("127.0.0.1", "::1") or any(ip.startswith(p) for p in _PRIVATE_PREFIXES)
+    if is_private:
+        return JsonResponse({"status": "private"})
+    try:
+        url = f"http://ip-api.com/json/{ip}?fields=status,lat,lon,city,regionName"
+        with urllib.request.urlopen(url, timeout=5) as resp:
+            data = json.loads(resp.read())
+        if data.get("status") == "success":
+            return JsonResponse({
+                "status": "ok",
+                "lat": data["lat"],
+                "lng": data["lon"],
+                "city": data.get("city", ""),
+                "region": data.get("regionName", ""),
+            })
+    except Exception:
+        pass
+    return JsonResponse({"status": "error"})
 
 
 # ── Admin audit log ───────────────────────────────────────────────────────────

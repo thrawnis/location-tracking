@@ -26,4 +26,7 @@ urlpatterns = [
 
     # Admin audit log
     path("admin-log/", views.audit_log_view, name="audit_log"),
+
+    # Server-side IP geolocation fallback
+    path("api/geoip/", views.geoip_view, name="geoip"),
 ]
