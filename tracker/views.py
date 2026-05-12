@@ -120,7 +120,7 @@ def location_create(request):
                 location.name, location.get_category_display()
             ),
         )
-        messages.success(request, "Location added.")
+        messages.success(request, "Waypoint added.")
         return redirect("location_detail", pk=location.pk)
     return render(request, "tracker/location_form.html", {"form": form, "action": "Add"})
 
@@ -134,7 +134,7 @@ def location_edit(request, pk):
             diff = _location_diff(location, form.cleaned_data)
             form.save()
             _log(request, AuditLog.ACTION_UPDATE, location, diff)
-            messages.success(request, "Location updated.")
+            messages.success(request, "Waypoint updated.")
             return redirect("location_detail", pk=location.pk)
     else:
         form = LocationForm(instance=location)
@@ -156,7 +156,7 @@ def location_delete(request, pk):
             'Deleted location "{}"'.format(location.name),
         )
         location.delete()
-        messages.success(request, "Location deleted.")
+        messages.success(request, "Waypoint deleted.")
         return redirect("location_list")
     return render(request, "tracker/location_confirm_delete.html", {"location": location})
 

@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}{{ action }} Location – Waypoint{% endblock %}
+{% block title %}{{ action }} Waypoint – Waypoint{% endblock %}
 
 {% block extra_head %}
 <style>
@@ -21,7 +21,7 @@
 <div class="max-w-3xl mx-auto">
   <!-- Breadcrumb -->
   <nav class="text-sm text-slate-400 mb-5">
-    <a href="/" class="hover:text-brand">Locations</a>
+    <a href="/" class="hover:text-brand">Waypoints</a>
     {% if location %}
     <span class="mx-1.5">/</span>
     <a href="{% url 'location_detail' location.pk %}" class="hover:text-brand">{{ location.name }}</a>
@@ -32,7 +32,7 @@
 
   <div class="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
     <div class="px-6 py-5 border-b border-slate-100">
-      <h1 class="text-xl font-bold text-slate-900">{{ action }} Location</h1>
+      <h1 class="text-xl font-bold text-slate-900">{{ action }} Waypoint</h1>
       <p class="text-sm text-slate-500 mt-1">All fields except Name are optional.</p>
     </div>
 
@@ -149,7 +149,7 @@
       <div class="flex items-center gap-3 pt-2">
         <button type="submit"
                 class="bg-brand hover:bg-brand-dark text-white font-semibold px-6 py-2.5 rounded-lg transition-colors">
-          {% if action == "Add" %}Add Location{% else %}Save Changes{% endif %}
+          {% if action == "Add" %}Add Waypoint{% else %}Save Changes{% endif %}
         </button>
         <a href="{% if location %}{% url 'location_detail' location.pk %}{% else %}/{% endif %}"
            class="text-sm text-slate-500 hover:text-slate-700 px-3 py-2">
