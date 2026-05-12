@@ -15,9 +15,9 @@ services:
       retries: 5
 
   app:
-    image: location-tracker:latest
+    image: waypoint:latest
     build: .
-    container_name: location-tracker
+    container_name: waypoint
     ports:
       - "3007:8000"
     environment:
