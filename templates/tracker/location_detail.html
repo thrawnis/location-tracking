@@ -14,10 +14,11 @@
 
   <!-- Header card -->
   <div class="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-    {% if location.photos.all %}
-    <div class="relative h-64 sm:h-80">
-      <img src="{{ location.photos.first.image.url }}" alt="{{ location.name }}"
-           class="w-full h-full object-cover">
+    {% with hero=location.photos.all|first %}
+    {% if hero %}
+    <div class="relative h-48 sm:h-72">
+      <img src="{{ hero.image.url }}" alt="{{ location.name }}"
+           class="w-full h-full object-cover" loading="lazy">
       <div class="absolute inset-0 bg-gradient-to-t from-black/50 via-transparent to-transparent"></div>
       <div class="absolute bottom-0 inset-x-0 p-6">
         <span class="inline-flex items-center gap-1 text-xs font-semibold px-2.5 py-1 rounded-full mb-2
@@ -33,7 +34,8 @@
         {% endif %}
       </div>
     </div>
-    {% else %}
+    {% endwith %}
+    {% if not location.photos.all %}
     <div class="px-6 pt-6 pb-4
                 {% if cat == 'restaurant' %}bg-gradient-to-br from-indigo-50 to-white
                 {% elif cat == 'store' %}bg-gradient-to-br from-emerald-50 to-white
@@ -67,11 +69,11 @@
         </div>
         <span class="text-slate-300">·</span>
         <span class="text-sm text-slate-500">
-          {{ location.visits.count }} visit{{ location.visits.count|pluralize }}
+          {% with vc=location.visits.all|length %}{{ vc }} visit{{ vc|pluralize }}{% endwith %}
         </span>
         <span class="text-slate-300">·</span>
         <span class="text-sm text-slate-500">
-          {{ location.items.count }} item{{ location.items.count|pluralize }}
+          {% with ic=location.items.all|length %}{{ ic }} item{{ ic|pluralize }}{% endwith %}
         </span>
       </div>
       {% if user.is_authenticated %}

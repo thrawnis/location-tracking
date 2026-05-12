@@ -4,6 +4,7 @@ import urllib.request
 from django.contrib import messages
 from django.contrib.auth import authenticate, login, logout
 from django.contrib.auth.decorators import login_required, user_passes_test
+from django.core.cache import cache
 from django.contrib.auth.forms import AuthenticationForm
 from django.db.models import Q
 from django.http import JsonResponse
@@ -87,16 +88,25 @@ def register_view(request):
 
 # ── Locations ─────────────────────────────────────────────────────────────────
 
+@login_required
 def location_list(request):
-    locations = Location.objects.all()
+    locations = (
+        Location.objects
+        .prefetch_related("photos", "visits", "items")
+        .all()
+    )
     return render(request, "tracker/location_list.html", {
         "locations": locations,
         "category_choices": Location.CATEGORY_CHOICES,
     })
 
 
+@login_required
 def location_detail(request, pk):
-    location = get_object_or_404(Location, pk=pk)
+    location = get_object_or_404(
+        Location.objects.prefetch_related("photos", "visits__user", "items"),
+        pk=pk,
+    )
     return render(request, "tracker/location_detail.html", {
         "location": location,
         "visit_form": VisitForm(),
@@ -161,6 +171,7 @@ def location_delete(request, pk):
     return render(request, "tracker/location_confirm_delete.html", {"location": location})
 
 
+@login_required
 def locations_geojson(request):
     qs = Location.objects.exclude(latitude=None).exclude(longitude=None)
     features = []
@@ -360,7 +371,13 @@ _PRIVATE_PREFIXES = ("10.", "172.16.", "172.17.", "172.18.", "172.19.",
                      "172.25.", "172.26.", "172.27.", "172.28.", "172.29.",
                      "172.30.", "172.31.", "192.168.")
 
+@login_required
 def geoip_view(request):
+    # Rate-limit: one successful lookup per user per 60 seconds
+    rate_key = f"geoip_rl_{request.user.pk}"
+    if cache.get(rate_key):
+        return JsonResponse({"status": "rate_limited"}, status=429)
+
     ip = _get_ip(request)
     is_private = ip in ("127.0.0.1", "::1") or any(ip.startswith(p) for p in _PRIVATE_PREFIXES)
     if is_private:
@@ -370,6 +387,7 @@ def geoip_view(request):
         with urllib.request.urlopen(url, timeout=5) as resp:
             data = json.loads(resp.read())
         if data.get("status") == "success":
+            cache.set(rate_key, True, 60)
             return JsonResponse({
                 "status": "ok",
                 "lat": data["lat"],

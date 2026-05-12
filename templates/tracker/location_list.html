@@ -4,10 +4,11 @@
 
 {% block extra_head %}
 <style>
-  .search-layout { height: calc(100vh - 130px); min-height: 560px; }
+  /* ── Desktop layout ─────────────────────────────────────────── */
+  .search-layout { height: calc(100vh - 130px); min-height: 540px; }
   #main-map      { height: 100%; border-radius: 0.75rem; }
 
-  /* Result cards */
+  /* ── Cards ──────────────────────────────────────────────────── */
   .loc-card {
     display: flex; gap: 10px;
     padding: 12px; border-radius: 10px;
@@ -15,34 +16,27 @@
     background: white; cursor: pointer;
     transition: border-color 150ms, box-shadow 150ms;
     text-decoration: none; color: inherit;
+    min-height: 44px; /* touch target */
   }
-  .loc-card:hover { border-color: #a5b4fc; box-shadow: 0 2px 8px rgba(99,102,241,.12); }
+  .loc-card:hover  { border-color: #a5b4fc; box-shadow: 0 2px 8px rgba(99,102,241,.12); }
   .loc-card.active { border-color: #6366f1; background: #eef2ff; box-shadow: 0 2px 10px rgba(99,102,241,.18); }
   .loc-card.hidden-card { display: none; }
 
-  /* Map name labels */
+  /* ── Map name labels ─────────────────────────────────────────── */
   .loc-name-tag {
-    background: white !important;
-    border: 1.5px solid #6366f1 !important;
-    border-radius: 5px !important;
-    color: #1e293b !important;
-    font-size: 11px !important;
-    font-weight: 600 !important;
-    padding: 2px 6px !important;
-    white-space: nowrap !important;
-    cursor: pointer !important;
-    box-shadow: 0 1px 4px rgba(0,0,0,.12) !important;
+    background: white !important; border: 1.5px solid #6366f1 !important;
+    border-radius: 5px !important; color: #1e293b !important;
+    font-size: 11px !important; font-weight: 600 !important;
+    padding: 2px 6px !important; white-space: nowrap !important;
+    cursor: pointer !important; box-shadow: 0 1px 4px rgba(0,0,0,.12) !important;
   }
   .loc-name-tag::before { display: none !important; }
-  .loc-name-tag.active-tag {
-    background: #6366f1 !important;
-    color: white !important;
-  }
+  .loc-name-tag.active-tag { background: #6366f1 !important; color: white !important; }
 
-  /* User dot */
+  /* ── User location dot ───────────────────────────────────────── */
   .user-dot {
-    width: 14px; height: 14px;
-    background: #3b82f6; border: 3px solid white; border-radius: 50%;
+    width: 14px; height: 14px; background: #3b82f6;
+    border: 3px solid white; border-radius: 50%;
     box-shadow: 0 0 0 5px rgba(59,130,246,.25);
     animation: gpulse 2s ease-in-out infinite;
   }
@@ -51,44 +45,96 @@
     50%      { box-shadow: 0 0 0 9px rgba(59,130,246,.08); }
   }
 
-  /* Mobile toggle */
-  @media (min-width: 768px) { #mobile-toggle { display: none; } }
+  /* ── Mobile: full-screen map + bottom sheet ──────────────────── */
   @media (max-width: 767px) {
-    .search-layout { height: auto; }
-    #side-list { max-height: 50vh; overflow-y: auto; }
-    #map-panel  { height: 55vh; }
+    /* Remove main padding so map goes edge-to-edge */
+    main { padding: 0 !important; max-width: none !important; }
+
+    #outer-layout {
+      position: fixed;
+      top: 56px; left: 0; right: 0; bottom: 0;
+      display: flex; flex-direction: column;
+      overflow: hidden; background: #f8fafc;
+    }
+
+    #search-bar {
+      flex-shrink: 0;
+      padding: 8px 10px; gap: 6px;
+      background: white;
+      border-bottom: 1px solid #e2e8f0;
+      display: flex; flex-wrap: wrap; align-items: center;
+    }
+    #search-bar > * { flex: 1 1 140px; }
+    #search-bar .shrink-0 { flex: 0 0 auto; }
+
+    #content-area {
+      flex: 1 1 auto; min-height: 0;
+      position: relative; display: block !important;
+      height: auto !important; gap: 0 !important;
+    }
+
+    /* Map fills content area completely */
+    #map-panel {
+      position: absolute !important; inset: 0 !important;
+      width: auto !important; height: auto !important;
+    }
+    #main-map { border-radius: 0 !important; height: 100% !important; }
+
+    /* Bottom sheet */
+    #side-list {
+      position: absolute !important;
+      bottom: 0; left: 0; right: 0;
+      width: auto !important; max-height: 78vh;
+      border-radius: 20px 20px 0 0;
+      background: white;
+      box-shadow: 0 -4px 24px rgba(0,0,0,0.13);
+      overflow-y: auto;
+      transform: translateY(calc(100% - 62px));
+      transition: transform 0.3s cubic-bezier(0.32,0.72,0,1);
+      z-index: 100;
+      padding-right: 0 !important;
+    }
+    #side-list.sheet-open { transform: translateY(0); }
+
+    /* Result count shown only in handle on mobile */
+    #result-count { display: none !important; }
+
+    /* Larger touch targets on mobile */
+    .loc-card { padding: 14px; }
+    #category-filter, #mobile-toggle { display: none !important; }
   }
 </style>
 {% endblock %}
 
 {% block content %}
-<div class="space-y-3">
+<div id="outer-layout" class="md:space-y-3">
 
-  <!-- ── Search bar ─────────────────────────────────────────────── -->
-  <div class="flex flex-wrap gap-2 items-center">
+  <!-- ── Search bar ────────────────────────────────────────────── -->
+  <div id="search-bar" class="flex flex-wrap gap-2 items-center">
 
-    <!-- Name search -->
-    <div class="relative flex-1 min-w-[160px]">
+    <div class="relative flex-1 min-w-[150px]">
       <svg class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none"
            fill="none" stroke="currentColor" viewBox="0 0 24 24">
         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
               d="M21 21l-4.35-4.35M17 11A6 6 0 105 11a6 6 0 0012 0z"/>
       </svg>
       <input type="search" id="name-search" placeholder="Restaurant, store, attraction…"
-             class="w-full pl-9 pr-4 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand/30 focus:border-brand bg-white">
+             class="w-full pl-9 pr-4 py-2 text-sm border border-slate-200 rounded-lg
+                    focus:outline-none focus:ring-2 focus:ring-brand/30 focus:border-brand bg-white">
     </div>
 
-    <!-- City / state / zip -->
-    <div class="relative flex-1 min-w-[160px]">
+    <div class="relative flex-1 min-w-[150px]">
       <svg class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none"
            fill="none" stroke="currentColor" viewBox="0 0 24 24">
         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
               d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"/>
-        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"/>
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+              d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"/>
       </svg>
       <input type="search" id="location-search" placeholder="City, state, or zip…"
-             class="w-full pl-9 pr-9 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand/30 focus:border-brand bg-white">
-      <span id="geo-spinner" class="hidden absolute right-3 top-1/2 -translate-y-1/2">
+             class="w-full pl-9 pr-9 py-2 text-sm border border-slate-200 rounded-lg
+                    focus:outline-none focus:ring-2 focus:ring-brand/30 focus:border-brand bg-white">
+      <span id="geo-spinner" class="hidden absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none">
         <svg class="w-4 h-4 text-brand animate-spin" fill="none" viewBox="0 0 24 24">
           <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
           <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/>
@@ -96,40 +142,41 @@
       </span>
     </div>
 
-    <!-- Category -->
     <select id="category-filter"
-            class="text-sm border border-slate-200 rounded-lg px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-brand/30 focus:border-brand shrink-0">
+            class="text-sm border border-slate-200 rounded-lg px-3 py-2 bg-white
+                   focus:outline-none focus:ring-2 focus:ring-brand/30 focus:border-brand shrink-0">
       <option value="">All categories</option>
       {% for val, label in category_choices %}
       <option value="{{ val }}">{{ label }}</option>
       {% endfor %}
     </select>
 
-    <!-- Mobile: map/list toggle -->
-    <button id="mobile-toggle"
-            class="md:hidden text-sm border border-slate-200 rounded-lg px-3 py-2 bg-white shrink-0"
-            onclick="toggleMobileView(this)">
-      Show Map
-    </button>
-
     {% if user.is_authenticated %}
     <a href="{% url 'location_create' %}"
-       class="bg-brand text-white text-sm font-medium px-3 py-2 rounded-lg hover:bg-brand-dark transition-colors shrink-0">
+       class="bg-brand text-white text-sm font-medium px-3 py-2 rounded-lg
+              hover:bg-brand-dark transition-colors shrink-0 min-h-[36px] flex items-center">
       + Add Waypoint
     </a>
     {% endif %}
   </div>
 
-  <!-- ── Side-by-side: list + map ───────────────────────────────── -->
-  <div class="flex gap-3 search-layout">
+  <!-- ── Content: list (left/bottom) + map (right/full) ────────── -->
+  <div id="content-area" class="flex gap-3 search-layout">
 
-    <!-- Left: scrollable result list -->
+    <!-- Result list / bottom sheet ───────────────────────────── -->
     <div id="side-list"
          class="w-80 xl:w-96 shrink-0 flex flex-col overflow-y-auto pr-1 space-y-2">
 
-      <p id="result-count" class="text-xs text-slate-500 px-1 pb-1 shrink-0">
-        Loading…
-      </p>
+      <!-- Mobile-only sheet handle -->
+      <div id="sheet-handle"
+           class="md:hidden sticky top-0 bg-white z-10 flex flex-col items-center
+                  pt-2 pb-3 cursor-pointer select-none border-b border-slate-100"
+           style="border-radius:20px 20px 0 0">
+        <div class="w-9 h-1 rounded-full bg-slate-300 mb-2"></div>
+        <p id="handle-count" class="text-sm font-semibold text-slate-600">Loading…</p>
+      </div>
+
+      <p id="result-count" class="text-xs text-slate-500 px-1 pb-1 shrink-0">Loading…</p>
 
       {% for loc in locations %}
       <div class="loc-card"
@@ -145,12 +192,11 @@
            onmouseenter="cardHovered(this)"
            onmouseleave="cardLeft(this)">
 
-        <!-- Thumbnail / icon -->
-        {% with first_photo=loc.photos.first cat=loc.category %}
+        {% with first_photo=loc.photos.all|first cat=loc.category %}
         {% if first_photo %}
         <div class="w-16 h-16 shrink-0 rounded-lg overflow-hidden">
           <img src="{{ first_photo.image.url }}" alt="{{ loc.name }}"
-               class="w-full h-full object-cover">
+               class="w-full h-full object-cover" loading="lazy">
         </div>
         {% else %}
         <div class="w-16 h-16 shrink-0 rounded-lg flex items-center justify-center text-2xl
@@ -163,7 +209,6 @@
         {% endif %}
         {% endwith %}
 
-        <!-- Info -->
         <div class="min-w-0 flex-1">
           <div class="flex items-start gap-1 justify-between">
             <p class="font-semibold text-slate-900 text-sm leading-tight truncate">{{ loc.name }}</p>
@@ -187,19 +232,19 @@
           <div class="flex items-center gap-2 mt-1">
             {% stars_display loc.overall_rating "sm" %}
             <span class="text-[10px] text-slate-400">
-              {{ loc.visits.count }} visit{{ loc.visits.count|pluralize }}
+              {% with vc=loc.visits.all|length %}{{ vc }} visit{{ vc|pluralize }}{% endwith %}
             </span>
           </div>
           <a href="{% url 'location_detail' loc.pk %}"
              onclick="event.stopPropagation()"
-             class="text-[11px] text-brand hover:underline mt-1 inline-block">
+             class="text-[11px] text-brand hover:underline mt-1 inline-block py-0.5 min-h-[28px]">
             View details →
           </a>
         </div>
       </div>
       {% empty %}
-      <div class="text-center py-16 text-slate-400">
-        <p class="text-sm font-medium">No waypoints yet.</p>
+      <div class="text-center py-16 text-slate-400 px-4">
+        <p class="text-sm font-medium text-slate-500">No waypoints yet.</p>
         {% if user.is_authenticated %}
         <a href="{% url 'location_create' %}" class="text-brand hover:underline text-sm">Add the first one</a>
         {% endif %}
@@ -207,37 +252,34 @@
       {% endfor %}
     </div>
 
-    <!-- Right: map -->
+    <!-- Map ──────────────────────────────────────────────────── -->
     <div id="map-panel" class="flex-1 min-w-0 relative">
       <div id="main-map"></div>
-      <p id="geo-error" class="hidden absolute bottom-3 left-1/2 -translate-x-1/2
-                                bg-white/90 text-slate-500 text-xs px-3 py-1.5 rounded-full shadow z-[1000]"></p>
+      <p id="geo-error"
+         class="hidden absolute bottom-3 left-1/2 -translate-x-1/2 bg-white/90
+                text-slate-500 text-xs px-3 py-1.5 rounded-full shadow z-[1000]"></p>
     </div>
-  </div>
 
+  </div>
 </div>
 {% endblock %}
 
 {% block extra_js %}
 <script>
 (function () {
-  // ── constants ──────────────────────────────────────────────────
   const CAT_COLORS = {
-    restaurant: '#6366f1',
-    store:      '#10b981',
-    attraction: '#8b5cf6',
-    other:      '#64748b',
+    restaurant: '#6366f1', store: '#10b981',
+    attraction: '#8b5cf6', other: '#64748b',
   };
 
-  // ── state ──────────────────────────────────────────────────────
-  let mainMap       = null;
-  let markerMap     = {};   // id → {marker, tooltip}
-  let activeId      = null;
-  let nameFilter    = '';
-  let boundsFilter  = null;
-  let catFilter     = '';
+  let mainMap     = null;
+  let markerMap   = {};   // id → {marker, tooltip}
+  let activeId    = null;
+  let nameFilter  = '';
+  let boundsFilter = null;
+  let catFilter   = '';
 
-  // ── card helpers ───────────────────────────────────────────────
+  // ── Card helpers ────────────────────────────────────────────
   const allCards = () => [...document.querySelectorAll('.loc-card')];
 
   function highlightCard(id, scroll) {
@@ -248,23 +290,17 @@
     }
   }
 
-  function clearCardHighlight() {
-    allCards().forEach(c => c.classList.remove('active'));
-  }
-
-  // ── marker helpers ─────────────────────────────────────────────
   function highlightMarker(id) {
     Object.entries(markerMap).forEach(([mid, { marker, tooltip }]) => {
-      const isActive = String(mid) === String(id);
-      marker.setStyle({ radius: isActive ? 11 : 8 });
-      if (tooltip) {
-        const el = tooltip.getElement();
-        if (el) el.classList.toggle('active-tag', isActive);
-      }
+      const on = String(mid) === String(id);
+      marker.setStyle({ radius: on ? 11 : 8 });
+      const el = tooltip && tooltip.getElement();
+      if (el) el.classList.toggle('active-tag', on);
     });
   }
 
-  function clearMarkerHighlight() {
+  function clearHighlights() {
+    allCards().forEach(c => c.classList.remove('active'));
     Object.values(markerMap).forEach(({ marker, tooltip }) => {
       marker.setStyle({ radius: 8 });
       const el = tooltip && tooltip.getElement();
@@ -272,78 +308,60 @@
     });
   }
 
-  // ── card events ────────────────────────────────────────────────
+  // ── Card events ─────────────────────────────────────────────
   window.cardClicked = function (card) {
-    const id  = card.dataset.id;
-    const lat = parseFloat(card.dataset.lat);
-    const lng = parseFloat(card.dataset.lng);
-
+    const id = card.dataset.id;
     activeId = id;
     highlightCard(id, false);
     highlightMarker(id);
-
+    const lat = parseFloat(card.dataset.lat);
+    const lng = parseFloat(card.dataset.lng);
     if (!isNaN(lat) && !isNaN(lng)) {
       mainMap.setView([lat, lng], Math.max(mainMap.getZoom(), 15), { animate: true });
-      const entry = markerMap[id];
-      if (entry) entry.marker.openPopup();
+      markerMap[id]?.marker.openPopup();
     }
   };
 
-  window.cardHovered = function (card) {
-    highlightMarker(card.dataset.id);
+  window.cardHovered = function (card) { highlightMarker(card.dataset.id); };
+  window.cardLeft    = function (card) {
+    if (card.dataset.id !== activeId) { clearHighlights(); if (activeId) highlightMarker(activeId); }
   };
 
-  window.cardLeft = function (card) {
-    if (card.dataset.id !== activeId) clearMarkerHighlight();
-    if (activeId) highlightMarker(activeId);
-  };
+  // ── Filtering ────────────────────────────────────────────────
+  function updateCount(visible) {
+    const label = `${visible} waypoint${visible !== 1 ? 's' : ''}`;
+    const rc = document.getElementById('result-count');
+    const hc = document.getElementById('handle-count');
+    if (rc) rc.textContent = label;
+    if (hc) hc.textContent = label;
+  }
 
-  // ── filter ─────────────────────────────────────────────────────
   function applyFilters() {
     let visible = 0;
     allCards().forEach(card => {
-      const name    = card.dataset.name    || '';
-      const city    = card.dataset.city    || '';
-      const state   = card.dataset.state   || '';
-      const address = card.dataset.address || '';
-      const cat     = card.dataset.category;
-      const lat     = parseFloat(card.dataset.lat);
-      const lng     = parseFloat(card.dataset.lng);
-      const id      = card.dataset.id;
+      const p   = card.dataset;
+      const lat = parseFloat(p.lat), lng = parseFloat(p.lng);
 
-      const nameOk   = !nameFilter   || name.includes(nameFilter);
-      const catOk    = !catFilter    || cat === catFilter;
-      const boundsOk = !boundsFilter || (
-        !isNaN(lat) && !isNaN(lng) && boundsFilter.contains([lat, lng])
-      );
-      // City/state/zip text match when no geocoded bounds (typed but not geocoded yet)
+      const nameOk   = !nameFilter   || p.name.includes(nameFilter);
+      const catOk    = !catFilter    || p.category === catFilter;
+      const boundsOk = !boundsFilter || (!isNaN(lat) && !isNaN(lng) && boundsFilter.contains([lat, lng]));
       const show = nameOk && catOk && boundsOk;
 
       card.classList.toggle('hidden-card', !show);
-
-      const entry = markerMap[id];
+      const entry = markerMap[p.id];
       if (entry) {
-        if (show) {
-          if (!mainMap.hasLayer(entry.marker)) entry.marker.addTo(mainMap);
-        } else {
-          if (mainMap.hasLayer(entry.marker)) entry.marker.remove();
-        }
+        if (show && !mainMap.hasLayer(entry.marker)) entry.marker.addTo(mainMap);
+        if (!show && mainMap.hasLayer(entry.marker))  entry.marker.remove();
       }
       if (show) visible++;
     });
-
-    document.getElementById('result-count').textContent =
-      `${visible} location${visible !== 1 ? 's' : ''}`;
+    updateCount(visible);
   }
 
-  // ── city/state/zip geocode ─────────────────────────────────────
+  // ── City/state/zip geocoding ─────────────────────────────────
   let geoDebounce = null;
   async function geocodeLocation(q) {
-    if (!q) {
-      boundsFilter = null;
-      applyFilters();
-      return;
-    }
+    if (!q) { boundsFilter = null; applyFilters(); return; }
     document.getElementById('geo-spinner').classList.remove('hidden');
     try {
       const res  = await fetch(
@@ -352,20 +370,64 @@
       );
       const data = await res.json();
       if (data.length) {
-        const r    = data[0];
-        const bbox = r.boundingbox; // [S, N, W, E]
+        const bb = data[0].boundingbox; // [S, N, W, E]
         boundsFilter = L.latLngBounds(
-          [parseFloat(bbox[0]), parseFloat(bbox[2])],
-          [parseFloat(bbox[1]), parseFloat(bbox[3])]
+          [parseFloat(bb[0]), parseFloat(bb[2])],
+          [parseFloat(bb[1]), parseFloat(bb[3])]
         );
         mainMap.fitBounds(boundsFilter, { padding: [40, 40], maxZoom: 13 });
         applyFilters();
       }
-    } catch (e) {}
+    } catch (_) {}
     document.getElementById('geo-spinner').classList.add('hidden');
   }
 
-  // ── init map ───────────────────────────────────────────────────
+  // ── Mobile bottom sheet ──────────────────────────────────────
+  function initBottomSheet() {
+    const handle = document.getElementById('sheet-handle');
+    const sheet  = document.getElementById('side-list');
+    if (!handle) return;
+    handle.addEventListener('click', () => sheet.classList.toggle('sheet-open'));
+  }
+
+  function openSheetOnMobile() {
+    if (window.innerWidth < 768) {
+      document.getElementById('side-list').classList.add('sheet-open');
+    }
+  }
+
+  // ── User location ────────────────────────────────────────────
+  function placeUserDot(lat, lng, label, zoom) {
+    mainMap.setView([lat, lng], zoom);
+    const icon = L.divIcon({
+      className: '', html: '<div class="user-dot"></div>',
+      iconSize: [14, 14], iconAnchor: [7, 7],
+    });
+    L.marker([lat, lng], { icon, interactive: false })
+      .addTo(mainMap)
+      .bindTooltip(label, { direction: 'top' });
+  }
+
+  async function ipFallback() {
+    try {
+      const res  = await fetch('/api/geoip/');
+      const data = await res.json();
+      if (data.status === 'ok') {
+        placeUserDot(data.lat, data.lng, `Approx. location: ${data.city}, ${data.region}`, 10);
+      }
+    } catch (_) {}
+  }
+
+  function locateUser() {
+    if (!navigator.geolocation) { ipFallback(); return; }
+    navigator.geolocation.getCurrentPosition(
+      pos => placeUserDot(pos.coords.latitude, pos.coords.longitude, 'You are here', 12),
+      ()  => ipFallback(),
+      { timeout: 8000 }
+    );
+  }
+
+  // ── Map initialisation ───────────────────────────────────────
   function initMap() {
     mainMap = L.map('main-map').setView([39.5, -98.35], 4);
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
@@ -373,63 +435,27 @@
       maxZoom: 19,
     }).addTo(mainMap);
 
-    // Try browser geolocation, fall back to server-side IP lookup
-    tryLocateUser();
+    locateUser();
 
-    function placeUserDot(lat, lng, label, zoom) {
-      mainMap.setView([lat, lng], zoom);
-      const icon = L.divIcon({
-        className: '', html: '<div class="user-dot"></div>',
-        iconSize: [14, 14], iconAnchor: [7, 7],
-      });
-      L.marker([lat, lng], { icon, interactive: false })
-        .addTo(mainMap)
-        .bindTooltip(label, { direction: 'top' });
-    }
-
-    async function ipFallback() {
-      try {
-        const res  = await fetch('/api/geoip/');
-        const data = await res.json();
-        if (data.status === 'ok') {
-          // Zoom out a bit — IP location is city-level, not precise
-          placeUserDot(data.lat, data.lng, `Approx. location: ${data.city}, ${data.region}`, 10);
-          return;
-        }
-      } catch (e) {}
-      // Nothing worked — stay on default US view
-    }
-
-    function tryLocateUser() {
-      if (!navigator.geolocation) { ipFallback(); return; }
-      navigator.geolocation.getCurrentPosition(
-        pos => placeUserDot(pos.coords.latitude, pos.coords.longitude, 'You are here', 12),
-        ()  => ipFallback(),
-        { timeout: 8000 }
-      );
-    }
-
-    // Load markers
     fetch('/locations/geojson/')
       .then(r => r.json())
       .then(data => {
         data.features.forEach(feature => {
           const [lng, lat] = feature.geometry.coordinates;
-          const p          = feature.properties;
-          const color      = CAT_COLORS[p.category] || '#64748b';
+          const p = feature.properties;
+          const color = CAT_COLORS[p.category] || '#64748b';
 
           const marker = L.circleMarker([lat, lng], {
-            radius: 8, fillColor: color,
-            color: '#fff', weight: 2, fillOpacity: 0.9,
+            radius: 8, fillColor: color, color: '#fff', weight: 2, fillOpacity: 0.9,
           });
 
           const tooltip = marker.bindTooltip(p.name, {
-            permanent: true, direction: 'top',
-            offset: [0, -10], className: 'loc-name-tag',
+            permanent: true, direction: 'top', offset: [0, -10],
+            className: 'loc-name-tag',
           }).getTooltip();
 
-          const stars    = p.rating ? `★ ${p.rating}` : 'No rating';
-          const place    = p.city_state || p.address || '';
+          const stars = p.rating ? `★ ${p.rating}` : 'No rating';
+          const place = p.city_state || p.address || '';
           marker.bindPopup(`
             <div style="min-width:190px;font-family:inherit">
               <p style="font-weight:700;font-size:14px;margin:0 0 3px">${p.name}</p>
@@ -444,6 +470,7 @@
             activeId = String(p.id);
             highlightCard(p.id, true);
             highlightMarker(p.id);
+            openSheetOnMobile();
           });
 
           marker.addTo(mainMap);
@@ -454,19 +481,10 @@
       });
   }
 
-  // ── mobile toggle ──────────────────────────────────────────────
-  let mobileMapVisible = false;
-  window.toggleMobileView = function (btn) {
-    mobileMapVisible = !mobileMapVisible;
-    document.getElementById('side-list').style.display = mobileMapVisible ? 'none' : '';
-    document.getElementById('map-panel').style.display  = mobileMapVisible ? '' : 'none';
-    btn.textContent = mobileMapVisible ? 'Show List' : 'Show Map';
-    if (mobileMapVisible && mainMap) mainMap.invalidateSize();
-  };
-
-  // ── boot ───────────────────────────────────────────────────────
+  // ── Boot ─────────────────────────────────────────────────────
   document.addEventListener('DOMContentLoaded', () => {
     initMap();
+    initBottomSheet();
 
     document.getElementById('name-search').addEventListener('input', e => {
       nameFilter = e.target.value.trim().toLowerCase();
@@ -479,10 +497,7 @@
       geoDebounce = setTimeout(() => geocodeLocation(locInput.value.trim()), 700);
     });
     locInput.addEventListener('keydown', e => {
-      if (e.key === 'Enter') {
-        clearTimeout(geoDebounce);
-        geocodeLocation(locInput.value.trim());
-      }
+      if (e.key === 'Enter') { clearTimeout(geoDebounce); geocodeLocation(locInput.value.trim()); }
     });
     locInput.addEventListener('search', () => {
       if (!locInput.value) { boundsFilter = null; applyFilters(); }

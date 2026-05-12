@@ -1,14 +1,19 @@
 #!/usr/bin/env bash
 set -e
 
+# Fix ownership of bind-mounted data directories before dropping privileges.
+# This runs as root (container default) so it can chown host-mounted paths.
+mkdir -p /app/media /app/staticfiles
+chown -R appuser:appgroup /app/media /app/staticfiles
+
 echo "==> Running database migrations..."
-python manage.py migrate --noinput
+gosu appuser python manage.py migrate --noinput
 
 echo "==> Collecting static files..."
-python manage.py collectstatic --noinput
+gosu appuser python manage.py collectstatic --noinput
 
-echo "==> Starting Gunicorn..."
-exec gunicorn config.wsgi:application \
+echo "==> Starting Gunicorn (running as appuser)..."
+exec gosu appuser gunicorn config.wsgi:application \
     --bind 0.0.0.0:8000 \
     --workers 4 \
     --timeout 120 \
