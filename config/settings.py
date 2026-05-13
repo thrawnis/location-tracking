@@ -91,9 +91,11 @@ X_FRAME_OPTIONS = "DENY"
 SECURE_REFERRER_POLICY = "strict-origin-when-cross-origin"
 
 # ── Cookie hardening ───────────────────────────────────────────────────────────
-SESSION_COOKIE_HTTPONLY = True
+SESSION_COOKIE_HTTPONLY = True   # prevent JS from reading the session cookie
 SESSION_COOKIE_SAMESITE = "Lax"
-CSRF_COOKIE_HTTPONLY = True
+# CSRF_COOKIE_HTTPONLY is intentionally left False (Django default) so that
+# HTMX can read the csrftoken cookie to attach X-CSRFToken to AJAX requests.
+CSRF_COOKIE_SAMESITE = "Lax"
 CSRF_COOKIE_SAMESITE = "Lax"
 
 # ── HTTPS mode (set HTTPS_ENABLED=true in .env when behind a TLS proxy) ───────
