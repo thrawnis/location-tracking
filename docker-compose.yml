@@ -25,6 +25,8 @@ services:
       SECRET_KEY: ${SECRET_KEY:?SECRET_KEY is required}
       DEBUG: ${DEBUG:-False}
       ALLOWED_HOSTS: ${ALLOWED_HOSTS:-*}
+      CSRF_TRUSTED_ORIGINS: ${CSRF_TRUSTED_ORIGINS:-}
+      HTTPS_ENABLED: ${HTTPS_ENABLED:-False}
     depends_on:
       db:
         condition: service_healthy
