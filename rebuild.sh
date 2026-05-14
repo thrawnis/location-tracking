@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-BRANCH="claude/location-tracking-app-MrR1Z"
+BRANCH="claude/update-repo-name-95M0E"
 COMPOSE_FILE="$(cd "$(dirname "$0")" && pwd)/docker-compose.yml"
 
 echo "==> Switching to branch: $BRANCH"
