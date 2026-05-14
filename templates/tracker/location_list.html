@@ -32,6 +32,7 @@
   }
   .loc-name-tag::before { display: none !important; }
   .loc-name-tag.active-tag { background: #6366f1 !important; color: white !important; }
+  .loc-name-tag.osm-tag { border-color: #f59e0b !important; color: #78350f !important; }
 
   /* ── User location dot ───────────────────────────────────────── */
   .user-dot {
@@ -268,6 +269,8 @@
   let nameFilter  = '';
   let boundsFilter = null;
   let catFilter   = '';
+  let osmMarkers  = [];
+  let osmDebounce = null;
 
   // ── Card helpers ────────────────────────────────────────────
   const allCards = () => [...document.querySelectorAll('.loc-card')];
@@ -346,6 +349,69 @@
       if (show) visible++;
     });
     updateCount(visible);
+  }
+
+  // ── OSM POI search (Overpass) ────────────────────────────────
+  function clearOsmMarkers() {
+    osmMarkers.forEach(m => m.remove());
+    osmMarkers = [];
+  }
+
+  function escapeRegex(s) {
+    return s.replace(/["\\\[\]()*+?.^${}|]/g, '');
+  }
+
+  async function searchOsmPois(query) {
+    clearOsmMarkers();
+    if (!query || !mainMap) return;
+    const b  = mainMap.getBounds();
+    const bb = `${b.getSouth().toFixed(5)},${b.getWest().toFixed(5)},${b.getNorth().toFixed(5)},${b.getEast().toFixed(5)}`;
+    const q  = escapeRegex(query);
+    const overpassQ = `[out:json][timeout:15];(node["name"~"${q}",i](${bb});way["name"~"${q}",i](${bb}););out center 60;`;
+    try {
+      const res  = await fetch('https://overpass-api.de/api/interpreter', {
+        method: 'POST', body: overpassQ,
+      });
+      const data = await res.json();
+      data.elements.forEach(el => {
+        const lat  = el.lat  ?? el.center?.lat;
+        const lng  = el.lon  ?? el.center?.lon;
+        if (!lat || !lng) return;
+        const tags = el.tags || {};
+        const name = tags.name || 'Unnamed';
+        const kind = tags.amenity || tags.shop || tags.tourism || tags.leisure || tags.office || '';
+        const addr = [tags['addr:housenumber'], tags['addr:street'], tags['addr:city']]
+                       .filter(Boolean).join(' ');
+        const marker = L.circleMarker([lat, lng], {
+          radius: 7, fillColor: '#f59e0b', color: '#fff', weight: 2, fillOpacity: 0.88,
+        });
+        marker.bindTooltip(name, {
+          permanent: true, direction: 'top', offset: [0, -10],
+          className: 'loc-name-tag osm-tag',
+        });
+        marker.bindPopup(`
+          <div style="min-width:190px;font-family:inherit">
+            <p style="font-weight:700;font-size:14px;margin:0 0 2px">${name}</p>
+            ${kind ? `<p style="font-size:11px;color:#92400e;background:#fef3c7;display:inline-block;padding:1px 6px;border-radius:4px;margin:0 0 4px">${kind}</p>` : ''}
+            ${addr ? `<p style="font-size:12px;color:#475569;margin:3px 0">📍 ${addr}</p>` : ''}
+            <p style="font-size:11px;color:#94a3b8;margin:4px 0 6px">OpenStreetMap result</p>
+            <a href="https://www.openstreetmap.org/${el.type}/${el.id}" target="_blank" rel="noopener"
+               style="font-size:12px;color:#6366f1;font-weight:600">View on OSM →</a>
+          </div>
+        `);
+        marker.addTo(mainMap);
+        osmMarkers.push(marker);
+      });
+    } catch (_) {}
+  }
+
+  function triggerOsmSearch() {
+    clearTimeout(osmDebounce);
+    if (nameFilter) {
+      osmDebounce = setTimeout(() => searchOsmPois(nameFilter), 700);
+    } else {
+      clearOsmMarkers();
+    }
   }
 
   // ── City/state/zip geocoding ─────────────────────────────────
@@ -452,6 +518,8 @@
 
     locateUser();
 
+    mainMap.on('moveend', triggerOsmSearch);
+
     fetch('/locations/geojson/')
       .then(r => r.json())
       .then(data => {
@@ -504,6 +572,7 @@
     document.getElementById('name-search').addEventListener('input', e => {
       nameFilter = e.target.value.trim().toLowerCase();
       applyFilters();
+      triggerOsmSearch();
     });
 
     const locInput = document.getElementById('location-search');
