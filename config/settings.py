@@ -96,7 +96,10 @@ SESSION_COOKIE_SAMESITE = "Lax"
 # CSRF_COOKIE_HTTPONLY is intentionally left False (Django default) so that
 # HTMX can read the csrftoken cookie to attach X-CSRFToken to AJAX requests.
 CSRF_COOKIE_SAMESITE = "Lax"
-CSRF_COOKIE_SAMESITE = "Lax"
+
+_trusted_origins = os.environ.get("CSRF_TRUSTED_ORIGINS", "").strip()
+if _trusted_origins:
+    CSRF_TRUSTED_ORIGINS = [o.strip() for o in _trusted_origins.split(",") if o.strip()]
 
 # ── HTTPS mode (set HTTPS_ENABLED=true in .env when behind a TLS proxy) ───────
 if os.environ.get("HTTPS_ENABLED", "False").lower() == "true":
