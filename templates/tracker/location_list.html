@@ -151,13 +151,6 @@
       {% endfor %}
     </select>
 
-    {% if user.is_authenticated %}
-    <a href="{% url 'location_create' %}"
-       class="bg-brand text-white text-sm font-medium px-3 py-2 rounded-lg
-              hover:bg-brand-dark transition-colors shrink-0 min-h-[36px] flex items-center">
-      + Add Waypoint
-    </a>
-    {% endif %}
   </div>
 
   <!-- ── Content: list (left/bottom) + map (right/full) ────────── -->
@@ -245,9 +238,6 @@
       {% empty %}
       <div class="text-center py-16 text-slate-400 px-4">
         <p class="text-sm font-medium text-slate-500">No waypoints yet.</p>
-        {% if user.is_authenticated %}
-        <a href="{% url 'location_create' %}" class="text-brand hover:underline text-sm">Add the first one</a>
-        {% endif %}
       </div>
       {% endfor %}
     </div>
@@ -408,12 +398,22 @@
       .bindTooltip(label, { direction: 'top' });
   }
 
+  function fillLocationSearch(value) {
+    const input = document.getElementById('location-search');
+    if (input && !input.value) {
+      input.value = value;
+      geocodeLocation(value);
+    }
+  }
+
   async function ipFallback() {
     try {
       const res  = await fetch('/api/geoip/');
       const data = await res.json();
       if (data.status === 'ok') {
         placeUserDot(data.lat, data.lng, `Approx. location: ${data.city}, ${data.region}`, 10);
+        const label = [data.city, data.region].filter(Boolean).join(', ');
+        if (label) fillLocationSearch(label);
       }
     } catch (_) {}
   }
@@ -421,8 +421,23 @@
   function locateUser() {
     if (!navigator.geolocation) { ipFallback(); return; }
     navigator.geolocation.getCurrentPosition(
-      pos => placeUserDot(pos.coords.latitude, pos.coords.longitude, 'You are here', 12),
-      ()  => ipFallback(),
+      async pos => {
+        const { latitude: lat, longitude: lng } = pos.coords;
+        placeUserDot(lat, lng, 'You are here', 12);
+        try {
+          const res  = await fetch(
+            `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json`,
+            { headers: { 'Accept-Language': 'en' } }
+          );
+          const data = await res.json();
+          const addr = data.address || {};
+          const city  = addr.city || addr.town || addr.village || addr.county || '';
+          const state = addr.state || '';
+          const label = [city, state].filter(Boolean).join(', ');
+          if (label) fillLocationSearch(label);
+        } catch (_) {}
+      },
+      () => ipFallback(),
       { timeout: 8000 }
     );
   }
