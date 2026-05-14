@@ -46,6 +46,22 @@
     50%      { box-shadow: 0 0 0 9px rgba(59,130,246,.08); }
   }
 
+  /* ── Desktop sidebar collapse ───────────────────────────────── */
+  @media (min-width: 768px) {
+    #side-list {
+      width: 0 !important; min-width: 0 !important;
+      overflow: hidden !important; padding: 0 !important;
+      transition: width 0.28s cubic-bezier(0.4,0,0.2,1);
+    }
+    #side-list.sidebar-open {
+      width: 20rem !important; overflow-y: auto !important;
+      padding-right: 0.25rem !important;
+    }
+  }
+  @media (min-width: 1280px) {
+    #side-list.sidebar-open { width: 24rem !important; }
+  }
+
   /* ── Mobile: full-screen map + bottom sheet ──────────────────── */
   @media (max-width: 767px) {
     /* Remove main padding so map goes edge-to-edge */
@@ -142,6 +158,21 @@
         </svg>
       </span>
     </div>
+
+    <button id="sidebar-toggle"
+            class="hidden md:flex items-center gap-1.5 text-sm font-medium px-3 py-2 rounded-lg
+                   border border-slate-200 bg-white hover:border-brand/40 hover:text-brand
+                   transition-all shrink-0 min-h-[36px] whitespace-nowrap">
+      <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+              d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z"/>
+      </svg>
+      Saved (<span id="sidebar-count">0</span>)
+      <svg id="sidebar-chevron" class="w-3.5 h-3.5 shrink-0 transition-transform duration-300"
+           fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
+      </svg>
+    </button>
 
     <select id="category-filter"
             class="text-sm border border-slate-200 rounded-lg px-3 py-2 bg-white
@@ -271,6 +302,7 @@
   let catFilter   = '';
   let osmMarkers  = [];
   let osmDebounce = null;
+  let sidebarOpen = false;
 
   // ── Card helpers ────────────────────────────────────────────
   const allCards = () => [...document.querySelectorAll('.loc-card')];
@@ -343,8 +375,9 @@
       card.classList.toggle('hidden-card', !show);
       const entry = markerMap[p.id];
       if (entry) {
-        if (show && !mainMap.hasLayer(entry.marker)) entry.marker.addTo(mainMap);
-        if (!show && mainMap.hasLayer(entry.marker))  entry.marker.remove();
+        const onMap = mainMap.hasLayer(entry.marker);
+        if (show && sidebarOpen && !onMap) entry.marker.addTo(mainMap);
+        if ((!show || !sidebarOpen) && onMap) entry.marker.remove();
       }
       if (show) visible++;
     });
@@ -438,17 +471,41 @@
     document.getElementById('geo-spinner').classList.add('hidden');
   }
 
-  // ── Mobile bottom sheet ──────────────────────────────────────
+  // ── Sidebar / bottom-sheet toggle ────────────────────────────
+  function setSidebarOpen(open) {
+    sidebarOpen = open;
+    applyFilters();
+    const chevron = document.getElementById('sidebar-chevron');
+    if (chevron) chevron.style.transform = open ? 'rotate(180deg)' : '';
+    if (open) setTimeout(() => mainMap && mainMap.invalidateSize(), 300);
+  }
+
+  function toggleSidebar() {
+    const sheet = document.getElementById('side-list');
+    if (window.innerWidth < 768) {
+      const opening = !sheet.classList.contains('sheet-open');
+      sheet.classList.toggle('sheet-open', opening);
+      setSidebarOpen(opening);
+    } else {
+      const opening = !sheet.classList.contains('sidebar-open');
+      sheet.classList.toggle('sidebar-open', opening);
+      setSidebarOpen(opening);
+    }
+  }
+
   function initBottomSheet() {
     const handle = document.getElementById('sheet-handle');
-    const sheet  = document.getElementById('side-list');
     if (!handle) return;
-    handle.addEventListener('click', () => sheet.classList.toggle('sheet-open'));
+    handle.addEventListener('click', toggleSidebar);
   }
 
   function openSheetOnMobile() {
     if (window.innerWidth < 768) {
-      document.getElementById('side-list').classList.add('sheet-open');
+      const sheet = document.getElementById('side-list');
+      if (!sheet.classList.contains('sheet-open')) {
+        sheet.classList.add('sheet-open');
+        setSidebarOpen(true);
+      }
     }
   }
 
@@ -556,9 +613,12 @@
             openSheetOnMobile();
           });
 
-          marker.addTo(mainMap);
           markerMap[p.id] = { marker, tooltip };
         });
+
+        const total = data.features.length;
+        const badge = document.getElementById('sidebar-count');
+        if (badge) badge.textContent = total;
 
         applyFilters();
       });
@@ -568,6 +628,9 @@
   document.addEventListener('DOMContentLoaded', () => {
     initMap();
     initBottomSheet();
+
+    const toggleBtn = document.getElementById('sidebar-toggle');
+    if (toggleBtn) toggleBtn.addEventListener('click', toggleSidebar);
 
     document.getElementById('name-search').addEventListener('input', e => {
       nameFilter = e.target.value.trim().toLowerCase();
