@@ -117,7 +117,8 @@ def location_detail(request, pk):
 
 @login_required
 def location_create(request):
-    form = LocationForm(request.POST or None)
+    prefill = {f: request.GET[f] for f in ['name','address','latitude','longitude','city','state'] if request.GET.get(f)}
+    form = LocationForm(request.POST or None, initial=prefill or None)
     if request.method == "POST" and form.is_valid():
         location = form.save(commit=False)
         location.created_by = request.user

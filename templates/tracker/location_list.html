@@ -166,7 +166,13 @@
         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
               d="M21 21l-4.35-4.35M17 11A6 6 0 105 11a6 6 0 0012 0z"/>
       </svg>
-      <input type="search" id="name-search" placeholder="Restaurant, store, attraction…"
+      <span id="osm-spinner" class="hidden absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none">
+        <svg class="w-4 h-4 text-brand animate-spin" fill="none" viewBox="0 0 24 24">
+          <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
+          <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/>
+        </svg>
+      </span>
+      <input type="search" id="name-search" placeholder="Search POIs: restaurant, coffee, park…"
              class="w-full pl-9 pr-4 py-2 text-sm border border-slate-200 rounded-lg
                     focus:outline-none focus:ring-2 focus:ring-brand/30 focus:border-brand bg-white">
     </div>
@@ -189,6 +195,15 @@
         </svg>
       </span>
     </div>
+
+    <button id="locate-btn" type="button" title="Use my location"
+            class="shrink-0 p-2 rounded-lg border border-slate-200 bg-white hover:border-brand/40 hover:text-brand transition-all"
+            aria-label="Locate me">
+      <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+              d="M12 8a4 4 0 100 8 4 4 0 000-8zM12 2v2m0 16v2M2 12h2m16 0h2"/>
+      </svg>
+    </button>
 
     <button id="sidebar-toggle"
             class="hidden md:flex items-center gap-1.5 text-sm font-medium px-3 py-2 rounded-lg
@@ -338,8 +353,15 @@
     <div id="map-panel" class="flex-1 min-w-0 relative">
       <div id="main-map"></div>
       <p id="geo-error"
-         class="hidden absolute bottom-3 left-1/2 -translate-x-1/2 bg-white/90
-                text-slate-500 text-xs px-3 py-1.5 rounded-full shadow z-[1000]"></p>
+         class="hidden absolute bottom-14 left-1/2 -translate-x-1/2 bg-white/90
+                text-slate-600 text-xs px-3 py-1.5 rounded-full shadow z-[1000] whitespace-nowrap"></p>
+      {% if user.is_authenticated %}
+      <a id="add-waypoint-btn" href="{% url 'location_create' %}"
+         class="absolute bottom-4 right-4 z-[1000] bg-brand hover:bg-brand-dark text-white
+                w-11 h-11 rounded-full shadow-lg flex items-center justify-center
+                text-2xl font-light transition-colors"
+         title="Add Waypoint at map center">+</a>
+      {% endif %}
     </div>
 
   </div>
@@ -347,6 +369,9 @@
 {% endblock %}
 
 {% block extra_js %}
+<script>
+const IS_AUTH = {% if user.is_authenticated %}true{% else %}false{% endif %};
+</script>
 <script>
 (function () {
   const OSM_CATS = {
@@ -492,6 +517,18 @@
   }
 
   // ── OSM POI search (Overpass) ─────────────────────────────────
+  function osmSpinner(on) {
+    document.getElementById('osm-spinner')?.classList.toggle('hidden', !on);
+  }
+
+  function openSidebar() {
+    if (sidebarOpen) return;
+    const sheet = document.getElementById('side-list');
+    if (window.innerWidth < 768) sheet.classList.add('sheet-open');
+    else sheet.classList.add('sidebar-open');
+    setSidebarOpen(true);
+  }
+
   function clearOsmEntries() {
     osmEntries.forEach(e => e.marker.remove());
     osmEntries = [];
@@ -505,13 +542,15 @@
 
   async function searchOsmPois(query) {
     clearOsmEntries();
-    if (!query || !mainMap) return;
+    osmSpinner(true);
+    if (!query || !mainMap) { osmSpinner(false); return; }
     const b  = mainMap.getBounds();
     const bb = `${b.getSouth().toFixed(5)},${b.getWest().toFixed(5)},${b.getNorth().toFixed(5)},${b.getEast().toFixed(5)}`;
     const q  = escapeRegex(query);
     const overpassQ = `[out:json][timeout:15];(node["name"~"${q}",i](${bb});way["name"~"${q}",i](${bb}););out center 80;`;
     try {
       const res  = await fetch('https://overpass-api.de/api/interpreter', { method: 'POST', body: overpassQ });
+      osmSpinner(false);
       const data = await res.json();
       const list = document.getElementById('osm-list');
       if (list) list.innerHTML = '';
@@ -524,15 +563,21 @@
         const cat  = classifyOsm(tags);
         const info = OSM_CATS[cat];
         const kind = tags.amenity || tags.shop || tags.tourism || tags.leisure || '';
-        const addr = [tags['addr:housenumber'], tags['addr:street'], tags['addr:city']].filter(Boolean).join(' ');
+        const city  = tags['addr:city']  || tags['addr:town'] || '';
+        const state = tags['addr:state'] || '';
+        const addr  = [tags['addr:housenumber'], tags['addr:street'], city].filter(Boolean).join(' ');
+        const saveParams = new URLSearchParams({ name, ...(lat?{lat:lat.toFixed(6)}:{}), ...(lng?{lng:lng.toFixed(6)}:{}), ...(addr?{address:addr}:{}), ...(city?{city}:{}), ...(state?{state}:{}) });
 
         const marker = L.marker([lat, lng], { icon: pinIcon(info.color), zIndexOffset: 0 });
         marker.bindTooltip(name, { permanent: true, direction: 'top', offset: [0, -32], className: 'loc-name-tag' });
-        marker.bindPopup(`<div style="min-width:190px;font-family:inherit">
+        marker.bindPopup(`<div style="min-width:200px;font-family:inherit">
           <p style="font-weight:700;font-size:14px;margin:0 0 2px">${name}</p>
           <p style="font-size:11px;background:${info.color}22;color:${info.color};display:inline-block;padding:1px 7px;border-radius:4px;margin:0 0 4px;font-weight:600">${info.emoji} ${kind || info.label}</p>
           ${addr ? `<p style="font-size:12px;color:#475569;margin:3px 0">📍 ${addr}</p>` : ''}
-          <a href="https://www.openstreetmap.org/${el.type}/${el.id}" target="_blank" rel="noopener" style="font-size:12px;color:#6366f1;font-weight:600">View on OSM →</a>
+          <div style="display:flex;gap:8px;margin-top:8px;align-items:center">
+            <a href="https://www.openstreetmap.org/${el.type}/${el.id}" target="_blank" rel="noopener" style="font-size:12px;color:#6366f1;font-weight:600">OSM →</a>
+            ${IS_AUTH ? `<a href="/locations/new/?${saveParams}" style="font-size:12px;color:#ec4899;font-weight:700">♥ Save Waypoint</a>` : ''}
+          </div>
         </div>`);
         if (osmCatFilters[cat] !== false) marker.addTo(mainMap);
 
@@ -555,11 +600,12 @@
       const cnt = document.getElementById('osm-result-count');
       if (cnt) cnt.textContent = total;
       const list2 = document.getElementById('osm-list');
-      if (total === 0 && list2) list2.innerHTML = '<p class="text-xs text-slate-400 text-center py-6">No results in this area</p>';
-      if (total > 0 && sidebarOpen) switchTab('nearby');
+      if (total === 0 && list2) list2.innerHTML = '<p class="text-xs text-slate-400 text-center py-6">No results in this area — try zooming out or a different search</p>';
+      if (total > 0) { openSidebar(); switchTab('nearby'); }
     } catch (_) {
+      osmSpinner(false);
       const list = document.getElementById('osm-list');
-      if (list) list.innerHTML = '<p class="text-xs text-slate-400 text-center py-6">Search failed — try again</p>';
+      if (list) list.innerHTML = '<p class="text-xs text-slate-400 text-center py-6">Search failed — check connection and try again</p>';
     }
   }
 
@@ -639,7 +685,17 @@
     }
   }
 
-  // ── User location ────────────────────────────────────────────
+  // ── Geo error display ─────────────────────────────────────────
+  function showGeoError(msg) {
+    const el = document.getElementById('geo-error');
+    if (!el) return;
+    el.textContent = msg;
+    el.classList.remove('hidden');
+    clearTimeout(el._t);
+    el._t = setTimeout(() => el.classList.add('hidden'), 6000);
+  }
+
+  // ── User location ─────────────────────────────────────────────
   function placeUserDot(lat, lng, label, zoom) {
     mainMap.setView([lat, lng], zoom);
     const icon = L.divIcon({
@@ -667,8 +723,16 @@
         placeUserDot(data.lat, data.lng, `Approx. location: ${data.city}, ${data.region}`, 10);
         const label = [data.city, data.region].filter(Boolean).join(', ');
         if (label) fillLocationSearch(label);
+      } else if (data.status === 'rate_limited') {
+        showGeoError('Location lookup rate-limited — try again in a minute');
+      } else if (data.status === 'private') {
+        showGeoError('Private network — enter a location manually');
+      } else {
+        showGeoError('Could not determine location automatically');
       }
-    } catch (_) {}
+    } catch (_) {
+      showGeoError('Location service unavailable');
+    }
   }
 
   function locateUser() {
@@ -690,7 +754,10 @@
           if (label) fillLocationSearch(label);
         } catch (_) {}
       },
-      () => ipFallback(),
+      err => {
+        if (err.code === 1) showGeoError('Location access denied — using IP approximation');
+        ipFallback();
+      },
       { timeout: 8000 }
     );
   }
@@ -756,8 +823,19 @@
     const toggleBtn = document.getElementById('sidebar-toggle');
     if (toggleBtn) toggleBtn.addEventListener('click', toggleSidebar);
 
+    document.getElementById('locate-btn')?.addEventListener('click', locateUser);
     document.getElementById('tab-saved')?.addEventListener('click',  () => switchTab('saved'));
     document.getElementById('tab-nearby')?.addEventListener('click', () => switchTab('nearby'));
+
+    const addBtn = document.getElementById('add-waypoint-btn');
+    if (addBtn) {
+      addBtn.addEventListener('click', e => {
+        if (mainMap) {
+          const c = mainMap.getCenter();
+          addBtn.href = `/locations/new/?lat=${c.lat.toFixed(6)}&lng=${c.lng.toFixed(6)}`;
+        }
+      });
+    }
 
     document.querySelectorAll('.filter-chip').forEach(chip => {
       chip.addEventListener('click', () => {
