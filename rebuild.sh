@@ -10,7 +10,6 @@ git -C "$REPO" checkout "$BRANCH"
 
 echo "==> Discarding any local changes..."
 git -C "$REPO" reset --hard
-git -C "$REPO" clean -fd
 
 echo "==> Pulling latest code..."
 git -C "$REPO" pull origin "$BRANCH"
