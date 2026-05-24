@@ -626,6 +626,11 @@ const IS_AUTH = {% if user.is_authenticated %}true{% else %}false{% endif %};
     }
   }
 
+  // ── Last-location persistence ────────────────────────────────
+  const LOC_KEY = 'wp_last_location';
+  function saveLocation(val) { try { localStorage.setItem(LOC_KEY, val); } catch(_){} }
+  function loadLocation()    { try { return localStorage.getItem(LOC_KEY) || ''; } catch(_){ return ''; } }
+
   // ── City/state/zip geocoding ─────────────────────────────────
   let geoDebounce = null;
   async function geocodeLocation(q) {
@@ -638,7 +643,8 @@ const IS_AUTH = {% if user.is_authenticated %}true{% else %}false{% endif %};
       );
       const data = await res.json();
       if (data.length) {
-        const bb = data[0].boundingbox; // [S, N, W, E]
+        saveLocation(q);
+        const bb = data[0].boundingbox;
         boundsFilter = L.latLngBounds(
           [parseFloat(bb[0]), parseFloat(bb[2])],
           [parseFloat(bb[1]), parseFloat(bb[3])]
@@ -714,6 +720,7 @@ const IS_AUTH = {% if user.is_authenticated %}true{% else %}false{% endif %};
     const input = document.getElementById('location-search');
     if (input && !input.value) {
       input.value = value;
+      saveLocation(value);
       geocodeLocation(value);
     }
   }
@@ -739,6 +746,10 @@ const IS_AUTH = {% if user.is_authenticated %}true{% else %}false{% endif %};
   }
 
   function locateUser() {
+    // Clear saved location so the freshly resolved one gets saved
+    try { localStorage.removeItem(LOC_KEY); } catch(_) {}
+    const input = document.getElementById('location-search');
+    if (input) input.value = '';
     if (!navigator.geolocation) { ipFallback(); return; }
     navigator.geolocation.getCurrentPosition(
       async pos => {
@@ -773,7 +784,15 @@ const IS_AUTH = {% if user.is_authenticated %}true{% else %}false{% endif %};
       maxZoom: 19,
     }).addTo(mainMap);
 
-    locateUser();
+    // Restore last location from localStorage; only geolocate on first ever visit
+    const saved = loadLocation();
+    if (saved) {
+      const input = document.getElementById('location-search');
+      if (input) input.value = saved;
+      geocodeLocation(saved);
+    } else {
+      locateUser();
+    }
 
     mainMap.on('moveend', triggerOsmSearch);
 
