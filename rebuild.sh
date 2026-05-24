@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-BRANCH="claude/update-repo-name-95M0E"
+BRANCH="dev"
 REPO="$(cd "$(dirname "$0")" && pwd)"
 COMPOSE_FILE="$REPO/docker-compose.yml"
 
