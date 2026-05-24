@@ -603,8 +603,9 @@ const IS_AUTH = {% if user.is_authenticated %}true{% else %}false{% endif %};
       const cnt = document.getElementById('osm-result-count');
       if (cnt) cnt.textContent = total;
       const list2 = document.getElementById('osm-list');
-      if (total === 0 && list2) list2.innerHTML = '<p class="text-xs text-slate-400 text-center py-6">No results in this area — try zooming out or a different search</p>';
-      if (total > 0) { openSidebar(); switchTab('nearby'); }
+      if (total === 0 && list2) list2.innerHTML = '<p class="text-xs text-slate-500 text-center py-8">😕 No results found for <strong>"' + nameFilter + '"</strong><br><span class="text-xs text-slate-400">Try zooming out or rephrasing the search</span></p>';
+      openSidebar();
+      switchTab('nearby');
     } catch (_) {
       osmSpinner(false);
       const list = document.getElementById('osm-list');
