@@ -633,7 +633,6 @@ const IS_AUTH = {% if user.is_authenticated %}true{% else %}false{% endif %};
   function loadLocation()    { try { return localStorage.getItem(LOC_KEY) || ''; } catch(_){ return ''; } }
 
   // ── City/state/zip geocoding ─────────────────────────────────
-  let geoDebounce = null;
   async function geocodeLocation(q) {
     if (!q) { boundsFilter = null; applyFilters(); return; }
     document.getElementById('geo-spinner').classList.remove('hidden');
@@ -876,12 +875,12 @@ const IS_AUTH = {% if user.is_authenticated %}true{% else %}false{% endif %};
     });
 
     const locInput = document.getElementById('location-search');
-    locInput.addEventListener('input', () => {
-      clearTimeout(geoDebounce);
-      geoDebounce = setTimeout(() => geocodeLocation(locInput.value.trim()), 700);
-    });
     locInput.addEventListener('keydown', e => {
-      if (e.key === 'Enter') { clearTimeout(geoDebounce); geocodeLocation(locInput.value.trim()); }
+      if (e.key === 'Enter') { e.preventDefault(); geocodeLocation(locInput.value.trim()); }
+    });
+    locInput.addEventListener('blur', () => {
+      const q = locInput.value.trim();
+      if (q) geocodeLocation(q);
     });
     locInput.addEventListener('search', () => {
       if (!locInput.value) { boundsFilter = null; applyFilters(); }
