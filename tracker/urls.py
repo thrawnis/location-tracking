@@ -10,6 +10,7 @@ urlpatterns = [
     path("locations/<int:pk>/", views.location_detail, name="location_detail"),
     path("locations/<int:pk>/edit/", views.location_edit, name="location_edit"),
     path("locations/<int:pk>/delete/", views.location_delete, name="location_delete"),
+    path("locations/<int:pk>/gf-verify/", views.gf_verify, name="gf_verify"),
 
     # Items (HTMX)
     path("locations/<int:pk>/items/add/", views.item_add, name="item_add"),

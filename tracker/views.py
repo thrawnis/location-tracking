@@ -186,6 +186,30 @@ def location_delete(request, pk):
 
 
 @login_required
+@require_POST
+def gf_verify(request, pk):
+    """Mark/update the gluten-free verification for a location."""
+    location = get_object_or_404(Location, pk=pk)
+    action = request.POST.get("action", "verify")   # "verify" | "unverify"
+
+    if action == "unverify":
+        location.gluten_free_verified_by = None
+        location.gluten_free_verified_at = None
+        detail = "GF verification removed"
+    else:
+        location.gluten_free_verified_by = request.user
+        location.gluten_free_verified_at = timezone.now()
+        detail = f"GF status verified as '{location.get_gluten_free_display()}'"
+
+    location.save(update_fields=["gluten_free_verified_by", "gluten_free_verified_at", "updated_at"])
+    _log(request, AuditLog.ACTION_UPDATE, location, detail)
+
+    from django.http import HttpResponse
+    # Re-render just the GF card partial via HTMX
+    return render(request, "tracker/partials/gf_card.html", {"location": location})
+
+
+@login_required
 def locations_geojson(request):
     qs = Location.objects.exclude(latitude=None).exclude(longitude=None)
     features = []

@@ -58,6 +58,17 @@ class Location(models.Model):
         blank=True,
         help_text="Dietary notes: allergies, cross-contamination info, etc.",
     )
+    gluten_free_verified_by = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True, blank=True,
+        related_name="gf_verifications",
+        help_text="User who verified the GF status first-hand",
+    )
+    gluten_free_verified_at = models.DateTimeField(
+        null=True, blank=True,
+        help_text="When the GF status was last verified",
+    )
     overall_rating = models.DecimalField(
         max_digits=2,
         decimal_places=1,
