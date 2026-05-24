@@ -52,6 +52,8 @@ def _location_diff(old, new_data):
         "phone": "Phone",
         "website": "Website",
         "hours": "Hours",
+        "gluten_free": "Gluten-free",
+        "dietary_notes": "Dietary notes",
         "public_notes": "Public notes",
         "private_notes": "Private notes",
     }
@@ -125,7 +127,10 @@ def location_detail(request, pk):
 
 @login_required
 def location_create(request):
-    prefill = {f: request.GET[f] for f in ['name','address','latitude','longitude','city','state','phone','website','hours'] if request.GET.get(f)}
+    prefill = {f: request.GET[f] for f in [
+        'name','address','latitude','longitude','city','state',
+        'phone','website','hours','gluten_free','dietary_notes',
+    ] if request.GET.get(f)}
     form = LocationForm(request.POST or None, initial=prefill or None)
     if request.method == "POST" and form.is_valid():
         location = form.save(commit=False)

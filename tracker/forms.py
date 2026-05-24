@@ -28,6 +28,8 @@ class LocationForm(forms.ModelForm):
             "website",
             "hours",
             "overall_rating",
+            "gluten_free",
+            "dietary_notes",
             "public_notes",
             "private_notes",
         ]
@@ -41,6 +43,9 @@ class LocationForm(forms.ModelForm):
             "phone": forms.TextInput(attrs={"placeholder": "+1 (555) 000-0000"}),
             "website": forms.URLInput(attrs={"placeholder": "https://example.com"}),
             "hours": forms.Textarea(attrs={"rows": 2, "placeholder": "Mon–Fri 9am–9pm\nSat–Sun 10am–6pm"}),
+            "dietary_notes": forms.Textarea(
+                attrs={"rows": 3, "placeholder": "e.g. Dedicated GF fryer, staff trained on cross-contamination, ask for GF menu"}
+            ),
             "public_notes": forms.Textarea(attrs={"rows": 4, "placeholder": "Visible to everyone"}),
             "private_notes": forms.Textarea(
                 attrs={"rows": 4, "placeholder": "Only visible when logged in"}

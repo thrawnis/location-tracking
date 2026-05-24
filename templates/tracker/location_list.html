@@ -667,8 +667,20 @@ const IS_AUTH = {% if user.is_authenticated %}true{% else %}false{% endif %};
   }
 
   // ── Extra OSM tag helpers ────────────────────────────────────────────────
+  // Map OSM diet:gluten_free → our model value + display info
+  function gfInfo(tags) {
+    const v = tags['diet:gluten_free'];
+    if (!v || v === 'no')      return null;
+    if (v === 'only')          return { model: 'dedicated', badge: '🌾 Dedicated GF kitchen', color: '#059669', note: 'Celiac-safe dedicated kitchen' };
+    if (v === 'yes')           return { model: 'options',   badge: '🌾 GF options',            color: '#d97706', note: 'GF menu items — shared kitchen, cross-contamination possible' };
+    if (v === 'limited')       return { model: 'limited',   badge: '🌾 Limited GF',            color: '#ea580c', note: 'Minimal GF options — not recommended for celiacs' };
+    return null;
+  }
+
   function osmBadges(tags) {
     const pills = [];
+    const gf = gfInfo(tags);
+    if (gf) pills.push({ text: gf.badge, color: gf.color, bold: true });
     const cuisine = tags.cuisine;
     if (cuisine) pills.push({ text: cuisine.replace(/_/g,' '), color: '#f59e0b' });
     if (tags['diet:vegan']       === 'yes') pills.push({ text: '🌱 Vegan', color: '#22c55e' });
@@ -748,10 +760,11 @@ const IS_AUTH = {% if user.is_authenticated %}true{% else %}false{% endif %};
         const phone   = tags.phone || tags['contact:phone'] || '';
         const website = tags.website || tags['contact:website'] || tags['contact:url'] || '';
         const hours   = tags.opening_hours || '';
-        const desc    = tags.description || '';
-        const dist    = formatDist(distKm);
-        const badges  = osmBadges(tags);
-        const socials = osmSocial(tags);
+        const desc      = tags.description || '';
+        const dist      = formatDist(distKm);
+        const gf        = gfInfo(tags);
+        const badges    = osmBadges(tags);
+        const socials   = osmSocial(tags);
         const saveParams = new URLSearchParams({
           name,
           ...(lat     ? { latitude:  lat.toFixed(6) } : {}),
@@ -762,11 +775,12 @@ const IS_AUTH = {% if user.is_authenticated %}true{% else %}false{% endif %};
           ...(phone   ? { phone }                      : {}),
           ...(website ? { website }                    : {}),
           ...(hours   ? { hours }                      : {}),
+          ...(gf      ? { gluten_free: gf.model, dietary_notes: gf.note } : {}),
         });
 
         // ── Map popup ───────────────────────────────────────────────────────
         const badgeHtml = badges.map(b =>
-          `<span style="font-size:10px;background:${b.color}18;color:${b.color};padding:1px 5px;border-radius:3px;font-weight:600">${b.text}</span>`
+          `<span style="font-size:10px;background:${b.color}18;color:${b.color};padding:${b.bold ? '2px 7px' : '1px 5px'};border-radius:3px;font-weight:600;${b.bold ? 'border:1px solid '+b.color+'44' : ''}">${b.text}</span>`
         ).join(' ');
         const socialHtml = socials.map(s =>
           `<a href="${s.href}" target="_blank" rel="noopener" style="font-size:11px;color:#6366f1;font-weight:600">${s.label}</a>`
@@ -785,6 +799,7 @@ const IS_AUTH = {% if user.is_authenticated %}true{% else %}false{% endif %};
           ${phone   ? `<p style="font-size:12px;color:#475569;margin:2px 0">📞 <a href="tel:${phone}" style="color:#475569">${phone}</a></p>` : ''}
           ${website ? `<p style="font-size:12px;margin:2px 0">🌐 <a href="${website}" target="_blank" rel="noopener" style="color:#6366f1">${website.replace(/^https?:\/\//,'')}</a></p>` : ''}
           ${hours   ? `<p style="font-size:11px;color:#64748b;margin:2px 0;white-space:pre-line">🕐 ${hours}</p>` : ''}
+          ${gf ? `<p style="font-size:11px;margin:4px 0;padding:3px 7px;border-radius:4px;background:${gf.color}18;color:${gf.color};font-weight:600">${gf.badge} — ${gf.note}</p>` : ''}
           ${badgeHtml ? `<div style="display:flex;flex-wrap:wrap;gap:3px;margin-top:4px">${badgeHtml}</div>` : ''}
           ${socialHtml ? `<p style="margin-top:4px">${socialHtml}</p>` : ''}
           <div style="display:flex;gap:8px;margin-top:8px;align-items:center;flex-wrap:wrap">
@@ -798,8 +813,8 @@ const IS_AUTH = {% if user.is_authenticated %}true{% else %}false{% endif %};
         if (osmCatFilters[cat] !== false) marker.addTo(mainMap);
 
         // ── List item ───────────────────────────────────────────────────────
-        const listBadges = badges.slice(0, 3).map(b =>
-          `<span style="font-size:10px;background:${b.color}18;color:${b.color};padding:1px 4px;border-radius:3px;font-weight:600;white-space:nowrap">${b.text}</span>`
+        const listBadges = badges.slice(0, 4).map(b =>
+          `<span style="font-size:10px;background:${b.color}18;color:${b.color};padding:${b.bold ? '2px 6px' : '1px 4px'};border-radius:3px;font-weight:600;white-space:nowrap;${b.bold ? 'border:1px solid '+b.color+'44' : ''}">${b.text}</span>`
         ).join('');
 
         const item = document.createElement('div');

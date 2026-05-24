@@ -34,6 +34,30 @@ class Location(models.Model):
     phone = models.CharField(max_length=50, blank=True, help_text="Phone number")
     website = models.URLField(max_length=500, blank=True, help_text="Website URL")
     hours = models.TextField(blank=True, help_text="Opening hours (e.g. Mon-Fri 9am-5pm)")
+
+    GF_UNKNOWN   = ""
+    GF_DEDICATED = "dedicated"
+    GF_OPTIONS   = "options"
+    GF_LIMITED   = "limited"
+    GF_NONE      = "none"
+    GF_CHOICES = [
+        (GF_UNKNOWN,   "Unknown"),
+        (GF_DEDICATED, "Dedicated GF kitchen (celiac-safe)"),
+        (GF_OPTIONS,   "GF options available (shared kitchen)"),
+        (GF_LIMITED,   "Limited GF (e.g. remove the bun)"),
+        (GF_NONE,      "No gluten-free options"),
+    ]
+    gluten_free = models.CharField(
+        max_length=20,
+        choices=GF_CHOICES,
+        blank=True,
+        default="",
+        help_text="Gluten-free accommodation level",
+    )
+    dietary_notes = models.TextField(
+        blank=True,
+        help_text="Dietary notes: allergies, cross-contamination info, etc.",
+    )
     overall_rating = models.DecimalField(
         max_digits=2,
         decimal_places=1,
