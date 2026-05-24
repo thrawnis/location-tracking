@@ -24,6 +24,9 @@ class LocationForm(forms.ModelForm):
             "state",
             "latitude",
             "longitude",
+            "phone",
+            "website",
+            "hours",
             "overall_rating",
             "public_notes",
             "private_notes",
@@ -35,6 +38,9 @@ class LocationForm(forms.ModelForm):
             "state": forms.HiddenInput(),
             "latitude": forms.HiddenInput(),
             "longitude": forms.HiddenInput(),
+            "phone": forms.TextInput(attrs={"placeholder": "+1 (555) 000-0000"}),
+            "website": forms.URLInput(attrs={"placeholder": "https://example.com"}),
+            "hours": forms.Textarea(attrs={"rows": 2, "placeholder": "Mon–Fri 9am–9pm\nSat–Sun 10am–6pm"}),
             "public_notes": forms.Textarea(attrs={"rows": 4, "placeholder": "Visible to everyone"}),
             "private_notes": forms.Textarea(
                 attrs={"rows": 4, "placeholder": "Only visible when logged in"}

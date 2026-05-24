@@ -713,15 +713,20 @@ const IS_AUTH = {% if user.is_authenticated %}true{% else %}false{% endif %};
         const city  = tags['addr:city']  || tags['addr:town']  || '';
         const state = tags['addr:state'] || '';
         const addr  = [tags['addr:housenumber'], tags['addr:street'], city].filter(Boolean).join(' ');
-        const phone = tags.phone || tags['contact:phone'] || '';
-        const dist  = formatDist(distKm);
+        const phone   = tags.phone || tags['contact:phone'] || '';
+        const website = tags.website || tags['contact:website'] || tags['contact:url'] || '';
+        const hours   = tags.opening_hours || '';
+        const dist    = formatDist(distKm);
         const saveParams = new URLSearchParams({
           name,
-          ...(lat  ? { latitude:  lat.toFixed(6) } : {}),
-          ...(lng  ? { longitude: lng.toFixed(6) } : {}),
-          ...(addr ? { address: addr }             : {}),
-          ...(city ? { city }                      : {}),
-          ...(state? { state }                     : {}),
+          ...(lat     ? { latitude:  lat.toFixed(6) } : {}),
+          ...(lng     ? { longitude: lng.toFixed(6) } : {}),
+          ...(addr    ? { address: addr }              : {}),
+          ...(city    ? { city }                       : {}),
+          ...(state   ? { state }                      : {}),
+          ...(phone   ? { phone }                      : {}),
+          ...(website ? { website }                    : {}),
+          ...(hours   ? { hours }                      : {}),
         });
 
         // Map marker + popup
@@ -733,8 +738,10 @@ const IS_AUTH = {% if user.is_authenticated %}true{% else %}false{% endif %};
             <span style="font-size:11px;background:${info.color}22;color:${info.color};padding:1px 7px;border-radius:4px;font-weight:600">${info.emoji} ${kind || info.label}</span>
             <span style="font-size:11px;color:#64748b;font-weight:600">📍 ${dist}</span>
           </div>
-          ${addr  ? `<p style="font-size:12px;color:#475569;margin:2px 0">${addr}${state ? ', '+state : ''}</p>` : ''}
-          ${phone ? `<p style="font-size:12px;color:#475569;margin:2px 0">📞 ${phone}</p>` : ''}
+          ${addr    ? `<p style="font-size:12px;color:#475569;margin:2px 0">${addr}${state ? ', '+state : ''}</p>` : ''}
+          ${phone   ? `<p style="font-size:12px;color:#475569;margin:2px 0">📞 <a href="tel:${phone}" style="color:#475569">${phone}</a></p>` : ''}
+          ${website ? `<p style="font-size:12px;margin:2px 0">🌐 <a href="${website}" target="_blank" rel="noopener" style="color:#6366f1">${website.replace(/^https?:\/\//,'')}</a></p>` : ''}
+          ${hours   ? `<p style="font-size:11px;color:#64748b;margin:2px 0;white-space:pre-line">🕐 ${hours}</p>` : ''}
           <div style="display:flex;gap:8px;margin-top:8px;align-items:center">
             <a href="https://www.openstreetmap.org/${el.type}/${el.id}" target="_blank" rel="noopener"
                style="font-size:12px;color:#6366f1;font-weight:600">OSM →</a>
@@ -761,7 +768,9 @@ const IS_AUTH = {% if user.is_authenticated %}true{% else %}false{% endif %};
               </span>
               ${addr ? `<span class="text-xs text-slate-400 truncate">${addr}</span>` : ''}
             </div>
-            ${phone ? `<p class="text-xs text-slate-400 mt-0.5">📞 ${phone}</p>` : ''}
+            ${phone   ? `<p class="text-xs text-slate-400 mt-0.5">📞 <a href="tel:${phone}" onclick="event.stopPropagation()" class="hover:text-brand">${phone}</a></p>` : ''}
+            ${website ? `<p class="text-xs text-brand mt-0.5 truncate">🌐 <a href="${website}" target="_blank" rel="noopener" onclick="event.stopPropagation()" class="hover:underline">${website.replace(/^https?:\/\//,'')}</a></p>` : ''}
+            ${hours   ? `<p class="text-xs text-slate-400 mt-0.5">🕐 ${hours}</p>` : ''}
             ${IS_AUTH ? `<a href="/locations/new/?${saveParams}"
                           class="text-[11px] text-pink-500 font-semibold hover:text-pink-700 mt-1 inline-block"
                           onclick="event.stopPropagation()">♥ Save Waypoint</a>` : ''}

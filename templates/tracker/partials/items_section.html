@@ -46,8 +46,8 @@
           {% endif %}
         </div>
 
-        <!-- Edit / Delete item (owner/staff only) -->
-        {% if user.is_authenticated and user == location.created_by or user.is_staff %}
+        <!-- Edit / Delete item (any authenticated user) -->
+        {% if user.is_authenticated %}
         <div class="flex items-center gap-1 shrink-0">
           <button hx-get="{% url 'item_edit' location.pk item.pk %}"
                   hx-target="#items-section"
