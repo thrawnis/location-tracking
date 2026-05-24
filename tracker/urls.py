@@ -15,6 +15,8 @@ urlpatterns = [
     path("locations/<int:pk>/items/add/", views.item_add, name="item_add"),
     path("locations/<int:pk>/items/<int:item_pk>/edit/", views.item_edit, name="item_edit"),
     path("locations/<int:pk>/items/<int:item_pk>/delete/", views.item_delete, name="item_delete"),
+    path("locations/<int:pk>/items/<int:item_pk>/review/", views.item_review_upsert, name="item_review_upsert"),
+    path("locations/<int:pk>/items/<int:item_pk>/review/delete/", views.item_review_delete, name="item_review_delete"),
 
     # Visits (HTMX)
     path("locations/<int:pk>/visits/add/", views.visit_add, name="visit_add"),

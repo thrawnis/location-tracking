@@ -6,13 +6,13 @@ from django.contrib.auth import authenticate, login, logout
 from django.contrib.auth.decorators import login_required, user_passes_test
 from django.core.cache import cache
 from django.contrib.auth.forms import AuthenticationForm
-from django.db.models import Q
+from django.db.models import Avg, Count, Q
 from django.http import JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.views.decorators.http import require_POST
 
-from .forms import ItemForm, LocationForm, PhotoForm, RegisterForm, VisitForm
-from .models import AuditLog, Item, Location, Photo, Visit
+from .forms import ItemForm, ItemReviewForm, LocationForm, PhotoForm, RegisterForm, VisitForm
+from .models import AuditLog, Item, ItemReview, Location, Photo, Visit
 
 
 # ── Audit helpers ─────────────────────────────────────────────────────────────
@@ -104,7 +104,7 @@ def location_list(request):
 @login_required
 def location_detail(request, pk):
     location = get_object_or_404(
-        Location.objects.prefetch_related("photos", "visits__user", "items"),
+        Location.objects.prefetch_related("photos", "visits__user", "items__reviews__user"),
         pk=pk,
     )
     return render(request, "tracker/location_detail.html", {
@@ -201,11 +201,40 @@ def locations_geojson(request):
 
 # ── Items (HTMX) ──────────────────────────────────────────────────────────────
 
-def _render_items_section(request, location, item_form=None, show_form=False):
+def _annotated_items(location):
+    """Items with avg_rating and review_count annotations, reviews prefetched."""
+    return (
+        location.items
+        .annotate(
+            avg_rating=Avg("reviews__rating"),
+            review_count=Count("reviews", distinct=True),
+        )
+        .prefetch_related("reviews__user")
+        .order_by("name")
+    )
+
+
+def _render_items_section(
+    request, location,
+    item_form=None, show_form=False,
+    review_item_pk=None, review_form=None,
+):
+    # Determine the logged-in user's existing reviews (item_pk → review)
+    my_reviews = {}
+    if request.user.is_authenticated:
+        for rev in ItemReview.objects.filter(
+            item__location=location, user=request.user
+        ).select_related("item"):
+            my_reviews[rev.item_id] = rev
+
     return render(request, "tracker/partials/items_section.html", {
         "location": location,
+        "items": _annotated_items(location),
         "item_form": item_form or ItemForm(),
         "show_form": show_form,
+        "review_item_pk": review_item_pk,
+        "review_form": review_form or ItemReviewForm(),
+        "my_reviews": my_reviews,
     })
 
 
@@ -218,13 +247,26 @@ def item_add(request, pk):
             item = form.save(commit=False)
             item.location = location
             item.save()
-            detail = 'Added item "{}" to "{}"'.format(item.name, location.name)
-            if item.rating:
-                detail += " with rating {}".format(item.rating)
-            _log(request, AuditLog.ACTION_CREATE, item, detail)
+            _log(request, AuditLog.ACTION_CREATE, item,
+                 'Added item "{}" to "{}"'.format(item.name, location.name))
+            # Optionally create the submitter's initial review
+            initial_rating = request.POST.get("initial_rating", "").strip()
+            initial_notes  = request.POST.get("initial_notes", "").strip()
+            if initial_rating:
+                try:
+                    from decimal import Decimal
+                    rev = ItemReview.objects.create(
+                        item=item,
+                        user=request.user,
+                        rating=Decimal(initial_rating),
+                        notes=initial_notes,
+                    )
+                    _log(request, AuditLog.ACTION_CREATE, rev,
+                         'Rated "{}" {}/5 in "{}"'.format(item.name, initial_rating, location.name))
+                except Exception:
+                    pass
             return _render_items_section(request, location)
         return _render_items_section(request, location, item_form=form, show_form=True)
-    # ?show=0 is used by the Cancel button to collapse the form
     show = request.GET.get("show", "1") != "0"
     return _render_items_section(request, location, show_form=show)
 
@@ -234,21 +276,17 @@ def item_edit(request, pk, item_pk):
     location = get_object_or_404(Location, pk=pk)
     item = get_object_or_404(Item, pk=item_pk, location=location)
     if request.method == "POST":
-        old_name, old_rating, old_notes = item.name, item.rating, item.notes
+        old_name, old_notes = item.name, item.notes
         form = ItemForm(request.POST, instance=item)
         if form.is_valid():
             form.save()
             parts = []
             if old_name != item.name:
                 parts.append('name: "{}" -> "{}"'.format(old_name, item.name))
-            if old_rating != item.rating:
-                parts.append("rating: {} -> {}".format(old_rating, item.rating))
             if old_notes != item.notes:
-                parts.append("notes changed")
+                parts.append("description changed")
             _log(
-                request,
-                AuditLog.ACTION_UPDATE,
-                item,
+                request, AuditLog.ACTION_UPDATE, item,
                 'Updated item in "{}": {}'.format(
                     location.name, "; ".join(parts) or "no changes"
                 ),
@@ -260,6 +298,54 @@ def item_edit(request, pk, item_pk):
     return render(request, "tracker/partials/item_edit_form.html", {
         "location": location, "item": item, "form": ItemForm(instance=item),
     })
+
+
+@login_required
+def item_review_upsert(request, pk, item_pk):
+    """Create or update the logged-in user's review for one item."""
+    location = get_object_or_404(Location, pk=pk)
+    item = get_object_or_404(Item, pk=item_pk, location=location)
+    existing = ItemReview.objects.filter(item=item, user=request.user).first()
+
+    if request.method == "POST":
+        form = ItemReviewForm(request.POST, instance=existing)
+        if form.is_valid():
+            review = form.save(commit=False)
+            review.item = item
+            review.user = request.user
+            review.save()
+            action = AuditLog.ACTION_UPDATE if existing else AuditLog.ACTION_CREATE
+            _log(request, action, review,
+                 '{} review for "{}" in "{}": {}/5'.format(
+                     "Updated" if existing else "Added",
+                     item.name, location.name, review.rating))
+            return _render_items_section(request, location)
+        return _render_items_section(
+            request, location,
+            review_item_pk=item_pk, review_form=form,
+        )
+
+    # GET — show the review form (or cancel: just render the section without form)
+    if request.GET.get("cancel"):
+        return _render_items_section(request, location)
+    form = ItemReviewForm(instance=existing)
+    return _render_items_section(
+        request, location,
+        review_item_pk=item_pk, review_form=form,
+    )
+
+
+@login_required
+@require_POST
+def item_review_delete(request, pk, item_pk):
+    """Delete the logged-in user's own review."""
+    location = get_object_or_404(Location, pk=pk)
+    item = get_object_or_404(Item, pk=item_pk, location=location)
+    review = get_object_or_404(ItemReview, item=item, user=request.user)
+    _log(request, AuditLog.ACTION_DELETE, review,
+         'Deleted review for "{}" in "{}"'.format(item.name, location.name))
+    review.delete()
+    return _render_items_section(request, location)
 
 
 @login_required

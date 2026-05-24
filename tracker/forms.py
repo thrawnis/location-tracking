@@ -2,7 +2,7 @@ from django import forms
 from django.contrib.auth.forms import UserCreationForm
 from django.contrib.auth.models import User
 
-from .models import Item, Location, Photo, Visit
+from .models import Item, ItemReview, Location, Photo, Visit
 
 
 class RegisterForm(UserCreationForm):
@@ -44,14 +44,35 @@ class LocationForm(forms.ModelForm):
 
 
 class ItemForm(forms.ModelForm):
+    """Create/edit an item (dish/product). Rating lives in ItemReview."""
+
     class Meta:
         model = Item
-        fields = ["name", "rating", "notes"]
+        fields = ["name", "notes"]
         widgets = {
             "name": forms.TextInput(attrs={"placeholder": "Item or dish name"}),
-            "rating": forms.HiddenInput(),
-            "notes": forms.Textarea(attrs={"rows": 2, "placeholder": "Notes (optional)"}),
+            "notes": forms.Textarea(attrs={"rows": 2, "placeholder": "Description (optional)"}),
         }
+
+
+class ItemReviewForm(forms.ModelForm):
+    """A single user's rating + review text for one item."""
+
+    class Meta:
+        model = ItemReview
+        fields = ["rating", "notes"]
+        widgets = {
+            "rating": forms.HiddenInput(),
+            "notes": forms.Textarea(
+                attrs={"rows": 2, "placeholder": "Your review (optional)"}
+            ),
+        }
+
+    def clean_rating(self):
+        rating = self.cleaned_data.get("rating")
+        if not rating:
+            raise forms.ValidationError("Please select a star rating.")
+        return rating
 
 
 class VisitForm(forms.ModelForm):

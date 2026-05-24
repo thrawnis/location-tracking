@@ -28,6 +28,12 @@ def category_icon(category):
 
 
 @register.filter
+def get_item(dictionary, key):
+    """Allow dict lookups by variable key in templates: my_dict|get_item:key"""
+    return dictionary.get(key)
+
+
+@register.filter
 def category_color(category):
     colors = {
         "restaurant": "indigo",

@@ -71,13 +71,7 @@ class Visit(models.Model):
 class Item(models.Model):
     location = models.ForeignKey(Location, on_delete=models.CASCADE, related_name="items")
     name = models.CharField(max_length=255)
-    rating = models.DecimalField(
-        max_digits=2,
-        decimal_places=1,
-        null=True,
-        blank=True,
-        validators=RATING_VALIDATORS,
-    )
+    # General description/notes about the item — not a per-user rating
     notes = models.TextField(blank=True)
 
     class Meta:
@@ -85,6 +79,28 @@ class Item(models.Model):
 
     def __str__(self):
         return f"{self.location.name} – {self.name}"
+
+
+class ItemReview(models.Model):
+    """One rating + review per registered user per item/dish."""
+
+    item = models.ForeignKey(Item, on_delete=models.CASCADE, related_name="reviews")
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="item_reviews")
+    rating = models.DecimalField(
+        max_digits=2,
+        decimal_places=1,
+        validators=RATING_VALIDATORS,
+    )
+    notes = models.TextField(blank=True, help_text="Your personal review or tasting notes")
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        unique_together = [("item", "user")]
+        ordering = ["-created_at"]
+
+    def __str__(self):
+        return f"{self.user.username} → {self.item.name}: {self.rating}"
 
 
 def _photo_upload_path(instance, filename):
@@ -122,7 +138,6 @@ class Photo(models.Model):
             ratio = (MAX_PHOTO_PIXELS / (w * h)) ** 0.5
             new_size = (max(1, int(w * ratio)), max(1, int(h * ratio)))
             img = img.resize(new_size, Image.LANCZOS)
-            # Preserve format; fall back to JPEG
             fmt = img.format or "JPEG"
             if fmt == "JPEG":
                 img.save(self.image.path, format=fmt, optimize=True, quality=85)
@@ -146,7 +161,6 @@ class AuditLog(models.Model):
     model_name = models.CharField(max_length=50)
     object_id = models.PositiveIntegerField(null=True, blank=True)
     object_repr = models.CharField(max_length=255)
-    # Human-readable summary of what changed / what was added or removed
     detail = models.TextField(blank=True)
     ip_address = models.GenericIPAddressField(null=True, blank=True)
 
