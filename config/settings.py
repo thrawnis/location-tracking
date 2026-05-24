@@ -44,6 +44,7 @@ TEMPLATES = [
                 "django.template.context_processors.request",
                 "django.contrib.auth.context_processors.auth",
                 "django.contrib.messages.context_processors.messages",
+                "tracker.context_processors.app_version",
             ],
         },
     },
@@ -78,6 +79,8 @@ MEDIA_URL = "/media/"
 MEDIA_ROOT = BASE_DIR / "data" / "media"
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
+
+APP_VERSION = os.environ.get("GIT_COMMIT", "dev")
 
 LOGIN_URL = "/accounts/login/"
 LOGIN_REDIRECT_URL = "/"

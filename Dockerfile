@@ -16,6 +16,9 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY . .
 RUN chmod +x entrypoint.sh && chown -R appuser:appgroup /app
 
+ARG GIT_COMMIT=unknown
+ENV GIT_COMMIT=$GIT_COMMIT
+
 EXPOSE 8000
 
 # Container starts as root only long enough to chown mounted volumes,

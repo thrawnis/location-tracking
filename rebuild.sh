@@ -10,8 +10,9 @@ git -C "$(dirname "$0")" checkout "$BRANCH"
 echo "==> Pulling latest code..."
 git -C "$(dirname "$0")" pull origin "$BRANCH"
 
-echo "==> Rebuilding Docker image..."
-docker compose -f "$COMPOSE_FILE" build --no-cache
+COMMIT=$(git -C "$(dirname "$0")" rev-parse --short HEAD 2>/dev/null || echo "unknown")
+echo "==> Rebuilding Docker image (commit: $COMMIT)..."
+docker compose -f "$COMPOSE_FILE" build --build-arg GIT_COMMIT="$COMMIT"
 
 echo "==> Restarting containers..."
 docker compose -f "$COMPOSE_FILE" down
