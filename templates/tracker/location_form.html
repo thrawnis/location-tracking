@@ -129,6 +129,7 @@
           {{ form.public_notes }}
         </div>
 
+        {% if not location or user == location.created_by %}
         <div>
           <label class="block text-sm font-medium text-slate-700 mb-1">
             <span class="inline-flex items-center gap-1.5">
@@ -140,9 +141,10 @@
               Private Notes
             </span>
           </label>
-          <p class="text-xs text-slate-400 mb-1.5">Only shown to signed-in users.</p>
+          <p class="text-xs text-slate-400 mb-1.5">Only visible to you.</p>
           {{ form.private_notes }}
         </div>
+        {% endif %}
       </fieldset>
 
       <!-- Submit -->

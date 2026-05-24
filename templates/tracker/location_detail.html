@@ -115,8 +115,8 @@
       </div>
       {% endif %}
 
-      <!-- Private notes (logged-in only) -->
-      {% if user.is_authenticated and location.private_notes %}
+      <!-- Private notes (owner only) -->
+      {% if location.private_notes and user == location.created_by %}
       <div class="bg-amber-50 border border-amber-200 rounded-xl shadow-sm p-5">
         <div class="flex items-center gap-2 mb-2">
           <svg class="w-4 h-4 text-amber-500" fill="currentColor" viewBox="0 0 20 20">
