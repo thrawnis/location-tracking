@@ -18,7 +18,7 @@
   {% if location.photos.all %}
   <div class="grid grid-cols-2 sm:grid-cols-3 gap-3">
     {% for photo in location.photos.all %}
-    <div class="relative group rounded-xl overflow-hidden bg-slate-100 aspect-square">
+    <div class="relative rounded-xl overflow-hidden bg-slate-100 aspect-square">
       <img src="{{ photo.image.url }}" alt="{{ photo.caption|default:'Photo' }}"
            class="w-full h-full object-cover">
       {% if photo.caption %}
@@ -27,12 +27,41 @@
       </div>
       {% endif %}
       {% if user.is_authenticated %}
-      <div class="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors flex items-start justify-end p-2">
+      <!-- Always-visible controls bar at the top of each photo -->
+      <div class="absolute top-0 inset-x-0 flex items-center justify-between p-1.5 bg-gradient-to-b from-black/50 to-transparent">
+        <!-- Rotate buttons -->
+        <div class="flex gap-1">
+          <button hx-post="{% url 'photo_rotate' location.pk photo.pk %}"
+                  hx-vals='{"direction":"ccw"}'
+                  hx-target="#photos-section"
+                  hx-swap="outerHTML"
+                  class="bg-black/40 hover:bg-black/70 text-white rounded p-1 transition-all"
+                  title="Rotate left">
+            <!-- counter-clockwise arrow -->
+            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                    d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6"/>
+            </svg>
+          </button>
+          <button hx-post="{% url 'photo_rotate' location.pk photo.pk %}"
+                  hx-vals='{"direction":"cw"}'
+                  hx-target="#photos-section"
+                  hx-swap="outerHTML"
+                  class="bg-black/40 hover:bg-black/70 text-white rounded p-1 transition-all"
+                  title="Rotate right">
+            <!-- clockwise arrow -->
+            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                    d="M21 10H11a8 8 0 00-8 8v2m18-10l-6 6m6-6l-6-6"/>
+            </svg>
+          </button>
+        </div>
+        <!-- Delete button -->
         <button hx-post="{% url 'photo_delete' location.pk photo.pk %}"
                 hx-target="#photos-section"
                 hx-swap="outerHTML"
                 hx-confirm="Delete this photo?"
-                class="opacity-0 group-hover:opacity-100 bg-red-500 hover:bg-red-600 text-white rounded-lg p-1.5 transition-all shadow-lg"
+                class="bg-red-500/80 hover:bg-red-600 text-white rounded p-1 transition-all"
                 title="Delete photo">
           <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
@@ -78,8 +107,9 @@
               class="bg-brand text-white text-sm font-medium px-4 py-2 rounded-lg hover:bg-brand-dark transition-colors">
         Upload
       </button>
+      <!-- ?show=0 tells the view to render without the form (cancel) -->
       <button type="button"
-              hx-get="{% url 'photo_add' location.pk %}"
+              hx-get="{% url 'photo_add' location.pk %}?show=0"
               hx-target="#photos-section"
               hx-swap="outerHTML"
               class="text-sm text-slate-500 hover:text-slate-700 px-3 py-2">

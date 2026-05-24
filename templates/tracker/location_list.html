@@ -253,7 +253,7 @@
       <!-- Desktop tab bar -->
       <div class="hidden md:flex shrink-0 border-b border-slate-100">
         <button id="tab-saved" class="tab-btn tab-active">
-          ♥ Saved&nbsp;<span id="sidebar-count">0</span>
+          ♥ Saved&nbsp;<span id="tab-saved-count">0</span>
         </button>
         <button id="tab-nearby" class="tab-btn">
           📍 Nearby&nbsp;<span id="osm-result-count">0</span>
@@ -466,8 +466,9 @@ const IS_AUTH = {% if user.is_authenticated %}true{% else %}false{% endif %};
       const entry = markerMap[p.id];
       if (entry) {
         const onMap = mainMap.hasLayer(entry.marker);
-        if (show && sidebarOpen && !onMap) entry.marker.addTo(mainMap);
-        if ((!show || !sidebarOpen) && onMap) entry.marker.remove();
+        // Saved waypoints always show on the map regardless of sidebar state
+        if (show && !onMap) entry.marker.addTo(mainMap);
+        if (!show && onMap) entry.marker.remove();
       }
       if (show) visible++;
     });
@@ -569,7 +570,7 @@ const IS_AUTH = {% if user.is_authenticated %}true{% else %}false{% endif %};
         const city  = tags['addr:city']  || tags['addr:town'] || '';
         const state = tags['addr:state'] || '';
         const addr  = [tags['addr:housenumber'], tags['addr:street'], city].filter(Boolean).join(' ');
-        const saveParams = new URLSearchParams({ name, ...(lat?{lat:lat.toFixed(6)}:{}), ...(lng?{lng:lng.toFixed(6)}:{}), ...(addr?{address:addr}:{}), ...(city?{city}:{}), ...(state?{state}:{}) });
+        const saveParams = new URLSearchParams({ name, ...(lat?{latitude:lat.toFixed(6)}:{}), ...(lng?{longitude:lng.toFixed(6)}:{}), ...(addr?{address:addr}:{}), ...(city?{city}:{}), ...(state?{state}:{}) });
 
         const marker = L.marker([lat, lng], { icon: pinIcon(info.color), zIndexOffset: 0 });
         marker.bindTooltip(name, { permanent: true, direction: 'top', offset: [0, -32], className: 'loc-name-tag' });
@@ -830,8 +831,8 @@ const IS_AUTH = {% if user.is_authenticated %}true{% else %}false{% endif %};
         });
 
         const total = data.features.length;
-        const badge = document.getElementById('sidebar-count');
-        if (badge) badge.textContent = total;
+        // Update both badges (toggle button + tab bar)
+        document.querySelectorAll('#sidebar-count, #tab-saved-count').forEach(el => el.textContent = total);
 
         applyFilters();
       });

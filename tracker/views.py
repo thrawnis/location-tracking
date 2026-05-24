@@ -224,7 +224,9 @@ def item_add(request, pk):
             _log(request, AuditLog.ACTION_CREATE, item, detail)
             return _render_items_section(request, location)
         return _render_items_section(request, location, item_form=form, show_form=True)
-    return _render_items_section(request, location, show_form=True)
+    # ?show=0 is used by the Cancel button to collapse the form
+    show = request.GET.get("show", "1") != "0"
+    return _render_items_section(request, location, show_form=show)
 
 
 @login_required
@@ -303,7 +305,8 @@ def visit_add(request, pk):
             )
             return _render_visits_section(request, location)
         return _render_visits_section(request, location, visit_form=form, show_form=True)
-    return _render_visits_section(request, location, show_form=True)
+    show = request.GET.get("show", "1") != "0"
+    return _render_visits_section(request, location, show_form=show)
 
 
 @login_required
@@ -347,7 +350,8 @@ def photo_add(request, pk):
             _log(request, AuditLog.ACTION_CREATE, photo, detail)
             return _render_photos_section(request, location)
         return _render_photos_section(request, location, photo_form=form, show_form=True)
-    return _render_photos_section(request, location, show_form=True)
+    show = request.GET.get("show", "1") != "0"
+    return _render_photos_section(request, location, show_form=show)
 
 
 @login_required
@@ -362,6 +366,31 @@ def photo_delete(request, pk, photo_pk):
     if photo.image and photo.image.storage.exists(photo.image.name):
         photo.image.delete(save=False)
     photo.delete()
+    return _render_photos_section(request, location)
+
+
+@login_required
+@require_POST
+def photo_rotate(request, pk, photo_pk):
+    """Rotate a photo 90° clockwise or counter-clockwise in place."""
+    from PIL import Image, UnidentifiedImageError
+    location = get_object_or_404(Location, pk=pk)
+    photo = get_object_or_404(Photo, pk=photo_pk, location=location)
+    direction = request.POST.get("direction", "cw")
+    angle = -90 if direction == "cw" else 90  # PIL rotates CCW by default
+    try:
+        img = Image.open(photo.image.path)
+        # expand=True ensures the canvas grows for portrait/landscape swaps
+        rotated = img.rotate(angle, expand=True)
+        fmt = img.format or "JPEG"
+        if fmt == "JPEG":
+            rotated.save(photo.image.path, format=fmt, quality=90)
+        else:
+            rotated.save(photo.image.path, format=fmt)
+        _log(request, AuditLog.ACTION_UPDATE, photo,
+             'Rotated photo {} {}° in "{}"'.format(photo.pk, abs(angle), location.name))
+    except (FileNotFoundError, UnidentifiedImageError, Exception):
+        pass
     return _render_photos_section(request, location)
 
 

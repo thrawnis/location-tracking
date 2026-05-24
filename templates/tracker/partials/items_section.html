@@ -87,7 +87,7 @@
         Save item
       </button>
       <button type="button"
-              hx-get="{% url 'item_add' location.pk %}"
+              hx-get="{% url 'item_add' location.pk %}?show=0"
               hx-target="#items-section"
               hx-swap="outerHTML"
               class="text-sm text-slate-500 hover:text-slate-700 px-3 py-2">
