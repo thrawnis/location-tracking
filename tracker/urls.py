@@ -32,4 +32,7 @@ urlpatterns = [
 
     # Server-side IP geolocation fallback
     path("api/geoip/", views.geoip_view, name="geoip"),
+
+    # OSM POI search proxy (24-hour cache)
+    path("api/osm/search/", views.osm_search, name="osm_search"),
 ]

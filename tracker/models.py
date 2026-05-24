@@ -148,6 +148,26 @@ class Photo(models.Model):
                 img.save(self.image.path, format=fmt, optimize=True)
 
 
+class OsmSearchCache(models.Model):
+    """
+    Caches Overpass API search results for up to 24 hours.
+    Key: (query, lat/lng rounded to 2 dp ≈ 1 km grid, radius_m).
+    """
+    query      = models.CharField(max_length=255, db_index=True)
+    center_lat = models.DecimalField(max_digits=7, decimal_places=2)   # ~1 km grid
+    center_lng = models.DecimalField(max_digits=8, decimal_places=2)
+    radius_m   = models.IntegerField()
+    results    = models.JSONField(default=list)   # list of serialised Overpass element dicts
+    fetched_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        unique_together = [("query", "center_lat", "center_lng", "radius_m")]
+        ordering = ["-fetched_at"]
+
+    def __str__(self):
+        return f'OSM "{self.query}" @({self.center_lat},{self.center_lng}) r={self.radius_m}m'
+
+
 class AuditLog(models.Model):
     ACTION_CREATE = "create"
     ACTION_UPDATE = "update"

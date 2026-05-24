@@ -666,6 +666,38 @@ const IS_AUTH = {% if user.is_authenticated %}true{% else %}false{% endif %};
     if (btn) btn.classList.toggle('hidden', !show);
   }
 
+  // ── Extra OSM tag helpers ────────────────────────────────────────────────
+  function osmBadges(tags) {
+    const pills = [];
+    const cuisine = tags.cuisine;
+    if (cuisine) pills.push({ text: cuisine.replace(/_/g,' '), color: '#f59e0b' });
+    if (tags['diet:vegan']       === 'yes') pills.push({ text: '🌱 Vegan', color: '#22c55e' });
+    if (tags['diet:vegetarian']  === 'yes') pills.push({ text: '🥗 Vegetarian', color: '#84cc16' });
+    if (tags.outdoor_seating     === 'yes') pills.push({ text: '☀️ Outdoor seating', color: '#0ea5e9' });
+    if (tags.takeaway            === 'yes') pills.push({ text: '🥡 Takeaway', color: '#8b5cf6' });
+    if (tags.delivery            === 'yes') pills.push({ text: '🚴 Delivery', color: '#ec4899' });
+    if (tags.internet_access     === 'wlan' || tags.wifi === 'yes') pills.push({ text: '📶 WiFi', color: '#6366f1' });
+    if (tags.wheelchair          === 'yes') pills.push({ text: '♿ Accessible', color: '#10b981' });
+    if (tags.wheelchair          === 'limited') pills.push({ text: '♿ Limited access', color: '#f97316' });
+    return pills;
+  }
+
+  function osmSocial(tags) {
+    const links = [];
+    const fb = tags['contact:facebook'] || tags['facebook'];
+    const ig = tags['contact:instagram'] || tags['instagram'];
+    if (fb) links.push({ icon: 'fb', label: 'Facebook', href: fb.startsWith('http') ? fb : `https://facebook.com/${fb}` });
+    if (ig) links.push({ icon: 'ig', label: 'Instagram', href: ig.startsWith('http') ? ig : `https://instagram.com/${ig}` });
+    return links;
+  }
+
+  function osmCacheNote(cached, fetchedAt) {
+    if (!cached) return '';
+    const age = Math.round((Date.now() - new Date(fetchedAt)) / 60000);
+    const label = age < 60 ? `${age}m ago` : `${Math.round(age/60)}h ago`;
+    return `<span title="Cached result — refreshes after 24 h" style="font-size:10px;color:#94a3b8">💾 cached ${label}</span>`;
+  }
+
   async function searchOsmPois(query) {
     clearOsmEntries();
     osmSpinner(true);
@@ -676,35 +708,35 @@ const IS_AUTH = {% if user.is_authenticated %}true{% else %}false{% endif %};
     const cLat     = center.lat, cLng = center.lng;
     const radiusM  = parseInt(document.getElementById('radius-select')?.value || '8047');
     const radiusMi = formatDist(radiusM / 1000);
-    const q        = escapeRegex(query);
 
-    // Search nodes, ways, and relations with a radius-based area (much wider than bbox)
-    const overpassQ = `[out:json][timeout:25];(
-      node["name"~"${q}",i](around:${radiusM},${cLat},${cLng});
-      way["name"~"${q}",i](around:${radiusM},${cLat},${cLng});
-      relation["name"~"${q}",i](around:${radiusM},${cLat},${cLng});
-    );out center 200;`;
-
+    // Call our server-side proxy (caches for 24 h)
+    const params = new URLSearchParams({ q: query, lat: cLat, lng: cLng, radius: radiusM });
+    let data, wasCached = false, fetchedAt = null;
     try {
-      const res  = await fetch('https://overpass-api.de/api/interpreter', { method: 'POST', body: overpassQ });
+      const res = await fetch(`/api/osm/search/?${params}`);
       osmSpinner(false);
-      const data = await res.json();
-
-      // Compute distance from map center, filter out no-coords, sort ascending
-      const sorted = data.elements
-        .map(el => {
-          const lat = el.lat ?? el.center?.lat;
-          const lng = el.lon ?? el.center?.lon;
-          if (!lat || !lng) return null;
-          return { el, lat, lng, distKm: haversineKm(cLat, cLng, lat, lng) };
-        })
-        .filter(Boolean)
-        .sort((a, b) => a.distKm - b.distKm);
-
+      if (!res.ok) throw new Error(`status ${res.status}`);
+      data = await res.json();
+      wasCached = data.cached;
+      fetchedAt = data.fetched_at;
+    } catch (err) {
+      osmSpinner(false);
       const list = document.getElementById('osm-list');
-      if (list) list.innerHTML = '';
+      if (list) list.innerHTML = '<p class="text-xs text-slate-400 text-center py-6">Search failed — check connection and try again</p>';
+      return;
+    }
 
-      sorted.forEach(({ el, lat, lng, distKm }) => {
+    // Server already computed dist_km and sorted; no need to re-sort
+    const sorted = (data.results || []).map(el => {
+      const lat = el.lat ?? el.center?.lat;
+      const lng = el.lon ?? el.center?.lon;
+      return { el, lat, lng, distKm: el.dist_km };
+    });
+
+    const list = document.getElementById('osm-list');
+    if (list) list.innerHTML = '';
+
+    sorted.forEach(({ el, lat, lng, distKm }) => {
         const tags  = el.tags || {};
         const name  = tags.name || 'Unnamed';
         const cat   = classifyOsm(tags);
@@ -716,7 +748,10 @@ const IS_AUTH = {% if user.is_authenticated %}true{% else %}false{% endif %};
         const phone   = tags.phone || tags['contact:phone'] || '';
         const website = tags.website || tags['contact:website'] || tags['contact:url'] || '';
         const hours   = tags.opening_hours || '';
+        const desc    = tags.description || '';
         const dist    = formatDist(distKm);
+        const badges  = osmBadges(tags);
+        const socials = osmSocial(tags);
         const saveParams = new URLSearchParams({
           name,
           ...(lat     ? { latitude:  lat.toFixed(6) } : {}),
@@ -729,29 +764,44 @@ const IS_AUTH = {% if user.is_authenticated %}true{% else %}false{% endif %};
           ...(hours   ? { hours }                      : {}),
         });
 
-        // Map marker + popup
+        // ── Map popup ───────────────────────────────────────────────────────
+        const badgeHtml = badges.map(b =>
+          `<span style="font-size:10px;background:${b.color}18;color:${b.color};padding:1px 5px;border-radius:3px;font-weight:600">${b.text}</span>`
+        ).join(' ');
+        const socialHtml = socials.map(s =>
+          `<a href="${s.href}" target="_blank" rel="noopener" style="font-size:11px;color:#6366f1;font-weight:600">${s.label}</a>`
+        ).join(' · ');
+
         const marker = L.marker([lat, lng], { icon: pinIcon(info.color), zIndexOffset: 0 });
         marker.bindTooltip(name, { permanent: true, direction: 'top', offset: [0, -32], className: 'loc-name-tag' });
-        marker.bindPopup(`<div style="min-width:210px;font-family:inherit">
+        marker.bindPopup(`<div style="min-width:220px;font-family:inherit">
           <p style="font-weight:700;font-size:14px;margin:0 0 4px">${name}</p>
           <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:4px">
             <span style="font-size:11px;background:${info.color}22;color:${info.color};padding:1px 7px;border-radius:4px;font-weight:600">${info.emoji} ${kind || info.label}</span>
             <span style="font-size:11px;color:#64748b;font-weight:600">📍 ${dist}</span>
           </div>
+          ${desc    ? `<p style="font-size:11px;color:#64748b;margin:2px 0;font-style:italic">${desc}</p>` : ''}
           ${addr    ? `<p style="font-size:12px;color:#475569;margin:2px 0">${addr}${state ? ', '+state : ''}</p>` : ''}
           ${phone   ? `<p style="font-size:12px;color:#475569;margin:2px 0">📞 <a href="tel:${phone}" style="color:#475569">${phone}</a></p>` : ''}
           ${website ? `<p style="font-size:12px;margin:2px 0">🌐 <a href="${website}" target="_blank" rel="noopener" style="color:#6366f1">${website.replace(/^https?:\/\//,'')}</a></p>` : ''}
           ${hours   ? `<p style="font-size:11px;color:#64748b;margin:2px 0;white-space:pre-line">🕐 ${hours}</p>` : ''}
-          <div style="display:flex;gap:8px;margin-top:8px;align-items:center">
+          ${badgeHtml ? `<div style="display:flex;flex-wrap:wrap;gap:3px;margin-top:4px">${badgeHtml}</div>` : ''}
+          ${socialHtml ? `<p style="margin-top:4px">${socialHtml}</p>` : ''}
+          <div style="display:flex;gap:8px;margin-top:8px;align-items:center;flex-wrap:wrap">
             <a href="https://www.openstreetmap.org/${el.type}/${el.id}" target="_blank" rel="noopener"
                style="font-size:12px;color:#6366f1;font-weight:600">OSM →</a>
             ${IS_AUTH ? `<a href="/locations/new/?${saveParams}"
                style="font-size:12px;color:#ec4899;font-weight:700">♥ Save Waypoint</a>` : ''}
+            ${osmCacheNote(wasCached, fetchedAt)}
           </div>
         </div>`);
         if (osmCatFilters[cat] !== false) marker.addTo(mainMap);
 
-        // List item (Yelp-style: name + distance + category chip + address + phone + save link)
+        // ── List item ───────────────────────────────────────────────────────
+        const listBadges = badges.slice(0, 3).map(b =>
+          `<span style="font-size:10px;background:${b.color}18;color:${b.color};padding:1px 4px;border-radius:3px;font-weight:600;white-space:nowrap">${b.text}</span>`
+        ).join('');
+
         const item = document.createElement('div');
         item.className = 'osm-item'; item.dataset.cat = cat;
         item.innerHTML = `
@@ -768,6 +818,7 @@ const IS_AUTH = {% if user.is_authenticated %}true{% else %}false{% endif %};
               </span>
               ${addr ? `<span class="text-xs text-slate-400 truncate">${addr}</span>` : ''}
             </div>
+            ${listBadges ? `<div class="flex flex-wrap gap-1 mt-1">${listBadges}</div>` : ''}
             ${phone   ? `<p class="text-xs text-slate-400 mt-0.5">📞 <a href="tel:${phone}" onclick="event.stopPropagation()" class="hover:text-brand">${phone}</a></p>` : ''}
             ${website ? `<p class="text-xs text-brand mt-0.5 truncate">🌐 <a href="${website}" target="_blank" rel="noopener" onclick="event.stopPropagation()" class="hover:underline">${website.replace(/^https?:\/\//,'')}</a></p>` : ''}
             ${hours   ? `<p class="text-xs text-slate-400 mt-0.5">🕐 ${hours}</p>` : ''}
@@ -822,11 +873,6 @@ const IS_AUTH = {% if user.is_authenticated %}true{% else %}false{% endif %};
 
       openSidebar();
       switchTab('nearby');
-    } catch (_) {
-      osmSpinner(false);
-      const list = document.getElementById('osm-list');
-      if (list) list.innerHTML = '<p class="text-xs text-slate-400 text-center py-6">Search failed — check connection and try again</p>';
-    }
   }
 
   function triggerOsmSearch() {

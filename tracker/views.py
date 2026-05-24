@@ -1,5 +1,10 @@
 import json
 import urllib.request
+import urllib.parse
+from decimal import Decimal, ROUND_HALF_UP
+from datetime import timedelta
+
+from django.utils import timezone
 
 from django.contrib import messages
 from django.contrib.auth import authenticate, login, logout
@@ -12,7 +17,7 @@ from django.shortcuts import get_object_or_404, redirect, render
 from django.views.decorators.http import require_POST
 
 from .forms import ItemForm, ItemReviewForm, LocationForm, PhotoForm, RegisterForm, VisitForm
-from .models import AuditLog, Item, ItemReview, Location, Photo, Visit
+from .models import AuditLog, Item, ItemReview, Location, OsmSearchCache, Photo, Visit
 
 
 # ── Audit helpers ─────────────────────────────────────────────────────────────
@@ -517,6 +522,116 @@ def geoip_view(request):
     except Exception:
         pass
     return JsonResponse({"status": "error"})
+
+
+# ── OSM POI search (server-side proxy + 24-hour cache) ────────────────────────
+
+_OSM_CACHE_TTL = timedelta(hours=24)
+_OVERPASS_URL  = "https://overpass-api.de/api/interpreter"
+
+
+def _round2(value):
+    """Round a float to 2 dp as a Decimal (cache key)."""
+    return Decimal(str(value)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+
+
+def osm_search(request):
+    """
+    Proxy for Overpass API with a 24-hour server-side cache.
+
+    GET params: q, lat, lng, radius (metres, default 8047)
+    Returns JSON: { cached: bool, fetched_at: iso, results: [...] }
+    Each result mirrors the Overpass element with an extra 'dist_km' field
+    computed server-side.
+    """
+    query    = request.GET.get("q", "").strip()
+    try:
+        lat    = float(request.GET.get("lat", 0))
+        lng    = float(request.GET.get("lng", 0))
+        radius = int(request.GET.get("radius", 8047))
+    except (ValueError, TypeError):
+        return JsonResponse({"error": "invalid params"}, status=400)
+
+    if not query:
+        return JsonResponse({"error": "q required"}, status=400)
+
+    # ── Cache lookup ─────────────────────────────────────────────────────────
+    clat = _round2(lat)
+    clng = _round2(lng)
+
+    cached = OsmSearchCache.objects.filter(
+        query=query.lower(),
+        center_lat=clat,
+        center_lng=clng,
+        radius_m=radius,
+        fetched_at__gte=timezone.now() - _OSM_CACHE_TTL,
+    ).first()
+
+    if cached:
+        return JsonResponse({
+            "cached": True,
+            "fetched_at": cached.fetched_at.isoformat(),
+            "results": cached.results,
+        })
+
+    # ── Fetch from Overpass ───────────────────────────────────────────────────
+    q = query.replace('"', '')   # minimal sanitise for Overpass regex
+    overpass_q = (
+        f'[out:json][timeout:25];('
+        f'node["name"~"{q}",i](around:{radius},{lat},{lng});'
+        f'way["name"~"{q}",i](around:{radius},{lat},{lng});'
+        f'relation["name"~"{q}",i](around:{radius},{lat},{lng});'
+        f');out center 200;'
+    )
+
+    try:
+        data_bytes = overpass_q.encode()
+        req = urllib.request.Request(
+            _OVERPASS_URL,
+            data=data_bytes,
+            headers={"Content-Type": "application/x-www-form-urlencoded"},
+            method="POST",
+        )
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            raw = json.loads(resp.read())
+    except Exception as exc:
+        return JsonResponse({"error": f"overpass unavailable: {exc}"}, status=502)
+
+    # ── Compute distance + filter out no-coord elements ──────────────────────
+    import math
+
+    def _haversine(lat1, lon1, lat2, lon2):
+        R = 6371.0
+        dlat = math.radians(lat2 - lat1)
+        dlon = math.radians(lon2 - lon1)
+        a = math.sin(dlat/2)**2 + math.cos(math.radians(lat1)) * math.cos(math.radians(lat2)) * math.sin(dlon/2)**2
+        return R * 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
+
+    results = []
+    for el in raw.get("elements", []):
+        elat = el.get("lat") or (el.get("center") or {}).get("lat")
+        elng = el.get("lon") or (el.get("center") or {}).get("lon")
+        if elat is None or elng is None:
+            continue
+        el["dist_km"] = round(_haversine(lat, lng, elat, elng), 4)
+        results.append(el)
+
+    results.sort(key=lambda e: e["dist_km"])
+
+    # ── Store / update cache ──────────────────────────────────────────────────
+    OsmSearchCache.objects.update_or_create(
+        query=query.lower(),
+        center_lat=clat,
+        center_lng=clng,
+        radius_m=radius,
+        defaults={"results": results, "fetched_at": timezone.now()},
+    )
+
+    return JsonResponse({
+        "cached": False,
+        "fetched_at": timezone.now().isoformat(),
+        "results": results,
+    })
 
 
 # ── Admin audit log ───────────────────────────────────────────────────────────
