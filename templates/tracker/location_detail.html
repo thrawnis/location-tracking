@@ -191,10 +191,10 @@
             &nbsp;·&nbsp;
             {{ location.latitude }}, {{ location.longitude }}
           </p>
-          <a href="https://www.openstreetmap.org/?mlat={{ location.latitude }}&mlon={{ location.longitude }}&zoom=16"
+          <a href="https://www.google.com/maps/search/?api=1&query={{ location.latitude }},{{ location.longitude }}"
              target="_blank" rel="noopener"
              class="ml-auto shrink-0 text-xs text-brand hover:underline">
-            Open in OSM →
+            Open in Google Maps →
           </a>
         </div>
       </div>
@@ -229,16 +229,42 @@
 {% block extra_js %}
 {% if location.has_coords %}
 <script>
-const lat = {{ location.latitude }};
-const lng = {{ location.longitude }};
-const map = L.map('detail-map').setView([lat, lng], 15);
-L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-  attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
-  maxZoom: 19
-}).addTo(map);
-L.marker([lat, lng])
-  .bindPopup('<strong>{{ location.name|escapejs }}</strong>')
-  .addTo(map);
+window.initDetailMap = function () {
+  const lat = {{ location.latitude }};
+  const lng = {{ location.longitude }};
+
+  const map = new google.maps.Map(document.getElementById('detail-map'), {
+    center:            { lat, lng },
+    zoom:              15,
+    mapId:             'DEMO_MAP_ID',
+    gestureHandling:   'cooperative',
+    mapTypeControl:    false,
+    streetViewControl: false,
+    fullscreenControl: false,
+  });
+
+  const infoWindow = new google.maps.InfoWindow({
+    content: '<strong>{{ location.name|escapejs }}</strong>',
+  });
+
+  const pinEl = document.createElement('div');
+  pinEl.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="32" viewBox="0 0 24 32"
+      style="filter:drop-shadow(0 2px 4px rgba(0,0,0,.4))">
+    <path d="M12 0C5.37 0 0 5.37 0 12c0 9 12 20 12 20s12-11 12-20C24 5.37 18.63 0 12 0z" fill="#6366f1"/>
+    <circle cx="12" cy="12" r="5" fill="white"/>
+  </svg>`;
+
+  const marker = new google.maps.marker.AdvancedMarkerElement({
+    map,
+    position: { lat, lng },
+    content:  pinEl,
+    title:    '{{ location.name|escapejs }}',
+  });
+
+  marker.addListener('click', () => infoWindow.open({ map, anchor: marker }));
+  infoWindow.open({ map, anchor: marker });
+};
 </script>
+<script src="https://maps.googleapis.com/maps/api/js?key={{ GOOGLE_MAPS_KEY }}&libraries=marker&v=beta&callback=initDetailMap" async defer></script>
 {% endif %}
 {% endblock %}

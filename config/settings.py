@@ -82,6 +82,8 @@ DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
 APP_VERSION = os.environ.get("GIT_COMMIT", "dev")
 
+GOOGLE_MAPS_API_KEY = os.environ.get("GOOGLE_MAPS_API_KEY", "")
+
 LOGIN_URL = "/accounts/login/"
 LOGIN_REDIRECT_URL = "/"
 LOGOUT_REDIRECT_URL = "/"

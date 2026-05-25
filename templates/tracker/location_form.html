@@ -237,114 +237,154 @@
 
 {% block extra_js %}
 <script>
-(function() {
-  const latInput  = document.getElementById('id_latitude');
-  const lngInput  = document.getElementById('id_longitude');
-  const cityInput = document.getElementById('id_city');
-  const stateInput= document.getElementById('id_state');
-  const addrInput = document.getElementById('id_address');
-  const coordsDiv = document.getElementById('coords-display');
-  const latSpan   = document.getElementById('lat-display');
-  const lngSpan   = document.getElementById('lng-display');
+window.initFormMap = function () {
+  const latInput   = document.getElementById('id_latitude');
+  const lngInput   = document.getElementById('id_longitude');
+  const cityInput  = document.getElementById('id_city');
+  const stateInput = document.getElementById('id_state');
+  const addrInput  = document.getElementById('id_address');
+  const coordsDiv  = document.getElementById('coords-display');
+  const latSpan    = document.getElementById('lat-display');
+  const lngSpan    = document.getElementById('lng-display');
+  const errDiv     = document.getElementById('addr-error');
 
   const initLat  = parseFloat(latInput.value) || 39.5;
   const initLng  = parseFloat(lngInput.value) || -98.35;
   const initZoom = latInput.value ? 14 : 4;
 
-  const map = L.map('pick-map').setView([initLat, initLng], initZoom);
-  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-    attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
-    maxZoom: 19
-  }).addTo(map);
+  const map = new google.maps.Map(document.getElementById('pick-map'), {
+    center:            { lat: initLat, lng: initLng },
+    zoom:              initZoom,
+    mapId:             'DEMO_MAP_ID',
+    gestureHandling:   'cooperative',
+    mapTypeControl:    false,
+    streetViewControl: false,
+    fullscreenControl: false,
+  });
 
+  const geocoder = new google.maps.Geocoder();
   let marker = null;
 
-  function parseCityState(addr) {
-    if (!addr) return;
-    cityInput.value  = addr.city || addr.town || addr.village || addr.county || '';
-    stateInput.value = addr.state || '';
+  function parseCityState(addressComponents) {
+    if (!addressComponents) return;
+    cityInput.value  = addressComponents.find(c => c.types.includes('locality'))?.long_name ||
+                       addressComponents.find(c => c.types.includes('administrative_area_level_2'))?.long_name || '';
+    stateInput.value = addressComponents.find(c => c.types.includes('administrative_area_level_1'))?.long_name || '';
   }
 
-  async function reverseGeocode(lat, lng) {
-    try {
-      const res  = await fetch(
-        `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json&addressdetails=1`,
-        { headers: { 'Accept-Language': 'en' } }
-      );
-      const data = await res.json();
-      parseCityState(data.address);
-    } catch (e) {}
+  function reverseGeocode(lat, lng) {
+    geocoder.geocode({ location: { lat, lng } }, (results, status) => {
+      if (status === 'OK' && results[0]) {
+        parseCityState(results[0].address_components);
+        if (!addrInput.value) addrInput.value = results[0].formatted_address;
+      }
+    });
   }
 
-  function setCoords(latlng) {
-    const lat = latlng.lat.toFixed(7);
-    const lng = latlng.lng.toFixed(7);
-    latInput.value  = lat;
-    lngInput.value  = lng;
-    latSpan.textContent = lat;
-    lngSpan.textContent = lng;
+  function setCoords(lat, lng) {
+    const latStr = parseFloat(lat).toFixed(7);
+    const lngStr = parseFloat(lng).toFixed(7);
+    latInput.value      = latStr;
+    lngInput.value      = lngStr;
+    latSpan.textContent = latStr;
+    lngSpan.textContent = lngStr;
     coordsDiv.style.display = '';
-    reverseGeocode(lat, lng);
+    reverseGeocode(parseFloat(latStr), parseFloat(lngStr));
   }
 
-  function placeMarker(latlng, address) {
-    if (marker) map.removeLayer(marker);
-    marker = L.marker(latlng, { draggable: true }).addTo(map);
-    marker.on('dragend', () => setCoords(marker.getLatLng()));
-    setCoords(latlng);
+  function placeMarker(lat, lng, address) {
+    if (marker) marker.map = null;
+
+    const pinEl = document.createElement('div');
+    pinEl.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="32" viewBox="0 0 24 32"
+        style="filter:drop-shadow(0 2px 4px rgba(0,0,0,.4))">
+      <path d="M12 0C5.37 0 0 5.37 0 12c0 9 12 20 12 20s12-11 12-20C24 5.37 18.63 0 12 0z" fill="#6366f1"/>
+      <circle cx="12" cy="12" r="5" fill="white"/>
+    </svg>`;
+
+    marker = new google.maps.marker.AdvancedMarkerElement({
+      map:            map,
+      position:       { lat, lng },
+      content:        pinEl,
+      gmpDraggable:   true,
+    });
+
+    marker.addListener('dragend', evt => {
+      setCoords(evt.latLng.lat(), evt.latLng.lng());
+    });
+
+    setCoords(lat, lng);
     if (address) addrInput.value = address;
   }
 
   function clearPin() {
-    if (marker) { map.removeLayer(marker); marker = null; }
-    latInput.value  = '';
-    lngInput.value  = '';
-    cityInput.value = '';
-    stateInput.value= '';
+    if (marker) { marker.map = null; marker = null; }
+    latInput.value      = '';
+    lngInput.value      = '';
+    cityInput.value     = '';
+    stateInput.value    = '';
+    addrInput.value     = '';
     coordsDiv.style.display = 'none';
   }
 
+  // Place marker if editing existing location
   if (latInput.value && lngInput.value) {
-    placeMarker(L.latLng(parseFloat(latInput.value), parseFloat(lngInput.value)), null);
+    placeMarker(parseFloat(latInput.value), parseFloat(lngInput.value), null);
   }
 
-  map.on('click', e => {
-    placeMarker(e.latlng, null);
-    map.setView(e.latlng, Math.max(map.getZoom(), 14));
+  // Click map to place/move pin
+  map.addListener('click', e => {
+    const lat = e.latLng.lat(), lng = e.latLng.lng();
+    placeMarker(lat, lng, null);
+    map.setZoom(Math.max(map.getZoom(), 14));
   });
 
-  async function searchAddress() {
-    const q      = document.getElementById('addr-search').value.trim();
-    const errDiv = document.getElementById('addr-error');
+  // ── Address search with Google Places Autocomplete ─────────
+  const addrSearchEl = document.getElementById('addr-search');
+  const autocomplete = new google.maps.places.Autocomplete(addrSearchEl, {
+    types: ['geocode'],
+  });
+  autocomplete.addListener('place_changed', () => {
+    errDiv.classList.add('hidden');
+    const place = autocomplete.getPlace();
+    if (!place.geometry?.location) {
+      errDiv.classList.remove('hidden');
+      return;
+    }
+    const lat = place.geometry.location.lat();
+    const lng = place.geometry.location.lng();
+    map.setCenter({ lat, lng });
+    map.setZoom(15);
+    if (place.address_components) parseCityState(place.address_components);
+    placeMarker(lat, lng, place.formatted_address);
+  });
+
+  // Search button as fallback (e.g. user typed but didn't pick from dropdown)
+  document.getElementById('addr-search-btn').addEventListener('click', () => {
+    const q = addrSearchEl.value.trim();
     if (!q) return;
     errDiv.classList.add('hidden');
-    try {
-      const res = await fetch(
-        `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(q)}&format=json&limit=1&addressdetails=1`,
-        { headers: { 'Accept-Language': 'en' } }
-      );
-      const results = await res.json();
-      if (!results.length) { errDiv.classList.remove('hidden'); return; }
-      const r      = results[0];
-      const latlng = L.latLng(parseFloat(r.lat), parseFloat(r.lon));
-      map.setView(latlng, 15);
-      // Populate city/state from search result so we don't need a second API call
-      if (r.address) {
-        cityInput.value  = r.address.city || r.address.town || r.address.village || r.address.county || '';
-        stateInput.value = r.address.state || '';
+    geocoder.geocode({ address: q }, (results, status) => {
+      if (status === 'OK' && results[0]) {
+        const loc = results[0].geometry.location;
+        const lat = loc.lat(), lng = loc.lng();
+        map.setCenter({ lat, lng });
+        map.setZoom(15);
+        parseCityState(results[0].address_components);
+        placeMarker(lat, lng, results[0].formatted_address);
+      } else {
+        errDiv.classList.remove('hidden');
       }
-      placeMarker(latlng, r.display_name);
-    } catch (err) {
-      errDiv.textContent = 'Search failed. Check your connection.';
-      errDiv.classList.remove('hidden');
-    }
-  }
-
-  document.getElementById('addr-search-btn').addEventListener('click', searchAddress);
-  document.getElementById('addr-search').addEventListener('keydown', e => {
-    if (e.key === 'Enter') { e.preventDefault(); searchAddress(); }
+    });
   });
+
+  // Prevent Enter from submitting the form while in addr-search
+  addrSearchEl.addEventListener('keydown', e => {
+    if (e.key === 'Enter') e.preventDefault();
+  });
+
   document.getElementById('clear-pin').addEventListener('click', clearPin);
-})();
+};
 </script>
+<script src="https://maps.googleapis.com/maps/api/js?key={{ GOOGLE_MAPS_KEY }}&libraries=places,marker&v=beta&callback=initFormMap" async defer></script>
 {% endblock %}
