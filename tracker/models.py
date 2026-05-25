@@ -3,6 +3,7 @@ from decimal import Decimal
 
 from django.contrib.auth.models import User
 from django.core.validators import MaxValueValidator, MinValueValidator
+from django.utils import timezone
 from django.db import models
 
 
@@ -193,7 +194,7 @@ class OsmSearchCache(models.Model):
     center_lng = models.DecimalField(max_digits=8, decimal_places=2)
     radius_m   = models.IntegerField()
     results    = models.JSONField(default=list)   # list of serialised Overpass element dicts
-    fetched_at = models.DateTimeField(auto_now_add=True)
+    fetched_at = models.DateTimeField(default=timezone.now)  # updatable so cache can refresh
 
     class Meta:
         unique_together = [("query", "center_lat", "center_lng", "radius_m")]

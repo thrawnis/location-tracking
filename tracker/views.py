@@ -1,4 +1,6 @@
 import json
+import math
+import re
 import urllib.request
 import urllib.parse
 from decimal import Decimal, ROUND_HALF_UP
@@ -604,7 +606,8 @@ def osm_search(request):
         })
 
     # ── Fetch from Overpass ───────────────────────────────────────────────────
-    q = query.replace('"', '')   # minimal sanitise for Overpass regex
+    # Strip chars that break Overpass regex syntax
+    q = re.sub(r'[\\"\[\](){}*+?.^$|]', '', query)
     overpass_q = (
         f'[out:json][timeout:25];('
         f'node["name"~"{q}",i](around:{radius},{lat},{lng});'
@@ -614,10 +617,11 @@ def osm_search(request):
     )
 
     try:
-        data_bytes = overpass_q.encode()
+        # Overpass expects a form-encoded body: data=<query>
+        form_body = urllib.parse.urlencode({'data': overpass_q}).encode()
         req = urllib.request.Request(
             _OVERPASS_URL,
-            data=data_bytes,
+            data=form_body,
             headers={"Content-Type": "application/x-www-form-urlencoded"},
             method="POST",
         )
@@ -627,8 +631,6 @@ def osm_search(request):
         return JsonResponse({"error": f"overpass unavailable: {exc}"}, status=502)
 
     # ── Compute distance + filter out no-coord elements ──────────────────────
-    import math
-
     def _haversine(lat1, lon1, lat2, lon2):
         R = 6371.0
         dlat = math.radians(lat2 - lat1)
