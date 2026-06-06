@@ -3,8 +3,8 @@ set -e
 
 # Fix ownership of bind-mounted data directories before dropping privileges.
 # This runs as root (container default) so it can chown host-mounted paths.
-mkdir -p /app/media /app/staticfiles
-chown -R appuser:appgroup /app/media /app/staticfiles
+mkdir -p /app/data/media /app/data/staticfiles
+chown -R appuser:appgroup /app/data
 
 echo "==> Running database migrations..."
 gosu appuser python manage.py migrate --noinput

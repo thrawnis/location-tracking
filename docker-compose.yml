@@ -32,4 +32,5 @@ services:
         condition: service_healthy
     restart: unless-stopped
     volumes:
-      - ./data/media:/app/media
+      - ./data/media:/app/data/media
+      - ./data/staticfiles:/app/data/staticfiles

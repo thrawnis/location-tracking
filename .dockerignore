@@ -1,0 +1,29 @@
+# Runtime data — all persisted via Docker volumes under ./data/
+data/
+
+# Secrets
+.env
+.env.*
+
+# Python bytecode
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.pdb
+
+# Test artifacts
+test.db
+*.sqlite3
+
+# OS noise
+.DS_Store
+Thumbs.db
+
+# Editor
+.vscode/
+.idea/
+
+# Git
+.git/
+.gitignore
