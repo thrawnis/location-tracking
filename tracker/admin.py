@@ -1,6 +1,8 @@
 from django.contrib import admin
 
-from .models import Item, ItemReview, Location, OsmSearchCache, Visit
+from .models import (
+    Collection, Item, ItemReview, Location, LocationReview, OsmSearchCache, Visit,
+)
 
 
 class ItemInline(admin.TabularInline):
@@ -15,10 +17,24 @@ class VisitInline(admin.TabularInline):
 
 @admin.register(Location)
 class LocationAdmin(admin.ModelAdmin):
-    list_display = ("name", "category", "overall_rating", "created_by", "created_at")
-    list_filter = ("category",)
+    list_display = ("name", "category", "status", "overall_rating", "created_by", "created_at")
+    list_filter = ("category", "status", "gluten_free")
     search_fields = ("name", "address")
     inlines = [ItemInline, VisitInline]
+
+
+@admin.register(Collection)
+class CollectionAdmin(admin.ModelAdmin):
+    list_display = ("name", "created_by", "created_at")
+    search_fields = ("name",)
+    filter_horizontal = ("locations",)
+
+
+@admin.register(LocationReview)
+class LocationReviewAdmin(admin.ModelAdmin):
+    list_display = ("location", "user", "rating", "updated_at")
+    list_filter = ("rating",)
+    search_fields = ("location__name", "user__username")
 
 
 @admin.register(Item)

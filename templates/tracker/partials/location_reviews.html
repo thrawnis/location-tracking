@@ -1,0 +1,96 @@
+{% load tracker_tags %}
+{% comment %}
+  Per-user overall reviews for a location.
+  Swapped via HTMX: id="location-reviews"
+{% endcomment %}
+<div id="location-reviews">
+  <div class="flex items-center justify-between mb-3">
+    <h2 class="text-sm font-semibold text-slate-500 uppercase tracking-wide">
+      Ratings &amp; Reviews
+      {% with rc=location.reviews.all|length %}
+      {% if rc %}<span class="normal-case font-normal text-slate-400">({{ rc }})</span>{% endif %}
+      {% endwith %}
+    </h2>
+    {% if user.is_authenticated and not show_form %}
+    <button hx-get="{% url 'location_review_upsert' location.pk %}"
+            hx-target="#location-reviews" hx-swap="outerHTML"
+            class="text-xs font-semibold text-brand hover:text-brand-dark border border-brand/30
+                   hover:border-brand px-2.5 py-1 rounded-lg transition-all">
+      {% if my_review %}✎ Edit my review{% else %}＋ Rate this place{% endif %}
+    </button>
+    {% endif %}
+  </div>
+
+  <!-- Average -->
+  {% with avg=location.avg_user_rating %}
+  {% if avg %}
+  <div class="flex items-center gap-2 mb-3">
+    {% stars_display avg "md" %}
+    <span class="text-sm text-slate-500">
+      average{% with rc=location.reviews.all|length %}{% if rc %} of {{ rc }} review{{ rc|pluralize }}{% endif %}{% endwith %}
+    </span>
+  </div>
+  {% endif %}
+  {% endwith %}
+
+  <!-- Review form -->
+  {% if show_form and user.is_authenticated %}
+  <form hx-post="{% url 'location_review_upsert' location.pk %}"
+        hx-target="#location-reviews" hx-swap="outerHTML"
+        class="mb-4 p-3 bg-slate-50 rounded-xl border border-slate-200 space-y-2">
+    {% csrf_token %}
+    <p class="text-xs font-semibold text-slate-600">Your rating</p>
+    {% include "tracker/partials/star_input.html" with field_name="rating" current_value=review_form.rating.value %}
+    {% if review_form.rating.errors %}
+    <p class="text-red-500 text-xs">{{ review_form.rating.errors|join:", " }}</p>
+    {% endif %}
+    {{ review_form.notes }}
+    <div class="flex items-center gap-2">
+      <button type="submit"
+              class="bg-brand hover:bg-brand-dark text-white text-xs font-semibold px-3 py-1.5 rounded-lg transition-colors">
+        Save review
+      </button>
+      <button type="button"
+              hx-get="{% url 'location_review_upsert' location.pk %}?cancel=1"
+              hx-target="#location-reviews" hx-swap="outerHTML"
+              class="text-xs text-slate-500 hover:text-slate-700 px-2 py-1.5">
+        Cancel
+      </button>
+    </div>
+  </form>
+  {% endif %}
+
+  <!-- Review list -->
+  <div class="space-y-2.5">
+    {% for review in location.reviews.all %}
+    <div class="flex items-start gap-2.5 {% if review.user == user %}bg-brand/5 -mx-2 px-2 py-1.5 rounded-lg{% endif %}">
+      <span class="w-7 h-7 rounded-full bg-brand-light text-brand flex items-center justify-center
+                   font-semibold text-xs uppercase shrink-0 mt-0.5">
+        {{ review.user.username|slice:":1" }}
+      </span>
+      <div class="min-w-0 flex-1">
+        <div class="flex items-center gap-2 flex-wrap">
+          <span class="text-sm font-semibold text-slate-800">{{ review.user.username }}</span>
+          {% stars_display review.rating "sm" %}
+          <span class="text-[10px] text-slate-400">{{ review.updated_at|date:"M j, Y" }}</span>
+          {% if review.user == user %}
+          <form hx-post="{% url 'location_review_delete' location.pk %}"
+                hx-target="#location-reviews" hx-swap="outerHTML"
+                hx-confirm="Delete your review?" class="ml-auto">
+            {% csrf_token %}
+            <button type="submit" class="text-[10px] text-red-400 hover:text-red-600">delete</button>
+          </form>
+          {% endif %}
+        </div>
+        {% if review.notes %}
+        <p class="text-sm text-slate-600 mt-0.5 whitespace-pre-line leading-snug">{{ review.notes }}</p>
+        {% endif %}
+      </div>
+    </div>
+    {% empty %}
+    {% if not show_form %}
+    <p class="text-xs text-slate-400">No reviews yet{% if user.is_authenticated %} — be the first to rate this place{% endif %}.</p>
+    {% endif %}
+    {% endfor %}
+  </div>
+</div>

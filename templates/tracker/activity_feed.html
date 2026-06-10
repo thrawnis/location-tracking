@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{% block title %}Activity – Waypoint{% endblock %}
+
+{% block content %}
+<div class="max-w-2xl mx-auto space-y-6">
+
+  <h1 class="text-2xl font-bold text-slate-900">Recent Activity</h1>
+
+  <div class="bg-white rounded-xl border border-slate-200 shadow-sm divide-y divide-slate-50">
+    {% for log in logs %}
+    <div class="flex items-start gap-3 px-5 py-3">
+      <span class="w-8 h-8 rounded-full flex items-center justify-center text-sm shrink-0 mt-0.5
+                   {% if log.action == 'create' %}bg-emerald-50
+                   {% elif log.action == 'update' %}bg-sky-50
+                   {% else %}bg-red-50{% endif %}">
+        {% if log.model_name == 'LocationReview' or log.model_name == 'ItemReview' %}⭐
+        {% elif log.model_name == 'Photo' %}📷
+        {% elif log.model_name == 'Visit' %}📅
+        {% elif log.model_name == 'Item' %}🍽
+        {% elif log.action == 'create' %}📍
+        {% elif log.action == 'delete' %}🗑
+        {% else %}✏️{% endif %}
+      </span>
+      <div class="min-w-0 flex-1">
+        <p class="text-sm text-slate-700 leading-snug">
+          <span class="font-semibold text-slate-900">{{ log.user.username|default:"someone" }}</span>
+          {{ log.detail|default:log.object_repr }}
+        </p>
+        <p class="text-xs text-slate-400 mt-0.5" title="{{ log.timestamp }}">
+          {{ log.timestamp|timesince }} ago
+          {% if log.model_name == 'Location' and log.object_id %}
+          · <a href="/locations/{{ log.object_id }}/" class="text-brand hover:underline">view waypoint →</a>
+          {% endif %}
+        </p>
+      </div>
+    </div>
+    {% empty %}
+    <p class="px-5 py-8 text-sm text-slate-400 text-center">No activity yet.</p>
+    {% endfor %}
+  </div>
+
+</div>
+{% endblock %}

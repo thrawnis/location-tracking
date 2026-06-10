@@ -5,6 +5,11 @@ register = template.Library()
 
 @register.inclusion_tag("tracker/partials/stars_display.html")
 def stars_display(rating, size="md"):
+    if rating is not None:
+        try:
+            rating = round(float(rating), 1)
+        except (TypeError, ValueError):
+            rating = None
     stars = []
     for i in range(1, 6):
         if rating and rating >= i:

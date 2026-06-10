@@ -2,7 +2,7 @@ from django import forms
 from django.contrib.auth.forms import UserCreationForm
 from django.contrib.auth.models import User
 
-from .models import Item, ItemReview, Location, Photo, Visit
+from .models import Collection, Item, ItemReview, Location, LocationReview, Photo, Visit
 
 
 class RegisterForm(UserCreationForm):
@@ -19,11 +19,13 @@ class LocationForm(forms.ModelForm):
         fields = [
             "name",
             "category",
+            "status",
             "address",
             "city",
             "state",
             "latitude",
             "longitude",
+            "google_place_id",
             "phone",
             "website",
             "hours",
@@ -35,11 +37,13 @@ class LocationForm(forms.ModelForm):
         ]
         widgets = {
             "name": forms.TextInput(attrs={"placeholder": "Location name"}),
+            "status": forms.RadioSelect(),
             "address": forms.TextInput(attrs={"placeholder": "Address (optional — use map to set)"}),
             "city": forms.HiddenInput(),
             "state": forms.HiddenInput(),
             "latitude": forms.HiddenInput(),
             "longitude": forms.HiddenInput(),
+            "google_place_id": forms.HiddenInput(),
             "phone": forms.TextInput(attrs={"placeholder": "+1 (555) 000-0000"}),
             "website": forms.URLInput(attrs={"placeholder": "https://example.com"}),
             "hours": forms.Textarea(attrs={"rows": 2, "placeholder": "Mon–Fri 9am–9pm\nSat–Sun 10am–6pm"}),
@@ -84,6 +88,50 @@ class ItemReviewForm(forms.ModelForm):
         if not rating:
             raise forms.ValidationError("Please select a star rating.")
         return rating
+
+
+class LocationReviewForm(forms.ModelForm):
+    """A single user's overall rating + review for one location."""
+
+    class Meta:
+        model = LocationReview
+        fields = ["rating", "notes"]
+        widgets = {
+            "rating": forms.HiddenInput(),
+            "notes": forms.Textarea(
+                attrs={"rows": 2, "placeholder": "Your review of this place (optional)"}
+            ),
+        }
+
+    def clean_rating(self):
+        rating = self.cleaned_data.get("rating")
+        if not rating:
+            raise forms.ValidationError("Please select a star rating.")
+        return rating
+
+
+class CollectionForm(forms.ModelForm):
+    class Meta:
+        model = Collection
+        fields = ["name", "description"]
+        widgets = {
+            "name": forms.TextInput(attrs={"placeholder": "e.g. Austin 2026, GF-safe spots"}),
+            "description": forms.Textarea(attrs={"rows": 2, "placeholder": "Description (optional)"}),
+        }
+
+
+class TakeoutImportForm(forms.Form):
+    """Upload a Google Takeout 'Saved Places' JSON or a generic GeoJSON file."""
+
+    file = forms.FileField(
+        help_text="Saved Places.json from Google Takeout, or any GeoJSON FeatureCollection",
+    )
+    default_status = forms.ChoiceField(
+        choices=Location.STATUS_CHOICES,
+        initial=Location.STATUS_WANT,
+        label="Import as",
+        help_text="Status to assign to imported places",
+    )
 
 
 class VisitForm(forms.ModelForm):

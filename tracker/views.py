@@ -18,8 +18,14 @@ from django.http import JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.views.decorators.http import require_POST
 
-from .forms import ItemForm, ItemReviewForm, LocationForm, PhotoForm, RegisterForm, VisitForm
-from .models import AuditLog, Item, ItemReview, Location, OsmSearchCache, Photo, Visit
+from .forms import (
+    CollectionForm, ItemForm, ItemReviewForm, LocationForm, LocationReviewForm,
+    PhotoForm, RegisterForm, TakeoutImportForm, VisitForm,
+)
+from .models import (
+    AuditLog, Collection, Item, ItemReview, Location, LocationReview,
+    OsmSearchCache, Photo, Visit,
+)
 
 
 # ── Audit helpers ─────────────────────────────────────────────────────────────
@@ -104,26 +110,39 @@ def register_view(request):
 def location_list(request):
     locations = (
         Location.objects
-        .prefetch_related("photos", "visits", "items")
+        .prefetch_related("photos", "visits", "items", "collections")
+        .annotate(
+            user_avg_rating=Avg("reviews__rating"),
+            user_review_count=Count("reviews", distinct=True),
+        )
         .all()
     )
     return render(request, "tracker/location_list.html", {
         "locations": locations,
         "category_choices": Location.CATEGORY_CHOICES,
+        "status_choices": Location.STATUS_CHOICES,
+        "gf_choices": Location.GF_CHOICES,
+        "all_collections": Collection.objects.all(),
     })
 
 
 @login_required
 def location_detail(request, pk):
     location = get_object_or_404(
-        Location.objects.prefetch_related("photos", "visits__user", "items__reviews__user"),
+        Location.objects.prefetch_related(
+            "photos", "visits__user", "items__reviews__user",
+            "reviews__user", "collections",
+        ),
         pk=pk,
     )
+    my_review = location.reviews.filter(user=request.user).first()
     return render(request, "tracker/location_detail.html", {
         "location": location,
         "visit_form": VisitForm(),
         "item_form": ItemForm(),
         "photo_form": PhotoForm(),
+        "my_review": my_review,
+        "all_collections": Collection.objects.all(),
     })
 
 
@@ -132,6 +151,7 @@ def location_create(request):
     prefill = {f: request.GET[f] for f in [
         'name','address','latitude','longitude','city','state',
         'phone','website','hours','gluten_free','dietary_notes',
+        'status','google_place_id',
     ] if request.GET.get(f)}
     form = LocationForm(request.POST or None, initial=prefill or None)
     if request.method == "POST" and form.is_valid():
@@ -213,9 +233,16 @@ def gf_verify(request, pk):
 
 @login_required
 def locations_geojson(request):
-    qs = Location.objects.exclude(latitude=None).exclude(longitude=None)
+    qs = (
+        Location.objects
+        .exclude(latitude=None).exclude(longitude=None)
+        .annotate(user_avg_rating=Avg("reviews__rating"))
+        .prefetch_related("photos")
+    )
     features = []
     for loc in qs:
+        rating = loc.user_avg_rating if loc.user_avg_rating is not None else loc.overall_rating
+        first_photo = next(iter(loc.photos.all()), None)
         features.append({
             "type": "Feature",
             "geometry": {
@@ -227,7 +254,10 @@ def locations_geojson(request):
                 "name": loc.name,
                 "category": loc.category,
                 "category_display": loc.get_category_display(),
-                "rating": str(loc.overall_rating) if loc.overall_rating else None,
+                "rating": str(round(rating, 1)) if rating else None,
+                "status": loc.status,
+                "gluten_free": loc.gluten_free,
+                "photo": first_photo.image.url if first_photo else None,
                 "address": loc.address,
                 "city": loc.city,
                 "state": loc.state,
@@ -663,6 +693,333 @@ def osm_search(request):
         "fetched_at": timezone.now().isoformat(),
         "results": results,
     })
+
+
+# ── Location reviews (HTMX) ───────────────────────────────────────────────────
+
+def _render_location_reviews(request, location, review_form=None, show_form=False):
+    my_review = location.reviews.filter(user=request.user).first() \
+        if request.user.is_authenticated else None
+    return render(request, "tracker/partials/location_reviews.html", {
+        "location": location,
+        "my_review": my_review,
+        "review_form": review_form or LocationReviewForm(instance=my_review),
+        "show_form": show_form,
+    })
+
+
+@login_required
+def location_review_upsert(request, pk):
+    """Create or update the logged-in user's overall review for a location."""
+    location = get_object_or_404(Location, pk=pk)
+    existing = LocationReview.objects.filter(location=location, user=request.user).first()
+
+    if request.method == "POST":
+        form = LocationReviewForm(request.POST, instance=existing)
+        if form.is_valid():
+            review = form.save(commit=False)
+            review.location = location
+            review.user = request.user
+            review.save()
+            action = AuditLog.ACTION_UPDATE if existing else AuditLog.ACTION_CREATE
+            _log(request, action, review,
+                 '{} review for "{}": {}/5'.format(
+                     "Updated" if existing else "Added", location.name, review.rating))
+            return _render_location_reviews(request, location)
+        return _render_location_reviews(request, location, review_form=form, show_form=True)
+
+    if request.GET.get("cancel"):
+        return _render_location_reviews(request, location)
+    return _render_location_reviews(request, location, show_form=True)
+
+
+@login_required
+@require_POST
+def location_review_delete(request, pk):
+    location = get_object_or_404(Location, pk=pk)
+    review = get_object_or_404(LocationReview, location=location, user=request.user)
+    _log(request, AuditLog.ACTION_DELETE, review,
+         'Deleted review for "{}"'.format(location.name))
+    review.delete()
+    return _render_location_reviews(request, location)
+
+
+# ── Collections ───────────────────────────────────────────────────────────────
+
+@login_required
+def collection_list(request):
+    collections = (
+        Collection.objects
+        .prefetch_related("locations")
+        .select_related("created_by")
+        .annotate(loc_count=Count("locations"))
+    )
+    form = CollectionForm(request.POST or None)
+    if request.method == "POST" and form.is_valid():
+        coll = form.save(commit=False)
+        coll.created_by = request.user
+        coll.save()
+        _log(request, AuditLog.ACTION_CREATE, coll,
+             'Created collection "{}"'.format(coll.name))
+        messages.success(request, 'Collection "{}" created.'.format(coll.name))
+        return redirect("collection_list")
+    return render(request, "tracker/collection_list.html", {
+        "collections": collections,
+        "form": form,
+    })
+
+
+@login_required
+@require_POST
+def collection_delete(request, pk):
+    coll = get_object_or_404(Collection, pk=pk)
+    _log(request, AuditLog.ACTION_DELETE, coll,
+         'Deleted collection "{}"'.format(coll.name))
+    coll.delete()
+    messages.success(request, "Collection deleted.")
+    return redirect("collection_list")
+
+
+@login_required
+@require_POST
+def collection_toggle(request, pk, loc_pk):
+    """Add/remove a location to/from a collection (HTMX, from detail page)."""
+    coll = get_object_or_404(Collection, pk=pk)
+    location = get_object_or_404(Location, pk=loc_pk)
+    if coll.locations.filter(pk=location.pk).exists():
+        coll.locations.remove(location)
+        detail = 'Removed "{}" from collection "{}"'.format(location.name, coll.name)
+    else:
+        coll.locations.add(location)
+        detail = 'Added "{}" to collection "{}"'.format(location.name, coll.name)
+    _log(request, AuditLog.ACTION_UPDATE, coll, detail)
+    return render(request, "tracker/partials/collections_widget.html", {
+        "location": location,
+        "all_collections": Collection.objects.all(),
+    })
+
+
+# ── Export ────────────────────────────────────────────────────────────────────
+
+@login_required
+def export_locations(request):
+    """Download all waypoints as CSV, GeoJSON, or KML."""
+    from django.http import HttpResponse
+    import csv
+    from xml.sax.saxutils import escape as xml_escape
+
+    fmt = request.GET.get("format", "csv").lower()
+    qs = Location.objects.annotate(user_avg_rating=Avg("reviews__rating")).order_by("name")
+
+    if fmt == "geojson":
+        features = []
+        for loc in qs:
+            if not loc.has_coords():
+                continue
+            features.append({
+                "type": "Feature",
+                "geometry": {"type": "Point",
+                             "coordinates": [float(loc.longitude), float(loc.latitude)]},
+                "properties": {
+                    "name": loc.name, "category": loc.category, "status": loc.status,
+                    "address": loc.address, "city": loc.city, "state": loc.state,
+                    "phone": loc.phone, "website": loc.website, "hours": loc.hours,
+                    "gluten_free": loc.gluten_free, "dietary_notes": loc.dietary_notes,
+                    "rating": float(loc.user_avg_rating or loc.overall_rating or 0) or None,
+                    "public_notes": loc.public_notes,
+                },
+            })
+        resp = JsonResponse({"type": "FeatureCollection", "features": features},
+                            json_dumps_params={"indent": 2})
+        resp["Content-Disposition"] = 'attachment; filename="waypoints.geojson"'
+        return resp
+
+    if fmt == "kml":
+        placemarks = []
+        for loc in qs:
+            if not loc.has_coords():
+                continue
+            desc_parts = [p for p in [
+                loc.get_category_display(),
+                loc.address,
+                f"Phone: {loc.phone}" if loc.phone else "",
+                f"GF: {loc.get_gluten_free_display()}" if loc.gluten_free else "",
+                loc.public_notes,
+            ] if p]
+            placemarks.append(
+                "<Placemark><name>{}</name><description>{}</description>"
+                "<Point><coordinates>{},{},0</coordinates></Point></Placemark>".format(
+                    xml_escape(loc.name),
+                    xml_escape("\n".join(desc_parts)),
+                    loc.longitude, loc.latitude,
+                )
+            )
+        kml = (
+            '<?xml version="1.0" encoding="UTF-8"?>'
+            '<kml xmlns="http://www.opengis.net/kml/2.2"><Document>'
+            '<name>Waypoints</name>{}</Document></kml>'.format("".join(placemarks))
+        )
+        resp = HttpResponse(kml, content_type="application/vnd.google-earth.kml+xml")
+        resp["Content-Disposition"] = 'attachment; filename="waypoints.kml"'
+        return resp
+
+    # Default: CSV
+    resp = HttpResponse(content_type="text/csv")
+    resp["Content-Disposition"] = 'attachment; filename="waypoints.csv"'
+    writer = csv.writer(resp)
+    writer.writerow([
+        "name", "category", "status", "address", "city", "state",
+        "latitude", "longitude", "phone", "website", "hours",
+        "gluten_free", "dietary_notes", "rating", "public_notes",
+    ])
+    for loc in qs:
+        writer.writerow([
+            loc.name, loc.category, loc.status, loc.address, loc.city, loc.state,
+            loc.latitude or "", loc.longitude or "", loc.phone, loc.website, loc.hours,
+            loc.gluten_free, loc.dietary_notes,
+            loc.user_avg_rating or loc.overall_rating or "", loc.public_notes,
+        ])
+    return resp
+
+
+# ── Import (Google Takeout / GeoJSON) ─────────────────────────────────────────
+
+def _parse_takeout_features(data):
+    """
+    Yield dicts of location fields from either a Google Takeout Saved Places
+    JSON or a generic GeoJSON FeatureCollection.
+    """
+    for feat in data.get("features", []):
+        geom = feat.get("geometry") or {}
+        props = feat.get("properties") or {}
+        coords = geom.get("coordinates") or [None, None]
+        lng, lat = (coords + [None, None])[:2]
+
+        # Google Takeout nests details under properties.location
+        g_loc = props.get("location") or {}
+        name = (
+            g_loc.get("name")
+            or props.get("name")
+            or props.get("Title")
+            or props.get("title")
+            or ""
+        ).strip()
+        if not name:
+            continue
+
+        address = g_loc.get("address") or props.get("address") or ""
+        yield {
+            "name": name[:255],
+            "address": address,
+            "latitude": lat,
+            "longitude": lng,
+            "website": (props.get("google_maps_url") or props.get("website") or "")[:500],
+        }
+
+
+@login_required
+def import_locations(request):
+    """Upload Google Takeout Saved Places JSON (or GeoJSON) to bulk-create waypoints."""
+    form = TakeoutImportForm(request.POST or None, request.FILES or None)
+    result = None
+    if request.method == "POST" and form.is_valid():
+        try:
+            data = json.loads(form.cleaned_data["file"].read().decode("utf-8"))
+        except (ValueError, UnicodeDecodeError):
+            form.add_error("file", "Not a valid JSON file.")
+            data = None
+
+        if data is not None:
+            status = form.cleaned_data["default_status"]
+            created, skipped = 0, 0
+            for fields in _parse_takeout_features(data):
+                # Skip exact name duplicates (case-insensitive)
+                if Location.objects.filter(name__iexact=fields["name"]).exists():
+                    skipped += 1
+                    continue
+                loc = Location.objects.create(
+                    created_by=request.user, status=status, **fields,
+                )
+                _log(request, AuditLog.ACTION_CREATE, loc,
+                     'Imported "{}" from file upload'.format(loc.name))
+                created += 1
+            result = {"created": created, "skipped": skipped}
+            if created:
+                messages.success(
+                    request,
+                    "Imported {} waypoint{} ({} duplicate{} skipped).".format(
+                        created, "s" if created != 1 else "",
+                        skipped, "s" if skipped != 1 else ""),
+                )
+            else:
+                messages.info(request, "No new waypoints found in that file.")
+    return render(request, "tracker/import_export.html", {
+        "form": form,
+        "result": result,
+    })
+
+
+# ── Activity feed ─────────────────────────────────────────────────────────────
+
+@login_required
+def activity_feed(request):
+    """Recent community activity: reviews, new waypoints, GF verifications, photos."""
+    logs = (
+        AuditLog.objects
+        .select_related("user")
+        .filter(model_name__in=[
+            "Location", "LocationReview", "ItemReview", "Item", "Photo", "Visit",
+        ])
+        .order_by("-timestamp")[:100]
+    )
+    return render(request, "tracker/activity_feed.html", {"logs": logs})
+
+
+# ── Duplicate detection API ───────────────────────────────────────────────────
+
+@login_required
+def check_duplicate(request):
+    """
+    GET lat, lng[, exclude] → nearby existing waypoints within ~100 m,
+    so the add form can warn before creating a duplicate.
+    """
+    try:
+        lat = float(request.GET.get("lat"))
+        lng = float(request.GET.get("lng"))
+    except (TypeError, ValueError):
+        return JsonResponse({"matches": []})
+    exclude_pk = request.GET.get("exclude")
+
+    # ~0.001° ≈ 111 m latitude; cheap bounding box first, then precise haversine
+    box = 0.0015
+    qs = Location.objects.filter(
+        latitude__gte=lat - box, latitude__lte=lat + box,
+        longitude__gte=lng - box, longitude__lte=lng + box,
+    )
+    if exclude_pk:
+        qs = qs.exclude(pk=exclude_pk)
+
+    def _haversine_m(lat1, lon1, lat2, lon2):
+        R = 6371000.0
+        dlat = math.radians(lat2 - lat1)
+        dlon = math.radians(lon2 - lon1)
+        a = (math.sin(dlat / 2) ** 2
+             + math.cos(math.radians(lat1)) * math.cos(math.radians(lat2))
+             * math.sin(dlon / 2) ** 2)
+        return R * 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
+
+    matches = []
+    for loc in qs:
+        dist = _haversine_m(lat, lng, float(loc.latitude), float(loc.longitude))
+        if dist <= 100:
+            matches.append({
+                "id": loc.pk,
+                "name": loc.name,
+                "distance_m": round(dist),
+                "url": "/locations/{}/".format(loc.pk),
+            })
+    matches.sort(key=lambda m: m["distance_m"])
+    return JsonResponse({"matches": matches[:5]})
 
 
 # ── Admin audit log ───────────────────────────────────────────────────────────

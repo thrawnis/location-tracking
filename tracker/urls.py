@@ -11,6 +11,23 @@ urlpatterns = [
     path("locations/<int:pk>/edit/", views.location_edit, name="location_edit"),
     path("locations/<int:pk>/delete/", views.location_delete, name="location_delete"),
     path("locations/<int:pk>/gf-verify/", views.gf_verify, name="gf_verify"),
+    path("locations/<int:pk>/review/", views.location_review_upsert, name="location_review_upsert"),
+    path("locations/<int:pk>/review/delete/", views.location_review_delete, name="location_review_delete"),
+
+    # Collections
+    path("collections/", views.collection_list, name="collection_list"),
+    path("collections/<int:pk>/delete/", views.collection_delete, name="collection_delete"),
+    path("collections/<int:pk>/toggle/<int:loc_pk>/", views.collection_toggle, name="collection_toggle"),
+
+    # Import / Export
+    path("export/", views.export_locations, name="export_locations"),
+    path("import/", views.import_locations, name="import_locations"),
+
+    # Activity feed
+    path("activity/", views.activity_feed, name="activity_feed"),
+
+    # Duplicate detection
+    path("api/locations/check-duplicate/", views.check_duplicate, name="check_duplicate"),
 
     # Items (HTMX)
     path("locations/<int:pk>/items/add/", views.item_add, name="item_add"),

@@ -23,13 +23,28 @@ class Location(models.Model):
         ("other", "Other"),
     ]
 
+    STATUS_BEEN = "been"
+    STATUS_WANT = "want"
+    STATUS_CHOICES = [
+        (STATUS_BEEN, "Been there"),
+        (STATUS_WANT, "Want to go"),
+    ]
+
     name = models.CharField(max_length=255)
     category = models.CharField(max_length=20, choices=CATEGORY_CHOICES, default="other")
+    status = models.CharField(
+        max_length=10, choices=STATUS_CHOICES, default=STATUS_BEEN,
+        help_text="Have you been here, or is it on your wishlist?",
+    )
     address = models.TextField(blank=True)
     city = models.CharField(max_length=100, blank=True)
     state = models.CharField(max_length=100, blank=True)
     latitude = models.DecimalField(max_digits=10, decimal_places=7, null=True, blank=True)
     longitude = models.DecimalField(max_digits=10, decimal_places=7, null=True, blank=True)
+    google_place_id = models.CharField(
+        max_length=255, blank=True, default="",
+        help_text="Google Place ID — enables open-now refresh on the detail page",
+    )
     public_notes = models.TextField(blank=True)
     private_notes = models.TextField(blank=True)
     phone = models.CharField(max_length=50, blank=True, help_text="Phone number")
@@ -91,6 +106,68 @@ class Location(models.Model):
 
     def has_coords(self):
         return self.latitude is not None and self.longitude is not None
+
+    GF_VERIFICATION_MAX_AGE_DAYS = 365
+
+    @property
+    def gf_verification_stale(self):
+        """True if the GF verification is older than a year (menus/kitchens change)."""
+        if not self.gluten_free_verified_at:
+            return False
+        age = timezone.now() - self.gluten_free_verified_at
+        return age.days > self.GF_VERIFICATION_MAX_AGE_DAYS
+
+    @property
+    def avg_user_rating(self):
+        """Average of per-user LocationReviews; falls back to legacy overall_rating."""
+        agg = self.reviews.aggregate(avg=models.Avg("rating"))
+        if agg["avg"] is not None:
+            return round(agg["avg"], 1)
+        return self.overall_rating
+
+    @property
+    def review_count(self):
+        return self.reviews.count()
+
+
+class Collection(models.Model):
+    """A user-curated group of waypoints: a trip, a theme, a wishlist."""
+
+    name = models.CharField(max_length=120, unique=True)
+    description = models.TextField(blank=True)
+    locations = models.ManyToManyField(Location, related_name="collections", blank=True)
+    created_by = models.ForeignKey(
+        User, on_delete=models.SET_NULL, null=True, blank=True, related_name="collections"
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["name"]
+
+    def __str__(self):
+        return self.name
+
+
+class LocationReview(models.Model):
+    """One overall rating + review per registered user per location."""
+
+    location = models.ForeignKey(Location, on_delete=models.CASCADE, related_name="reviews")
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="location_reviews")
+    rating = models.DecimalField(
+        max_digits=2,
+        decimal_places=1,
+        validators=RATING_VALIDATORS,
+    )
+    notes = models.TextField(blank=True, help_text="Your review of this place")
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        unique_together = [("location", "user")]
+        ordering = ["-created_at"]
+
+    def __str__(self):
+        return f"{self.user.username} → {self.location.name}: {self.rating}"
 
 
 class Visit(models.Model):

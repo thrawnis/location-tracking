@@ -42,6 +42,7 @@
       {{ form.longitude }}
       {{ form.city }}
       {{ form.state }}
+      {{ form.google_place_id }}
       {{ form.overall_rating }}
 
       <!-- Basic info -->
@@ -63,6 +64,24 @@
           <div>
             <label class="block text-sm font-medium text-slate-700 mb-1">Category</label>
             {{ form.category }}
+          </div>
+        </div>
+
+        <div>
+          <label class="block text-sm font-medium text-slate-700 mb-1.5">Status</label>
+          <div class="flex gap-2" x-data="{ status: '{{ form.status.value|default:"been" }}' }">
+            <label class="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg border-2 cursor-pointer
+                          text-sm font-semibold transition-all"
+                   :class="status === 'been' ? 'border-brand bg-brand/5 text-brand' : 'border-slate-200 text-slate-500 hover:border-slate-300'">
+              <input type="radio" name="status" value="been" x-model="status" class="sr-only">
+              ✓ Been there
+            </label>
+            <label class="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg border-2 cursor-pointer
+                          text-sm font-semibold transition-all"
+                   :class="status === 'want' ? 'border-sky-400 bg-sky-50 text-sky-600' : 'border-slate-200 text-slate-500 hover:border-slate-300'">
+              <input type="radio" name="status" value="want" x-model="status" class="sr-only">
+              🌟 Want to go
+            </label>
           </div>
         </div>
 
@@ -95,6 +114,9 @@
           </button>
         </div>
         <div id="addr-error" class="hidden text-red-500 text-xs">No results found for that address.</div>
+
+        <!-- Duplicate warning (filled by JS when pin lands near an existing waypoint) -->
+        <div id="dup-warning" class="hidden p-3 rounded-lg bg-amber-50 border border-amber-300 text-sm text-amber-800"></div>
 
         <!-- Address text field -->
         <div>
@@ -290,6 +312,30 @@ window.initFormMap = function () {
     lngSpan.textContent = lngStr;
     coordsDiv.style.display = '';
     reverseGeocode(parseFloat(latStr), parseFloat(lngStr));
+    checkDuplicates(latStr, lngStr);
+  }
+
+  // Warn if the pin lands within ~100 m of an existing waypoint
+  async function checkDuplicates(lat, lng) {
+    const dupDiv = document.getElementById('dup-warning');
+    if (!dupDiv) return;
+    try {
+      const params = new URLSearchParams({ lat, lng });
+      {% if location %}params.set('exclude', '{{ location.pk }}');{% endif %}
+      const res  = await fetch(`/api/locations/check-duplicate/?${params}`);
+      const data = await res.json();
+      if (data.matches && data.matches.length) {
+        const links = data.matches.map(m =>
+          `<a href="${m.url}" target="_blank" class="font-semibold underline">${m.name}</a> (${m.distance_m} m away)`
+        ).join(', ');
+        dupDiv.innerHTML = `⚠️ Possible duplicate — there ${data.matches.length === 1 ? 'is' : 'are'} already
+          ${data.matches.length === 1 ? 'a waypoint' : 'waypoints'} here: ${links}.
+          Double-check before saving.`;
+        dupDiv.classList.remove('hidden');
+      } else {
+        dupDiv.classList.add('hidden');
+      }
+    } catch (_) { dupDiv.classList.add('hidden'); }
   }
 
   function placeMarker(lat, lng, address) {
@@ -356,6 +402,8 @@ window.initFormMap = function () {
     map.setCenter({ lat, lng });
     map.setZoom(15);
     if (place.address_components) parseCityState(place.address_components);
+    const pidInput = document.getElementById('id_google_place_id');
+    if (pidInput && place.place_id) pidInput.value = place.place_id;
     placeMarker(lat, lng, place.formatted_address);
   });
 

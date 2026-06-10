@@ -1,0 +1,83 @@
+{% extends "base.html" %}
+{% block title %}Import / Export – Waypoint{% endblock %}
+
+{% block content %}
+<div class="max-w-2xl mx-auto space-y-6">
+
+  <h1 class="text-2xl font-bold text-slate-900">Import / Export</h1>
+
+  <!-- Export -->
+  <div class="bg-white rounded-xl border border-slate-200 shadow-sm p-5">
+    <h2 class="text-sm font-semibold text-slate-500 uppercase tracking-wide mb-2">Export waypoints</h2>
+    <p class="text-sm text-slate-500 mb-4">
+      Download all waypoints for backup, or to import into Google My Maps, Google Earth, or a GPS app.
+    </p>
+    <div class="flex flex-wrap gap-2">
+      <a href="{% url 'export_locations' %}?format=csv"
+         class="inline-flex items-center gap-1.5 text-sm font-semibold text-brand border border-brand/30
+                hover:bg-brand/5 px-4 py-2 rounded-lg transition-all">
+        📄 CSV
+      </a>
+      <a href="{% url 'export_locations' %}?format=geojson"
+         class="inline-flex items-center gap-1.5 text-sm font-semibold text-brand border border-brand/30
+                hover:bg-brand/5 px-4 py-2 rounded-lg transition-all">
+        🗺 GeoJSON
+      </a>
+      <a href="{% url 'export_locations' %}?format=kml"
+         class="inline-flex items-center gap-1.5 text-sm font-semibold text-brand border border-brand/30
+                hover:bg-brand/5 px-4 py-2 rounded-lg transition-all">
+        🌍 KML <span class="font-normal text-slate-400">(Google Earth / My Maps)</span>
+      </a>
+    </div>
+  </div>
+
+  <!-- Import -->
+  <div class="bg-white rounded-xl border border-slate-200 shadow-sm p-5">
+    <h2 class="text-sm font-semibold text-slate-500 uppercase tracking-wide mb-2">Import from Google Takeout</h2>
+    <div class="text-sm text-slate-500 mb-4 space-y-1.5">
+      <p>Bring your saved places over from Google Maps:</p>
+      <ol class="list-decimal list-inside space-y-0.5 text-slate-600">
+        <li>Go to <a href="https://takeout.google.com" target="_blank" rel="noopener" class="text-brand hover:underline">takeout.google.com</a></li>
+        <li>Deselect all, then select only <strong>Saved</strong> (or <strong>Maps (your places)</strong>)</li>
+        <li>Export, download the archive, and find <code class="text-xs bg-slate-100 px-1 rounded">Saved Places.json</code></li>
+        <li>Upload it below — generic GeoJSON files work too</li>
+      </ol>
+      <p class="text-xs text-slate-400">Places whose name already exists are skipped, so re-importing is safe.</p>
+    </div>
+
+    <form method="post" enctype="multipart/form-data" class="space-y-3">
+      {% csrf_token %}
+      <div>
+        {{ form.file }}
+        {% if form.file.errors %}
+        <p class="text-red-500 text-xs mt-1">{{ form.file.errors|join:", " }}</p>
+        {% endif %}
+      </div>
+      <div class="flex items-center gap-2">
+        <label class="text-sm text-slate-600">{{ form.default_status.label }}:</label>
+        {{ form.default_status }}
+      </div>
+      <button type="submit"
+              class="bg-brand hover:bg-brand-dark text-white text-sm font-semibold px-4 py-2 rounded-lg transition-colors">
+        ⬆ Import
+      </button>
+    </form>
+
+    {% if result %}
+    <div class="mt-4 p-3 rounded-lg bg-emerald-50 border border-emerald-200 text-sm text-emerald-800">
+      Imported <strong>{{ result.created }}</strong> waypoint{{ result.created|pluralize }},
+      skipped <strong>{{ result.skipped }}</strong> duplicate{{ result.skipped|pluralize }}.
+      <a href="{% url 'location_list' %}" class="font-semibold hover:underline">View map →</a>
+    </div>
+    {% endif %}
+  </div>
+
+</div>
+
+<script>
+  document.querySelectorAll('input[type="file"], select').forEach(el => {
+    el.classList.add('border','border-slate-200','rounded-lg','px-3','py-2','text-sm','bg-white',
+                     'focus:outline-none','focus:ring-2','focus:ring-brand/30','focus:border-brand');
+  });
+</script>
+{% endblock %}

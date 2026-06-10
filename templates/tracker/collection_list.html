@@ -1,0 +1,96 @@
+{% extends "base.html" %}
+{% load tracker_tags %}
+{% block title %}Collections – Waypoint{% endblock %}
+
+{% block content %}
+<div class="max-w-4xl mx-auto space-y-6">
+
+  <div class="flex items-center justify-between">
+    <h1 class="text-2xl font-bold text-slate-900">Collections</h1>
+  </div>
+  <p class="text-sm text-slate-500 -mt-4">
+    Group waypoints into trips, themes, or wishlists — e.g. "Austin 2026" or "GF-safe spots".
+  </p>
+
+  <!-- Create form -->
+  <form method="post" class="bg-white rounded-xl border border-slate-200 shadow-sm p-4
+                             flex flex-wrap items-start gap-3">
+    {% csrf_token %}
+    <div class="flex-1 min-w-[200px]">
+      {{ form.name }}
+      {% if form.name.errors %}
+      <p class="text-red-500 text-xs mt-1">{{ form.name.errors|join:", " }}</p>
+      {% endif %}
+    </div>
+    <div class="flex-1 min-w-[200px]">
+      {{ form.description }}
+    </div>
+    <button type="submit"
+            class="bg-brand hover:bg-brand-dark text-white text-sm font-semibold px-4 py-2 rounded-lg transition-colors shrink-0">
+      ＋ New Collection
+    </button>
+  </form>
+
+  <!-- Collections -->
+  {% for coll in collections %}
+  <div class="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+    <div class="px-5 py-4 flex items-start justify-between gap-3 border-b border-slate-100">
+      <div>
+        <h2 class="font-bold text-slate-900">{{ coll.name }}</h2>
+        {% if coll.description %}
+        <p class="text-sm text-slate-500 mt-0.5">{{ coll.description }}</p>
+        {% endif %}
+        <p class="text-xs text-slate-400 mt-1">
+          {{ coll.loc_count }} waypoint{{ coll.loc_count|pluralize }}
+          {% if coll.created_by %} · created by {{ coll.created_by.username }}{% endif %}
+        </p>
+      </div>
+      <form method="post" action="{% url 'collection_delete' coll.pk %}"
+            onsubmit="return confirm('Delete collection “{{ coll.name|escapejs }}”? Waypoints themselves are kept.')">
+        {% csrf_token %}
+        <button type="submit"
+                class="text-xs text-red-400 hover:text-red-600 border border-red-200 hover:border-red-400
+                       px-2.5 py-1 rounded-lg transition-all shrink-0">
+          Delete
+        </button>
+      </form>
+    </div>
+    {% if coll.locations.all %}
+    <ul class="divide-y divide-slate-50">
+      {% for loc in coll.locations.all %}
+      <li>
+        <a href="{% url 'location_detail' loc.pk %}"
+           class="flex items-center gap-3 px-5 py-2.5 hover:bg-slate-50 transition-colors">
+          <span class="text-lg">{{ loc.category|category_icon }}</span>
+          <span class="text-sm font-medium text-slate-700">{{ loc.name }}</span>
+          {% if loc.status == 'want' %}
+          <span class="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-sky-100 text-sky-700">Want to go</span>
+          {% endif %}
+          <span class="text-xs text-slate-400 ml-auto">
+            {{ loc.city }}{% if loc.city and loc.state %}, {% endif %}{{ loc.state }}
+          </span>
+        </a>
+      </li>
+      {% endfor %}
+    </ul>
+    {% else %}
+    <p class="px-5 py-4 text-xs text-slate-400">
+      Empty — add waypoints from their detail pages.
+    </p>
+    {% endif %}
+  </div>
+  {% empty %}
+  <div class="text-center py-12 text-slate-400">
+    <p class="text-sm">No collections yet. Create your first one above.</p>
+  </div>
+  {% endfor %}
+
+</div>
+
+<script>
+  document.querySelectorAll('form input[type="text"], form textarea').forEach(el => {
+    el.classList.add('w-full','border','border-slate-200','rounded-lg','px-3','py-2','text-sm',
+                     'focus:outline-none','focus:ring-2','focus:ring-brand/30','focus:border-brand');
+  });
+</script>
+{% endblock %}

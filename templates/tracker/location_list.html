@@ -251,6 +251,22 @@
       {% endfor %}
     </select>
 
+    <select id="status-filter" title="Been there / want to go"
+            class="text-sm border border-slate-200 rounded-lg px-3 py-2 bg-white
+                   focus:outline-none focus:ring-2 focus:ring-brand/30 focus:border-brand shrink-0">
+      <option value="">All statuses</option>
+      <option value="been">✓ Been there</option>
+      <option value="want">🌟 Want to go</option>
+    </select>
+
+    <select id="gf-filter" title="Gluten-free level"
+            class="text-sm border border-slate-200 rounded-lg px-3 py-2 bg-white
+                   focus:outline-none focus:ring-2 focus:ring-brand/30 focus:border-brand shrink-0">
+      <option value="">🌾 Any GF status</option>
+      <option value="dedicated">🌾 Dedicated GF kitchen only</option>
+      <option value="gf-any">🌾 Dedicated or GF options</option>
+    </select>
+
   </div>
 
   <!-- ── Content: list (left/bottom) + map (right/full) ────────── -->
@@ -291,6 +307,8 @@
              data-state="{{ loc.state|lower }}"
              data-address="{{ loc.address|lower }}"
              data-category="{{ loc.category }}"
+             data-status="{{ loc.status }}"
+             data-gf="{{ loc.gluten_free }}"
              data-lat="{{ loc.latitude|default:'' }}"
              data-lng="{{ loc.longitude|default:'' }}"
              onclick="cardClicked(this)"
@@ -334,11 +352,20 @@
             {% elif loc.address %}
             <p class="text-xs text-slate-400 mt-0.5 truncate">{{ loc.address }}</p>
             {% endif %}
-            <div class="flex items-center gap-2 mt-1">
-              {% stars_display loc.overall_rating "sm" %}
+            <div class="flex items-center gap-2 mt-1 flex-wrap">
+              {% if loc.user_avg_rating %}{% stars_display loc.user_avg_rating "sm" %}
+              {% else %}{% stars_display loc.overall_rating "sm" %}{% endif %}
               <span class="text-[10px] text-slate-400">
                 {% with vc=loc.visits.all|length %}{{ vc }} visit{{ vc|pluralize }}{% endwith %}
               </span>
+              {% if loc.status == 'want' %}
+              <span class="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-sky-100 text-sky-700">🌟 Want to go</span>
+              {% endif %}
+              {% if loc.gluten_free == 'dedicated' %}
+              <span class="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-emerald-100 text-emerald-700">🌾 GF kitchen</span>
+              {% elif loc.gluten_free == 'options' %}
+              <span class="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700">🌾 GF options</span>
+              {% endif %}
             </div>
             <a href="{% url 'location_detail' loc.pk %}"
                onclick="event.stopPropagation()"
@@ -464,6 +491,8 @@ const IS_AUTH = {% if user.is_authenticated %}true{% else %}false{% endif %};
   let nameFilter     = '';
   let boundsFilter   = null; // google.maps.LatLngBounds or null
   let catFilter      = '';
+  let statusFilter   = '';
+  let gfFilter       = '';   // '' | 'dedicated' | 'gf-any'
   let osmEntries     = [];   // { marker, cat, distKm, element }
   let osmDebounce    = null;
   let sidebarOpen    = false;
@@ -633,9 +662,13 @@ const IS_AUTH = {% if user.is_authenticated %}true{% else %}false{% endif %};
       const lat = parseFloat(p.lat), lng = parseFloat(p.lng);
       const nameOk   = !nameFilter   || p.name.includes(nameFilter);
       const catOk    = !catFilter    || p.category === catFilter;
+      const statusOk = !statusFilter || p.status === statusFilter;
+      const gfOk     = !gfFilter
+                     || (gfFilter === 'dedicated' && p.gf === 'dedicated')
+                     || (gfFilter === 'gf-any'    && (p.gf === 'dedicated' || p.gf === 'options'));
       const boundsOk = !boundsFilter || (!isNaN(lat) && !isNaN(lng) &&
                         boundsFilter.contains(new google.maps.LatLng(lat, lng)));
-      const show = nameOk && catOk && boundsOk;
+      const show = nameOk && catOk && statusOk && gfOk && boundsOk;
 
       card.classList.toggle('hidden-card', !show);
       const entry = markerMap[p.id];
@@ -814,7 +847,8 @@ const IS_AUTH = {% if user.is_authenticated %}true{% else %}false{% endif %};
           name,
           latitude:  lat.toFixed(6),
           longitude: lng.toFixed(6),
-          ...(addr ? { address: addr } : {}),
+          ...(addr    ? { address: addr } : {}),
+          ...(placeId ? { google_place_id: placeId } : {}),
         });
 
         // Map marker
@@ -1113,10 +1147,20 @@ const IS_AUTH = {% if user.is_authenticated %}true{% else %}false{% endif %};
 
           const stars = p.rating ? `★ ${p.rating}` : 'No rating';
           const place = p.city_state || p.address || '';
+          const gfBadge = p.gluten_free === 'dedicated'
+            ? '<span style="font-size:10px;background:#d1fae5;color:#047857;padding:1px 6px;border-radius:8px;font-weight:600">🌾 GF kitchen</span>'
+            : p.gluten_free === 'options'
+            ? '<span style="font-size:10px;background:#fef3c7;color:#b45309;padding:1px 6px;border-radius:8px;font-weight:600">🌾 GF options</span>'
+            : '';
+          const wantBadge = p.status === 'want'
+            ? '<span style="font-size:10px;background:#e0f2fe;color:#0369a1;padding:1px 6px;border-radius:8px;font-weight:600">🌟 Want to go</span>'
+            : '';
 
-          const popupContent = `<div style="min-width:190px;font-family:inherit;padding:2px">
+          const popupContent = `<div style="min-width:190px;max-width:240px;font-family:inherit;padding:2px">
+            ${p.photo ? `<img src="${p.photo}" alt="" style="width:100%;height:110px;object-fit:cover;border-radius:8px;margin-bottom:6px">` : ''}
             <p style="font-weight:700;font-size:14px;margin:0 0 3px">${escapeHtml(p.name)}</p>
             <p style="font-size:11px;color:#64748b;margin:0 0 3px">${escapeHtml(p.category_display)}</p>
+            ${(gfBadge || wantBadge) ? `<p style="margin:0 0 3px;display:flex;gap:4px;flex-wrap:wrap">${wantBadge}${gfBadge}</p>` : ''}
             ${place ? `<p style="font-size:12px;color:#475569;margin:0 0 3px">📍 ${escapeHtml(place)}</p>` : ''}
             <p style="font-size:12px;color:#ec4899;margin:0 0 8px">${stars}</p>
             <a href="${p.url}" style="font-size:12px;color:#6366f1;font-weight:600">View details →</a>
@@ -1212,6 +1256,16 @@ const IS_AUTH = {% if user.is_authenticated %}true{% else %}false{% endif %};
 
     document.getElementById('category-filter')?.addEventListener('change', e => {
       catFilter = e.target.value;
+      applyFilters();
+    });
+
+    document.getElementById('status-filter')?.addEventListener('change', e => {
+      statusFilter = e.target.value;
+      applyFilters();
+    });
+
+    document.getElementById('gf-filter')?.addEventListener('change', e => {
+      gfFilter = e.target.value;
       applyFilters();
     });
 

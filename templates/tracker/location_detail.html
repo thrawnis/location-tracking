@@ -58,16 +58,28 @@
 
     <!-- Rating + meta -->
     <div class="px-6 py-4 flex flex-wrap items-center justify-between gap-4 border-t border-slate-100">
-      <div class="flex items-center gap-3">
+      <div class="flex items-center gap-3 flex-wrap">
+        {% with avg=location.avg_user_rating %}
         <div class="flex items-center gap-2">
-          {% stars_display location.overall_rating "lg" %}
-          {% if location.overall_rating %}
-          <span class="text-lg font-bold text-slate-700">{{ location.overall_rating }}</span>
+          {% stars_display avg "lg" %}
+          {% if avg %}
+          <span class="text-lg font-bold text-slate-700">{{ avg }}</span>
           <span class="text-sm text-slate-400">/ 5</span>
+          {% with rc=location.reviews.all|length %}
+          {% if rc %}<span class="text-xs text-slate-400">({{ rc }} review{{ rc|pluralize }})</span>{% endif %}
+          {% endwith %}
           {% else %}
           <span class="text-sm text-slate-400">Not yet rated</span>
           {% endif %}
         </div>
+        {% endwith %}
+        {% if location.status == 'want' %}
+        <span class="inline-flex items-center gap-1 text-xs font-semibold px-2.5 py-1 rounded-full
+                     bg-sky-100 text-sky-700 border border-sky-200">
+          🌟 Want to go
+        </span>
+        {% endif %}
+        <span id="open-now-badge"></span>
         <span class="text-slate-300">·</span>
         <span class="text-sm text-slate-500">
           {% with vc=location.visits.all|length %}{{ vc }} visit{{ vc|pluralize }}{% endwith %}
@@ -154,6 +166,11 @@
       <!-- Dietary / GF card (HTMX-swappable) -->
       {% include "tracker/partials/gf_card.html" with location=location %}
 
+      <!-- Ratings & reviews (HTMX-swappable) -->
+      <div class="bg-white rounded-xl border border-slate-200 shadow-sm p-5">
+        {% include "tracker/partials/location_reviews.html" with location=location my_review=my_review %}
+      </div>
+
       <!-- Public notes -->
       {% if location.public_notes %}
       <div class="bg-white rounded-xl border border-slate-200 shadow-sm p-5">
@@ -209,6 +226,10 @@
 
     <!-- Right sidebar: items + visits -->
     <div class="space-y-5">
+      <!-- Collections (HTMX-swappable) -->
+      <div class="bg-white rounded-xl border border-slate-200 shadow-sm p-5">
+        {% include "tracker/partials/collections_widget.html" with location=location all_collections=all_collections %}
+      </div>
       <div class="bg-white rounded-xl border border-slate-200 shadow-sm p-5">
         {% include "tracker/partials/items_section.html" with location=location item_form=item_form %}
       </div>
@@ -263,8 +284,27 @@ window.initDetailMap = function () {
 
   marker.addListener('click', () => infoWindow.open({ map, anchor: marker }));
   infoWindow.open({ map, anchor: marker });
+
+  {% if location.google_place_id %}
+  // Live open/closed status via Place Details (place_id stored on the waypoint)
+  const svc = new google.maps.places.PlacesService(map);
+  svc.getDetails({
+    placeId: '{{ location.google_place_id|escapejs }}',
+    fields: ['opening_hours'],
+  }, (place, status) => {
+    if (status !== google.maps.places.PlacesServiceStatus.OK || !place?.opening_hours) return;
+    const open = place.opening_hours.isOpen ? place.opening_hours.isOpen() : undefined;
+    if (open === undefined) return;
+    const badge = document.getElementById('open-now-badge');
+    if (badge) {
+      badge.innerHTML = open
+        ? '<span class="inline-flex items-center gap-1 text-xs font-semibold px-2.5 py-1 rounded-full bg-emerald-100 text-emerald-700 border border-emerald-200">✓ Open now</span>'
+        : '<span class="inline-flex items-center gap-1 text-xs font-semibold px-2.5 py-1 rounded-full bg-red-100 text-red-700 border border-red-200">✗ Closed</span>';
+    }
+  });
+  {% endif %}
 };
 </script>
-<script src="https://maps.googleapis.com/maps/api/js?key={{ GOOGLE_MAPS_KEY }}&libraries=marker&v=beta&callback=initDetailMap" async defer></script>
+<script src="https://maps.googleapis.com/maps/api/js?key={{ GOOGLE_MAPS_KEY }}&libraries=places,marker&v=beta&callback=initDetailMap" async defer></script>
 {% endif %}
 {% endblock %}
