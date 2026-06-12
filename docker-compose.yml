@@ -27,6 +27,7 @@ services:
       ALLOWED_HOSTS: ${ALLOWED_HOSTS:-*}
       CSRF_TRUSTED_ORIGINS: ${CSRF_TRUSTED_ORIGINS:-}
       HTTPS_ENABLED: ${HTTPS_ENABLED:-False}
+      GOOGLE_MAPS_API_KEY: ${GOOGLE_MAPS_API_KEY:-}
     depends_on:
       db:
         condition: service_healthy
