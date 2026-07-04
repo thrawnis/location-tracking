@@ -14,7 +14,7 @@ from django.contrib.auth.decorators import login_required, user_passes_test
 from django.core.cache import cache
 from django.contrib.auth.forms import AuthenticationForm
 from django.contrib.auth.models import User
-from django.db.models import Avg, Count, Q
+from django.db.models import Avg, Count, Exists, OuterRef, Q
 from django.http import JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.views.decorators.http import require_POST
@@ -124,12 +124,14 @@ def register_view(request):
 
 @login_required
 def location_list(request):
+    my_reviews = LocationReview.objects.filter(location=OuterRef("pk"), user=request.user)
     locations = (
         Location.objects
         .prefetch_related("photos", "visits", "items", "collections")
         .annotate(
             user_avg_rating=Avg("reviews__rating"),
             user_review_count=Count("reviews", distinct=True),
+            mine=Exists(my_reviews),
         )
         .all()
     )
@@ -252,10 +254,14 @@ def gf_verify(request, pk):
 
 @login_required
 def locations_geojson(request):
+    my_reviews = LocationReview.objects.filter(location=OuterRef("pk"), user=request.user)
     qs = (
         Location.objects
         .exclude(latitude=None).exclude(longitude=None)
-        .annotate(user_avg_rating=Avg("reviews__rating"))
+        .annotate(
+            user_avg_rating=Avg("reviews__rating"),
+            mine=Exists(my_reviews),
+        )
         .prefetch_related("photos")
     )
     features = []
@@ -276,6 +282,7 @@ def locations_geojson(request):
                 "rating": str(round(rating, 1)) if rating else None,
                 "status": loc.status,
                 "gluten_free": loc.gluten_free,
+                "mine": loc.mine,
                 "photo": first_photo.image.url if first_photo else None,
                 "address": loc.address,
                 "city": loc.city,
