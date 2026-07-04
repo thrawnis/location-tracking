@@ -156,7 +156,6 @@
     #side-list.sheet-open { transform: translateY(0); }
     #result-count { display: none !important; }
     .loc-card { padding: 14px; }
-    #category-filter, #mobile-toggle { display: none !important; }
   }
 </style>
 {% endblock %}
@@ -184,16 +183,6 @@
                     focus:outline-none focus:ring-2 focus:ring-brand/30 focus:border-brand bg-white">
     </div>
 
-    <!-- Radius selector -->
-    <select id="radius-select" title="Search radius"
-            class="shrink-0 text-sm border border-slate-200 rounded-lg px-2 py-2 bg-white
-                   focus:outline-none focus:ring-2 focus:ring-brand/30 focus:border-brand">
-      <option value="3219">2 mi</option>
-      <option value="8047" selected>5 mi</option>
-      <option value="16093">10 mi</option>
-      <option value="40234">25 mi</option>
-    </select>
-
     <!-- Location search — Google Places Autocomplete attaches here -->
     <div class="relative flex-1 min-w-[150px]">
       <svg class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none"
@@ -215,57 +204,78 @@
       </span>
     </div>
 
+    <!-- Locate: icon-only, sits next to the city/state input -->
     <button id="locate-btn" type="button" title="Use my location"
-            class="shrink-0 flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium
-                   border border-brand/30 bg-brand/5 text-brand hover:bg-brand/10
-                   transition-all min-h-[36px]"
-            aria-label="Locate me">
+            class="shrink-0 flex items-center justify-center w-9 h-9 rounded-lg
+                   border border-brand/30 bg-brand/5 text-brand hover:bg-brand/10 transition-all"
+            aria-label="Use my location">
       <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
               d="M12 8a4 4 0 100 8 4 4 0 000-8zM12 2v2m0 16v2M2 12h2m16 0h2"/>
       </svg>
-      <span class="hidden sm:inline">Locate</span>
     </button>
 
-    <button id="sidebar-toggle"
-            class="hidden md:flex items-center gap-1.5 text-sm font-medium px-3 py-2 rounded-lg
-                   border border-slate-200 bg-white hover:border-brand/40 hover:text-brand
-                   transition-all shrink-0 min-h-[36px] whitespace-nowrap">
-      <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-              d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z"/>
-      </svg>
-      Saved (<span id="sidebar-count">0</span>)
-      <svg id="sidebar-chevron" class="w-3.5 h-3.5 shrink-0 transition-transform duration-300"
-           fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
-      </svg>
-    </button>
+    <!-- Filters: collapsible popover behind a vertical-sliders (DJ fader) icon -->
+    <div class="relative shrink-0" x-data="{ open: false }">
+      <button @click="open = !open" @keydown.escape="open = false" type="button"
+              title="Filters" aria-label="Filters"
+              class="relative flex items-center justify-center w-9 h-9 rounded-lg
+                     border border-slate-200 bg-white hover:border-brand/40 hover:text-brand transition-all">
+        <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2"
+             stroke-linecap="round" viewBox="0 0 24 24">
+          <line x1="6" y1="4" x2="6" y2="20"/>
+          <line x1="12" y1="4" x2="12" y2="20"/>
+          <line x1="18" y1="4" x2="18" y2="20"/>
+          <circle cx="6" cy="9" r="2.2" fill="currentColor"/>
+          <circle cx="12" cy="15" r="2.2" fill="currentColor"/>
+          <circle cx="18" cy="7" r="2.2" fill="currentColor"/>
+        </svg>
+        <span id="filter-badge"
+              class="hidden absolute -top-1.5 -right-1.5 min-w-[16px] h-4 px-1 rounded-full
+                     bg-brand text-white text-[10px] font-bold flex items-center justify-center"></span>
+      </button>
 
-    <select id="category-filter"
-            class="text-sm border border-slate-200 rounded-lg px-3 py-2 bg-white
-                   focus:outline-none focus:ring-2 focus:ring-brand/30 focus:border-brand shrink-0">
-      <option value="">All categories</option>
-      {% for val, label in category_choices %}
-      <option value="{{ val }}">{{ label }}</option>
-      {% endfor %}
-    </select>
-
-    <select id="status-filter" title="Been there / want to go"
-            class="text-sm border border-slate-200 rounded-lg px-3 py-2 bg-white
-                   focus:outline-none focus:ring-2 focus:ring-brand/30 focus:border-brand shrink-0">
-      <option value="">All statuses</option>
-      <option value="been">✓ Been there</option>
-      <option value="want">🌟 Want to go</option>
-    </select>
-
-    <select id="gf-filter" title="Gluten-free level"
-            class="text-sm border border-slate-200 rounded-lg px-3 py-2 bg-white
-                   focus:outline-none focus:ring-2 focus:ring-brand/30 focus:border-brand shrink-0">
-      <option value="">🌾 Any GF status</option>
-      <option value="dedicated">🌾 Dedicated GF kitchen only</option>
-      <option value="gf-any">🌾 Dedicated or GF options</option>
-    </select>
+      <div x-show="open" x-cloak @click.outside="open = false" x-transition
+           class="absolute right-0 mt-2 w-64 bg-white rounded-xl shadow-lg border border-slate-100
+                  p-3 z-[1100] space-y-3">
+        <div>
+          <label class="block text-[11px] font-semibold text-slate-500 uppercase tracking-wide mb-1">Category</label>
+          <select id="category-filter"
+                  class="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 bg-white
+                         focus:outline-none focus:ring-2 focus:ring-brand/30 focus:border-brand">
+            <option value="">All categories</option>
+            {% for val, label in category_choices %}
+            <option value="{{ val }}">{{ label }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div>
+          <label class="block text-[11px] font-semibold text-slate-500 uppercase tracking-wide mb-1">Status</label>
+          <select id="status-filter" title="Been there / want to go"
+                  class="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 bg-white
+                         focus:outline-none focus:ring-2 focus:ring-brand/30 focus:border-brand">
+            <option value="">All statuses</option>
+            <option value="been">✓ Been there</option>
+            <option value="want">🌟 Want to go</option>
+          </select>
+        </div>
+        <div>
+          <label class="block text-[11px] font-semibold text-slate-500 uppercase tracking-wide mb-1">Gluten-free</label>
+          <select id="gf-filter" title="Gluten-free level"
+                  class="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 bg-white
+                         focus:outline-none focus:ring-2 focus:ring-brand/30 focus:border-brand">
+            <option value="">🌾 Any GF status</option>
+            <option value="dedicated">🌾 Dedicated GF kitchen only</option>
+            <option value="gf-any">🌾 Dedicated or GF options</option>
+          </select>
+        </div>
+        <button id="clear-filters" type="button"
+                class="w-full text-xs font-semibold text-slate-500 hover:text-brand
+                       border border-slate-200 rounded-lg py-1.5 transition-colors">
+          Clear all filters
+        </button>
+      </div>
+    </div>
 
   </div>
 
@@ -286,12 +296,18 @@
       </div>
 
       <!-- Desktop tab bar -->
-      <div class="hidden md:flex shrink-0 border-b border-slate-100">
+      <div class="hidden md:flex shrink-0 border-b border-slate-100 items-stretch">
         <button id="tab-saved" class="tab-btn tab-active">
           ♥ Saved&nbsp;<span id="tab-saved-count">0</span>
         </button>
         <button id="tab-nearby" class="tab-btn">
           📍 Nearby&nbsp;<span id="osm-result-count">0</span>
+        </button>
+        <button id="sidebar-close" title="Close panel" aria-label="Close panel"
+                class="shrink-0 px-3 text-slate-400 hover:text-slate-700 transition-colors">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+          </svg>
         </button>
       </div>
 
@@ -412,19 +428,6 @@
           <p class="text-xs text-slate-400 text-center py-8">Search for a place above to see nearby results</p>
         </div>
 
-        <div id="expand-search-bar" class="hidden shrink-0 border-t border-slate-100 p-3">
-          <button id="expand-search-btn"
-                  class="w-full flex items-center justify-center gap-2 text-sm font-semibold
-                         text-brand bg-brand/5 hover:bg-brand/10 border border-brand/30
-                         rounded-xl py-2.5 transition-all">
-            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                    d="M21 21l-4.35-4.35M17 11A6 6 0 105 11a6 6 0 0012 0z"/>
-            </svg>
-            <span id="expand-search-label">Expand search area</span>
-          </button>
-        </div>
-
       </div><!-- /panel-nearby -->
 
     </div><!-- /side-list -->
@@ -520,6 +523,18 @@ const IS_AUTH = {% if user.is_authenticated %}true{% else %}false{% endif %};
     if (mi < 0.1) return `${Math.round(mi * 5280)} ft`;
     if (mi < 10)  return `${mi.toFixed(1)} mi`;
     return `${Math.round(mi)} mi`;
+  }
+
+  // Search radius follows the current map viewport (center → visible edge),
+  // so the zoom level IS the radius. Capped to Google's 50 km textSearch max.
+  function currentRadiusM() {
+    if (!mainMap) return 8047;
+    const b = mainMap.getBounds();
+    const c = mainMap.getCenter();
+    if (!b || !c) return 8047;
+    const ne = b.getNorthEast();
+    const km = haversineKm(c.lat(), c.lng(), ne.lat(), ne.lng());
+    return Math.min(Math.max(Math.round(km * 1000), 500), 50000);
   }
 
   // ── Rating colour ────────────────────────────────────────────
@@ -678,6 +693,15 @@ const IS_AUTH = {% if user.is_authenticated %}true{% else %}false{% endif %};
     updateCount(visible);
   }
 
+  // Show a count badge on the filters icon when any filter is active
+  function updateFilterBadge() {
+    const active = [catFilter, statusFilter, gfFilter].filter(Boolean).length;
+    const badge = document.getElementById('filter-badge');
+    if (!badge) return;
+    badge.textContent = active;
+    badge.classList.toggle('hidden', active === 0);
+  }
+
   // ── OSM/Nearby filter helpers ─────────────────────────────────
   function entryVisible({ cat, distKm }) {
     if (osmCatFilters[cat] === false) return false;
@@ -735,9 +759,13 @@ const IS_AUTH = {% if user.is_authenticated %}true{% else %}false{% endif %};
   function setSidebarOpen(open) {
     sidebarOpen = open;
     applyFilters();
-    const chevron = document.getElementById('sidebar-chevron');
-    if (chevron) chevron.style.transform = open ? 'rotate(180deg)' : '';
     if (open && mainMap) setTimeout(() => google.maps.event.trigger(mainMap, 'resize'), 300);
+  }
+
+  function setSidebarClosed() {
+    const sheet = document.getElementById('side-list');
+    sheet.classList.remove('sidebar-open', 'sheet-open');
+    setSidebarOpen(false);
   }
 
   function toggleSidebar() {
@@ -786,7 +814,7 @@ const IS_AUTH = {% if user.is_authenticated %}true{% else %}false{% endif %};
     if (!query || !mainMap) { osmSpinner(false); return; }
 
     const center  = mainMap.getCenter();
-    const radiusM = parseInt(document.getElementById('radius-select')?.value || '8047');
+    const radiusM = currentRadiusM();
 
     ignoreNextIdle = true;
 
@@ -937,25 +965,6 @@ const IS_AUTH = {% if user.is_authenticated %}true{% else %}false{% endif %};
 
       applyOsmFilters();
 
-      // "Expand search area" button
-      const TIERS = [
-        { val: '3219',  label: '2 mi' },
-        { val: '8047',  label: '5 mi' },
-        { val: '16093', label: '10 mi' },
-        { val: '40234', label: '25 mi' },
-      ];
-      const sel      = document.getElementById('radius-select');
-      const curIdx   = TIERS.findIndex(t => t.val === sel?.value);
-      const nextTier = TIERS[curIdx + 1];
-      const expandBar = document.getElementById('expand-search-bar');
-      const expandLbl = document.getElementById('expand-search-label');
-      if (nextTier && expandBar && expandLbl) {
-        expandLbl.textContent = `Expand search to ${nextTier.label}`;
-        expandBar.classList.remove('hidden');
-      } else if (expandBar) {
-        expandBar.classList.add('hidden');
-      }
-
       openSidebar();
       switchTab('nearby');
     });
@@ -969,7 +978,6 @@ const IS_AUTH = {% if user.is_authenticated %}true{% else %}false{% endif %};
       osmEntries.forEach(e => { if (e.marker) e.marker.map = null; });
       osmEntries = [];
       showSearchAreaBtn(false);
-      document.getElementById('expand-search-bar')?.classList.add('hidden');
       const list = document.getElementById('osm-list');
       if (list) list.innerHTML = '<p class="text-xs text-slate-400 text-center py-6">Search for a place above to see nearby results</p>';
       const cnt = document.getElementById('osm-result-count');
@@ -1081,6 +1089,7 @@ const IS_AUTH = {% if user.is_authenticated %}true{% else %}false{% endif %};
       mapTypeControl:      false,
       streetViewControl:   false,
       fullscreenControl:   false,
+      scaleControl:        true,   // shows a distance scale bar so the viewed area is legible
     });
 
     mainInfoWindow = new google.maps.InfoWindow();
@@ -1187,7 +1196,8 @@ const IS_AUTH = {% if user.is_authenticated %}true{% else %}false{% endif %};
         });
 
         const total = data.features.length;
-        document.querySelectorAll('#sidebar-count, #tab-saved-count').forEach(el => el.textContent = total);
+        const savedCountEl = document.getElementById('tab-saved-count');
+        if (savedCountEl) savedCountEl.textContent = total;
         applyFilters();
       });
 
@@ -1214,7 +1224,7 @@ const IS_AUTH = {% if user.is_authenticated %}true{% else %}false{% endif %};
     }
 
     // ── Wire up UI events ───────────────────────────────────────
-    document.getElementById('sidebar-toggle')?.addEventListener('click', toggleSidebar);
+    document.getElementById('sidebar-close')?.addEventListener('click', () => setSidebarClosed());
     document.getElementById('sheet-handle')?.addEventListener('click', toggleSidebar);
     document.getElementById('locate-btn')?.addEventListener('click', locateUser);
     document.getElementById('tab-saved')?.addEventListener('click',  () => switchTab('saved'));
@@ -1234,39 +1244,36 @@ const IS_AUTH = {% if user.is_authenticated %}true{% else %}false{% endif %};
       triggerSearch();
     });
 
-    document.getElementById('radius-select')?.addEventListener('change', () => {
-      if (nameFilter) { showSearchAreaBtn(false); triggerSearch(); }
-    });
-
     document.getElementById('search-area-btn')?.addEventListener('click', () => {
       if (nameFilter) { showSearchAreaBtn(false); searchGooglePlaces(nameFilter); }
-    });
-
-    document.getElementById('expand-search-btn')?.addEventListener('click', () => {
-      const TIERS = ['3219', '8047', '16093', '40234'];
-      const sel = document.getElementById('radius-select');
-      if (!sel) return;
-      const next = TIERS[TIERS.indexOf(sel.value) + 1];
-      if (next) {
-        sel.value = next;
-        document.getElementById('expand-search-bar')?.classList.add('hidden');
-        searchGooglePlaces(nameFilter);
-      }
     });
 
     document.getElementById('category-filter')?.addEventListener('change', e => {
       catFilter = e.target.value;
       applyFilters();
+      updateFilterBadge();
     });
 
     document.getElementById('status-filter')?.addEventListener('change', e => {
       statusFilter = e.target.value;
       applyFilters();
+      updateFilterBadge();
     });
 
     document.getElementById('gf-filter')?.addEventListener('change', e => {
       gfFilter = e.target.value;
       applyFilters();
+      updateFilterBadge();
+    });
+
+    document.getElementById('clear-filters')?.addEventListener('click', () => {
+      catFilter = statusFilter = gfFilter = '';
+      ['category-filter', 'status-filter', 'gf-filter'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.value = '';
+      });
+      applyFilters();
+      updateFilterBadge();
     });
 
     document.querySelectorAll('.filter-chip').forEach(chip => {
@@ -1286,6 +1293,14 @@ const IS_AUTH = {% if user.is_authenticated %}true{% else %}false{% endif %};
         applyOsmFilters();
       });
     });
+
+    updateFilterBadge();
+
+    // "My Waypoints" (dropdown) links here with ?panel=saved → open the saved list
+    if (new URLSearchParams(window.location.search).get('panel') === 'saved') {
+      switchTab('saved');
+      openSidebar();
+    }
   };
 })();
 </script>
