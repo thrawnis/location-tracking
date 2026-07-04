@@ -55,12 +55,13 @@ class LocationForm(forms.ModelForm):
             "overall_rating": forms.HiddenInput(),
         }
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args, unlock_google_fields=False, **kwargs):
         super().__init__(*args, **kwargs)
         # A Google Place ID (from a saved POI) marks the identity fields as
         # authoritative; lock them so they can't be edited after the fact.
+        # Admins can pass unlock_google_fields=True to override the lock.
         pid = self.initial.get("google_place_id") or getattr(self.instance, "google_place_id", "")
-        self.google_locked = bool(pid)
+        self.google_locked = bool(pid) and not unlock_google_fields
         if self.google_locked:
             for name in self.GOOGLE_SOURCED_FIELDS:
                 field = self.fields.get(name)

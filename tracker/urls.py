@@ -45,7 +45,8 @@ urlpatterns = [
     path("locations/<int:pk>/photos/<int:photo_pk>/delete/", views.photo_delete, name="photo_delete"),
     path("locations/<int:pk>/photos/<int:photo_pk>/rotate/", views.photo_rotate, name="photo_rotate"),
 
-    # Admin audit log
+    # Admin (staff-only management)
+    path("manage/", views.admin_dashboard, name="admin_dashboard"),
     path("admin-log/", views.audit_log_view, name="audit_log"),
 
     # Server-side IP geolocation fallback

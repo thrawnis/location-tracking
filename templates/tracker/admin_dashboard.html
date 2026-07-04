@@ -1,0 +1,118 @@
+{% extends "base.html" %}
+{% block title %}Admin – Waypoint{% endblock %}
+
+{% block content %}
+<div class="max-w-6xl mx-auto space-y-6">
+
+  <!-- Header -->
+  <div class="flex flex-wrap items-end justify-between gap-4">
+    <div>
+      <h1 class="text-2xl font-bold text-slate-900">Admin</h1>
+      <p class="text-sm text-slate-500 mt-1">
+        Manage every waypoint. As an admin you can edit Google-sourced POIs whose
+        name, address, and pin are locked for regular users.
+      </p>
+    </div>
+    <div class="flex gap-2">
+      <a href="{% url 'audit_log' %}"
+         class="text-sm font-medium px-3 py-2 rounded-lg border border-slate-200 bg-white hover:border-brand/40 hover:text-brand transition-all">
+        Audit Log
+      </a>
+      <a href="/admin/"
+         class="text-sm font-medium px-3 py-2 rounded-lg border border-slate-200 bg-white hover:border-brand/40 hover:text-brand transition-all">
+        Django Admin
+      </a>
+    </div>
+  </div>
+
+  <!-- Stats -->
+  <div class="grid grid-cols-3 gap-3">
+    <div class="bg-white rounded-xl border border-slate-200 p-4">
+      <p class="text-2xl font-bold text-slate-900">{{ location_count }}</p>
+      <p class="text-xs text-slate-500 uppercase tracking-wide mt-1">Waypoints</p>
+    </div>
+    <div class="bg-white rounded-xl border border-slate-200 p-4">
+      <p class="text-2xl font-bold text-slate-900">{{ user_count }}</p>
+      <p class="text-xs text-slate-500 uppercase tracking-wide mt-1">Users</p>
+    </div>
+    <div class="bg-white rounded-xl border border-slate-200 p-4">
+      <p class="text-2xl font-bold text-slate-900">{{ admin_count }}</p>
+      <p class="text-xs text-slate-500 uppercase tracking-wide mt-1">Admins</p>
+    </div>
+  </div>
+
+  <p class="text-xs text-slate-400">
+    To make another user an admin, open
+    <a href="/admin/auth/user/" class="text-brand hover:underline">Django Admin → Users</a>
+    and enable “Staff status”.
+  </p>
+
+  <!-- Search -->
+  <form method="get" class="flex gap-2">
+    <input type="search" name="q" value="{{ q }}" placeholder="Search by name, address, city, or state…"
+           class="flex-1 text-sm border border-slate-200 rounded-lg px-3 py-2 bg-white
+                  focus:outline-none focus:ring-2 focus:ring-brand/30 focus:border-brand">
+    <button type="submit"
+            class="text-sm font-medium px-4 py-2 rounded-lg bg-brand text-white hover:bg-brand-dark transition-colors">
+      Search
+    </button>
+    {% if q %}
+    <a href="{% url 'admin_dashboard' %}"
+       class="text-sm font-medium px-3 py-2 rounded-lg border border-slate-200 bg-white hover:text-brand transition-all">
+      Clear
+    </a>
+    {% endif %}
+  </form>
+
+  <!-- Waypoints table -->
+  <div class="bg-white rounded-xl border border-slate-200 overflow-hidden">
+    <div class="overflow-x-auto">
+      <table class="w-full text-sm">
+        <thead>
+          <tr class="text-left text-xs text-slate-500 uppercase tracking-wide border-b border-slate-100">
+            <th class="px-4 py-3 font-semibold">Name</th>
+            <th class="px-4 py-3 font-semibold">Category</th>
+            <th class="px-4 py-3 font-semibold">Location</th>
+            <th class="px-4 py-3 font-semibold">Source</th>
+            <th class="px-4 py-3 font-semibold">Added by</th>
+            <th class="px-4 py-3 font-semibold text-right">Actions</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-slate-100">
+          {% for loc in locations %}
+          <tr class="hover:bg-slate-50">
+            <td class="px-4 py-3 font-medium text-slate-800">{{ loc.name }}</td>
+            <td class="px-4 py-3 text-slate-600">{{ loc.get_category_display }}</td>
+            <td class="px-4 py-3 text-slate-500">
+              {{ loc.city }}{% if loc.city and loc.state %}, {% endif %}{{ loc.state }}
+            </td>
+            <td class="px-4 py-3">
+              {% if loc.google_place_id %}
+              <span class="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-sky-100 text-sky-700">Google POI</span>
+              {% else %}
+              <span class="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-slate-100 text-slate-600">Manual</span>
+              {% endif %}
+            </td>
+            <td class="px-4 py-3 text-slate-500">{{ loc.created_by.username|default:"—" }}</td>
+            <td class="px-4 py-3">
+              <div class="flex items-center justify-end gap-3 whitespace-nowrap">
+                <a href="{% url 'location_detail' loc.pk %}" class="text-slate-500 hover:text-brand">View</a>
+                <a href="{% url 'location_edit' loc.pk %}" class="text-brand hover:underline font-medium">Edit</a>
+                <a href="{% url 'location_delete' loc.pk %}" class="text-red-500 hover:text-red-700">Delete</a>
+              </div>
+            </td>
+          </tr>
+          {% empty %}
+          <tr>
+            <td colspan="6" class="px-4 py-12 text-center text-slate-400">
+              {% if q %}No waypoints match “{{ q }}”.{% else %}No waypoints yet.{% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+</div>
+{% endblock %}

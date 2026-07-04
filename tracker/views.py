@@ -13,6 +13,7 @@ from django.contrib.auth import authenticate, login, logout
 from django.contrib.auth.decorators import login_required, user_passes_test
 from django.core.cache import cache
 from django.contrib.auth.forms import AuthenticationForm
+from django.contrib.auth.models import User
 from django.db.models import Avg, Count, Q
 from django.http import JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
@@ -26,6 +27,13 @@ from .models import (
     AuditLog, Collection, Item, ItemReview, Location, LocationReview,
     OsmSearchCache, Photo, Visit,
 )
+
+
+# ── Admin ─────────────────────────────────────────────────────────────────────
+
+def is_admin(user):
+    """Site admins are staff users (the first registrant is auto-promoted)."""
+    return user.is_authenticated and user.is_staff
 
 
 # ── Audit helpers ─────────────────────────────────────────────────────────────
@@ -94,9 +102,20 @@ def register_view(request):
         return redirect("location_list")
     form = RegisterForm(request.POST or None)
     if request.method == "POST" and form.is_valid():
+        # The very first account to exist becomes the admin automatically.
+        first_user = not User.objects.exists()
         user = form.save()
+        if first_user:
+            user.is_staff = True
+            user.is_superuser = True
+            user.save(update_fields=["is_staff", "is_superuser"])
         login(request, user)
-        messages.success(request, "Welcome, {}!".format(user.username))
+        if first_user:
+            messages.success(
+                request, "Welcome, {}! You're the admin for this site.".format(user.username)
+            )
+        else:
+            messages.success(request, "Welcome, {}!".format(user.username))
         return redirect("location_list")
     return render(request, "registration/register.html", {"form": form})
 
@@ -149,7 +168,8 @@ def location_create(request):
         'name','address','latitude','longitude','city','state',
         'gluten_free','dietary_notes','status','google_place_id',
     ] if request.GET.get(f)}
-    form = LocationForm(request.POST or None, initial=prefill or None)
+    unlock = is_admin(request.user)
+    form = LocationForm(request.POST or None, initial=prefill or None, unlock_google_fields=unlock)
     if request.method == "POST" and form.is_valid():
         location = form.save(commit=False)
         location.created_by = request.user
@@ -170,8 +190,9 @@ def location_create(request):
 @login_required
 def location_edit(request, pk):
     location = get_object_or_404(Location, pk=pk)
+    unlock = is_admin(request.user)
     if request.method == "POST":
-        form = LocationForm(request.POST, instance=location)
+        form = LocationForm(request.POST, instance=location, unlock_google_fields=unlock)
         if form.is_valid():
             diff = _location_diff(location, form.cleaned_data)
             form.save()
@@ -179,11 +200,13 @@ def location_edit(request, pk):
             messages.success(request, "Waypoint updated.")
             return redirect("location_detail", pk=location.pk)
     else:
-        form = LocationForm(instance=location)
+        form = LocationForm(instance=location, unlock_google_fields=unlock)
     return render(request, "tracker/location_form.html", {
         "form": form,
         "action": "Edit",
         "location": location,
+        # True when an admin is editing a normally-locked Google POI
+        "admin_override": unlock and bool(location.google_place_id),
     })
 
 
@@ -1015,9 +1038,31 @@ def check_duplicate(request):
     return JsonResponse({"matches": matches[:5]})
 
 
+# ── Admin dashboard ───────────────────────────────────────────────────────────
+
+@user_passes_test(is_admin)
+def admin_dashboard(request):
+    """Staff-only management view. Admins can edit any waypoint here, including
+    Google-sourced POIs whose name/address/pin are locked for regular users."""
+    q = request.GET.get("q", "").strip()
+    locations = Location.objects.select_related("created_by").order_by("name")
+    if q:
+        locations = locations.filter(
+            Q(name__icontains=q) | Q(address__icontains=q)
+            | Q(city__icontains=q) | Q(state__icontains=q)
+        )
+    return render(request, "tracker/admin_dashboard.html", {
+        "locations": locations,
+        "q": q,
+        "location_count": Location.objects.count(),
+        "user_count": User.objects.count(),
+        "admin_count": User.objects.filter(is_staff=True).count(),
+    })
+
+
 # ── Admin audit log ───────────────────────────────────────────────────────────
 
-@user_passes_test(lambda u: u.is_staff)
+@user_passes_test(is_admin)
 def audit_log_view(request):
     logs = AuditLog.objects.select_related("user").all()
     q = request.GET.get("q", "").strip()
