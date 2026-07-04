@@ -475,6 +475,7 @@
 {% block extra_js %}
 <script>
 const IS_AUTH = {% if user.is_authenticated %}true{% else %}false{% endif %};
+const CSRF_TOKEN = '{{ csrf_token }}';
 </script>
 <script>
 (function () {
@@ -491,6 +492,7 @@ const IS_AUTH = {% if user.is_authenticated %}true{% else %}false{% endif %};
   let placesService  = null;
   let mainInfoWindow = null;
   let markerMap      = {};   // id → { marker, popupContent }
+  let savedByPlaceId = {};   // google_place_id → { rating, count } for saved waypoints
   let activeId       = null;
   let nameFilter     = '';
   let catFilter      = '';
@@ -510,6 +512,20 @@ const IS_AUTH = {% if user.is_authenticated %}true{% else %}false{% endif %};
   function escapeHtml(str) {
     if (!str) return '';
     return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  }
+
+  // "Rate Me!" POSTs the POI to rate_poi, which get-or-creates the waypoint and
+  // opens its rating form. params: {name, latitude, longitude, address, google_place_id}
+  function rateMeForm(params, btnStyle) {
+    const hidden = Object.entries(params)
+      .filter(([, v]) => v != null && v !== '')
+      .map(([k, v]) => `<input type="hidden" name="${k}" value="${escapeHtml(String(v))}">`)
+      .join('');
+    return `<form method="post" action="/locations/rate/" style="display:inline;margin:0">
+      <input type="hidden" name="csrfmiddlewaretoken" value="${CSRF_TOKEN}">
+      ${hidden}
+      <button type="submit" style="${btnStyle}">⭐ Rate Me!</button>
+    </form>`;
   }
 
   function haversineKm(lat1, lon1, lat2, lon2) {
@@ -894,13 +910,22 @@ const IS_AUTH = {% if user.is_authenticated %}true{% else %}false{% endif %};
         const placeId   = place.place_id;
         const gmapsUrl  = `https://www.google.com/maps/place/?q=place_id:${placeId}`;
 
-        const saveParams = new URLSearchParams({
+        const rateParams = {
           name,
           latitude:  lat.toFixed(6),
           longitude: lng.toFixed(6),
-          ...(addr    ? { address: addr } : {}),
-          ...(placeId ? { google_place_id: placeId } : {}),
-        });
+          address:   addr || '',
+          google_place_id: placeId || '',
+        };
+
+        // Waypoint rating for this POI, if it's already a saved waypoint
+        const saved = placeId ? savedByPlaceId[placeId] : null;
+        const googleRatingLine = gRating
+          ? `Google Rating: <strong>${gRating.toFixed(1)}/5</strong> (${numRat})`
+          : 'Google Rating: <span style="color:#94a3b8">not rated</span>';
+        const wpRatingLine = (saved && saved.rating)
+          ? `Waypoint Rating: <strong>${saved.rating}/5</strong> (${saved.count})`
+          : 'Waypoint Rating: <span style="color:#94a3b8">not yet rated</span>';
 
         // Map marker
         const pinEl = document.createElement('div');
@@ -913,27 +938,26 @@ const IS_AUTH = {% if user.is_authenticated %}true{% else %}false{% endif %};
           zIndex:   0,
         });
 
-        const ratingHtml = gRating
-          ? `<span style="font-size:11px;color:#f59e0b;font-weight:600">★ ${gRating.toFixed(1)} (${numRat})</span>`
-          : '';
         const openHtml = openNow !== undefined
           ? `<span style="font-size:11px;font-weight:600;color:${openNow ? '#059669' : '#dc2626'}">${openNow ? '✓ Open' : '✗ Closed'}</span>`
           : '';
+        const rateBtnStyle = 'font-size:12px;color:white;background:#ec4899;border:none;'
+          + 'padding:4px 12px;border-radius:6px;font-weight:700;cursor:pointer';
 
         const popupHtml = `<div style="min-width:220px;font-family:inherit;padding:2px">
           <p style="font-weight:700;font-size:14px;margin:0 0 4px">${escapeHtml(name)}</p>
           <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:4px">
             <span style="font-size:11px;background:${info.color}22;color:${info.color};padding:1px 7px;border-radius:4px;font-weight:600">${info.emoji} ${typeLabel}</span>
             <span style="font-size:11px;color:#64748b;font-weight:600">📍 ${dist}</span>
-            ${ratingHtml}
           </div>
-          ${openHtml ? `<p style="margin:2px 0">${openHtml}</p>` : ''}
           ${addr ? `<p style="font-size:12px;color:#475569;margin:2px 0">${escapeHtml(addr)}</p>` : ''}
-          <div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap">
+          <p style="font-size:12px;color:#334155;margin:3px 0 0">${googleRatingLine}</p>
+          <p style="font-size:12px;color:#334155;margin:1px 0 0">${wpRatingLine}</p>
+          ${openHtml ? `<p style="margin:4px 0 0">${openHtml}</p>` : ''}
+          <div style="display:flex;gap:10px;margin-top:8px;flex-wrap:wrap;align-items:center">
             <a href="${gmapsUrl}" target="_blank" rel="noopener"
                style="font-size:12px;color:#6366f1;font-weight:600">Google Maps →</a>
-            ${IS_AUTH ? `<a href="/locations/new/?${saveParams}"
-               style="font-size:12px;color:#ec4899;font-weight:700">♥ Save Waypoint</a>` : ''}
+            ${IS_AUTH ? rateMeForm(rateParams, rateBtnStyle) : ''}
           </div>
         </div>`;
 
@@ -959,10 +983,10 @@ const IS_AUTH = {% if user.is_authenticated %}true{% else %}false{% endif %};
               </span>
               ${addr ? `<span class="text-xs text-slate-400 truncate">${escapeHtml(addr)}</span>` : ''}
             </div>
-            ${gRating ? `<p class="text-xs text-amber-500 font-semibold mt-0.5">★ ${gRating.toFixed(1)} (${numRat} reviews)</p>` : ''}
+            ${gRating ? `<p class="text-xs text-amber-500 font-semibold mt-0.5">Google: ${gRating.toFixed(1)}/5 (${numRat})</p>` : ''}
+            ${(saved && saved.rating) ? `<p class="text-xs text-violet-600 font-semibold mt-0.5">Waypoint: ${saved.rating}/5 (${saved.count})</p>` : ''}
             ${openNow !== undefined ? `<p class="text-xs font-medium mt-0.5" style="color:${openNow ? '#059669' : '#dc2626'}">${openNow ? '✓ Open now' : '✗ Closed'}</p>` : ''}
-            ${IS_AUTH ? `<a href="/locations/new/?${saveParams}" onclick="event.stopPropagation()"
-                          class="text-[11px] text-pink-500 font-semibold hover:text-pink-700 mt-1 inline-block">♥ Save Waypoint</a>` : ''}
+            ${IS_AUTH ? `<div class="mt-1" onclick="event.stopPropagation()">${rateMeForm(rateParams, 'font-size:11px;color:#ec4899;background:none;border:none;padding:0;font-weight:700;cursor:pointer')}</div>` : ''}
           </div>`;
 
         item.addEventListener('click', () => {
@@ -1164,6 +1188,12 @@ const IS_AUTH = {% if user.is_authenticated %}true{% else %}false{% endif %};
         data.features.forEach(feature => {
           const [lng, lat] = feature.geometry.coordinates;
           const p = feature.properties;
+
+          // Index saved waypoints by Google Place ID so POI popups can show
+          // the Waypoint rating alongside the Google rating.
+          if (p.google_place_id) {
+            savedByPlaceId[p.google_place_id] = { rating: p.rating, count: p.review_count || 0 };
+          }
 
           const wrapEl = document.createElement('div');
           wrapEl.style.cssText = 'display:flex;flex-direction:column;align-items:center;cursor:pointer;transition:transform 150ms;';

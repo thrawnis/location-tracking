@@ -17,6 +17,7 @@ from django.contrib.auth.models import User
 from django.db.models import Avg, Count, Exists, OuterRef, Q
 from django.http import JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
+from django.urls import reverse
 from django.views.decorators.http import require_POST
 
 from .forms import (
@@ -154,6 +155,14 @@ def location_detail(request, pk):
         pk=pk,
     )
     my_review = location.reviews.filter(user=request.user).first()
+    my_item_reviews = {
+        rev.item_id: rev
+        for rev in ItemReview.objects.filter(
+            item__location=location, user=request.user
+        ).select_related("item")
+    }
+    # "Rate Me!" from the map lands here with ?rate=1 to open the review form
+    open_review = request.GET.get("rate") == "1"
     return render(request, "tracker/location_detail.html", {
         "location": location,
         "visit_form": VisitForm(),
@@ -161,6 +170,12 @@ def location_detail(request, pk):
         "photo_form": PhotoForm(),
         "my_review": my_review,
         "all_collections": Collection.objects.all(),
+        # Needed by the items_section partial so existing dishes render on load
+        "items": _annotated_items(location),
+        "my_reviews": my_item_reviews,
+        # Auto-open the location review form when arriving via "Rate Me!"
+        "open_review": open_review,
+        "location_review_form": LocationReviewForm(instance=my_review) if open_review else None,
     })
 
 
@@ -187,6 +202,38 @@ def location_create(request):
         messages.success(request, "Waypoint added.")
         return redirect("location_detail", pk=location.pk)
     return render(request, "tracker/location_form.html", {"form": form, "action": "Add"})
+
+
+@login_required
+@require_POST
+def rate_poi(request):
+    """Get-or-create a waypoint from a Google POI, then open its rating form.
+
+    Reached from the map's "Rate Me!" button. Matches an existing waypoint by
+    Google Place ID so the same POI isn't duplicated on repeated rating.
+    """
+    place_id = (request.POST.get("google_place_id") or "").strip()
+    name = (request.POST.get("name") or "").strip()[:255]
+
+    location = Location.objects.filter(google_place_id=place_id).first() if place_id else None
+    if location is None:
+        if not name:
+            messages.error(request, "Couldn't identify that place to rate.")
+            return redirect("location_list")
+        location = Location.objects.create(
+            name=name,
+            latitude=request.POST.get("latitude") or None,
+            longitude=request.POST.get("longitude") or None,
+            address=(request.POST.get("address") or "").strip(),
+            google_place_id=place_id,
+            status=Location.STATUS_BEEN,
+            created_by=request.user,
+        )
+        _log(request, AuditLog.ACTION_CREATE, location,
+             'Added "{}" from the map to rate it'.format(location.name))
+
+    return redirect("{}?rate=1#location-reviews".format(
+        reverse("location_detail", args=[location.pk])))
 
 
 @login_required
@@ -260,6 +307,7 @@ def locations_geojson(request):
         .exclude(latitude=None).exclude(longitude=None)
         .annotate(
             user_avg_rating=Avg("reviews__rating"),
+            num_reviews=Count("reviews", distinct=True),
             mine=Exists(my_reviews),
         )
         .prefetch_related("photos")
@@ -280,6 +328,8 @@ def locations_geojson(request):
                 "category": loc.category,
                 "category_display": loc.get_category_display(),
                 "rating": str(round(rating, 1)) if rating else None,
+                "review_count": loc.num_reviews,
+                "google_place_id": loc.google_place_id,
                 "status": loc.status,
                 "gluten_free": loc.gluten_free,
                 "mine": loc.mine,

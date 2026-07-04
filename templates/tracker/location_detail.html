@@ -125,7 +125,7 @@
 
       <!-- Ratings & reviews (HTMX-swappable) -->
       <div class="bg-white rounded-xl border border-slate-200 shadow-sm p-5">
-        {% include "tracker/partials/location_reviews.html" with location=location my_review=my_review %}
+        {% include "tracker/partials/location_reviews.html" with location=location my_review=my_review show_form=open_review review_form=location_review_form %}
       </div>
 
       <!-- Public notes -->

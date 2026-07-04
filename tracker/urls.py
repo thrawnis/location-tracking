@@ -6,6 +6,7 @@ urlpatterns = [
     # Locations
     path("", views.location_list, name="location_list"),
     path("locations/new/", views.location_create, name="location_create"),
+    path("locations/rate/", views.rate_poi, name="rate_poi"),
     path("locations/geojson/", views.locations_geojson, name="locations_geojson"),
     path("locations/<int:pk>/", views.location_detail, name="location_detail"),
     path("locations/<int:pk>/edit/", views.location_edit, name="location_edit"),
