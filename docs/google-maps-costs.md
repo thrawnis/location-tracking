@@ -47,6 +47,52 @@ is not normal use; it's a bug or a leaked key generating calls.
 3. **Set a billing budget alert** (Billing → Budgets & alerts) at ~$1–5 so
    you're emailed the moment anything unexpected happens.
 
+## The in-app "Maps usage" admin page (optional)
+
+Admins get a **Maps Usage** page (Admin → Maps Usage) that shows real call
+counts and cost for the current billing month, pulled from Google Cloud. It's
+optional — if unconfigured, the page just shows these setup steps.
+
+It reads from two sources:
+
+- **Call counts** — Cloud Monitoring API (`serviceruntime.googleapis.com/api/request_count`).
+- **Cost** — a BigQuery **billing export** table (real billed cost per SKU).
+
+### One-time setup
+
+1. **Enable APIs** in your project: *Cloud Monitoring API* and *BigQuery API*.
+2. **Set up Cloud Billing export to BigQuery** (Billing → Billing export →
+   BigQuery export → *Standard usage cost*). Note the resulting dataset/table,
+   e.g. `my-project.billing_export.gcp_billing_export_v1_XXXXXX_XXXXXX_XXXXXX`.
+   Data can take up to a day to first appear.
+3. **Create a service account** with read-only roles:
+   - `roles/monitoring.viewer` (call counts)
+   - `roles/bigquery.dataViewer` on the billing dataset **and**
+     `roles/bigquery.jobUser` on the project (to run the query)
+4. **Download a JSON key** for that service account. Treat it as a secret — it
+   is git-ignored under `data/` and should never be committed.
+5. **Mount the key and set env vars.** In `docker-compose.yml`, uncomment the
+   credentials volume:
+   ```yaml
+   - ./data/gcp-credentials.json:/app/data/gcp-credentials.json:ro
+   ```
+   Then in `.env`:
+   ```
+   GCP_PROJECT_ID=my-project
+   GCP_CREDENTIALS_FILE=/app/data/gcp-credentials.json
+   GCP_BILLING_BQ_TABLE=my-project.billing_export.gcp_billing_export_v1_XXXXXX_XXXXXX_XXXXXX
+   ```
+6. `./rebuild.sh` and open Admin → Maps Usage.
+
+### Notes
+
+- Results are **cached for one hour** (BigQuery scans cost money); use the
+  **Refresh** button to force a re-fetch.
+- Outbound HTTPS to `monitoring.googleapis.com` and `bigquery.googleapis.com`
+  must be allowed by your network/tunnel policy.
+- Only call counts need `GCP_PROJECT_ID` + `GCP_CREDENTIALS_FILE`; cost
+  additionally needs `GCP_BILLING_BQ_TABLE`. Configure one or both.
+
 ## If usage ever grows
 
 The biggest lever is reducing Dynamic Map loads: the detail and add/edit pages

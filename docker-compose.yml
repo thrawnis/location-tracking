@@ -29,6 +29,9 @@ services:
       CSRF_TRUSTED_ORIGINS: ${CSRF_TRUSTED_ORIGINS:-}
       HTTPS_ENABLED: ${HTTPS_ENABLED:-False}
       GOOGLE_MAPS_API_KEY: ${GOOGLE_MAPS_API_KEY:-}
+      GCP_PROJECT_ID: ${GCP_PROJECT_ID:-}
+      GCP_CREDENTIALS_FILE: ${GCP_CREDENTIALS_FILE:-}
+      GCP_BILLING_BQ_TABLE: ${GCP_BILLING_BQ_TABLE:-}
     depends_on:
       db:
         condition: service_healthy
@@ -36,3 +39,6 @@ services:
     volumes:
       - ./data/media:/app/data/media
       - ./data/staticfiles:/app/data/staticfiles
+      # For the admin "Maps usage" page: mount a read-only service-account key.
+      # Then set GCP_CREDENTIALS_FILE=/app/data/gcp-credentials.json in .env
+      # - ./data/gcp-credentials.json:/app/data/gcp-credentials.json:ro

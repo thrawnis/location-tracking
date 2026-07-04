@@ -47,6 +47,7 @@ urlpatterns = [
 
     # Admin (staff-only management)
     path("manage/", views.admin_dashboard, name="admin_dashboard"),
+    path("manage/maps-usage/", views.maps_usage, name="maps_usage"),
     path("admin-log/", views.audit_log_view, name="audit_log"),
 
     # Server-side IP geolocation fallback

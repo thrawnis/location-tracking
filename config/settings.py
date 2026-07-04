@@ -84,6 +84,16 @@ APP_VERSION = os.environ.get("GIT_COMMIT", "dev")
 
 GOOGLE_MAPS_API_KEY = os.environ.get("GOOGLE_MAPS_API_KEY", "")
 
+# ── Google Cloud usage/cost reporting (admin "Maps usage" page) ────────────────
+# Optional. When set, the admin page pulls real call counts (Cloud Monitoring)
+# and cost (BigQuery billing export) for the current billing month.
+GCP_PROJECT_ID = os.environ.get("GCP_PROJECT_ID", "")
+# Path to a service-account JSON key mounted into the container (read-only).
+GCP_CREDENTIALS_FILE = os.environ.get("GCP_CREDENTIALS_FILE", "")
+# Fully-qualified billing-export table, e.g.
+#   my-project.billing_export.gcp_billing_export_v1_XXXXXX_XXXXXX_XXXXXX
+GCP_BILLING_BQ_TABLE = os.environ.get("GCP_BILLING_BQ_TABLE", "")
+
 LOGIN_URL = "/accounts/login/"
 LOGIN_REDIRECT_URL = "/"
 LOGOUT_REDIRECT_URL = "/"

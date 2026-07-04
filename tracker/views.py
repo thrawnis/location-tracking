@@ -1060,6 +1060,28 @@ def admin_dashboard(request):
     })
 
 
+# ── Admin: Google Maps usage & cost ───────────────────────────────────────────
+
+@user_passes_test(is_admin)
+def maps_usage(request):
+    from . import gcp_usage
+
+    if request.GET.get("refresh"):
+        gcp_usage.clear_cache()
+        return redirect("maps_usage")
+
+    now = timezone.now()
+    return render(request, "tracker/maps_usage.html", {
+        "usage_configured": gcp_usage.usage_configured(),
+        "cost_configured": gcp_usage.cost_configured(),
+        "project_id": gcp_usage.project_id(),
+        "billing_table": gcp_usage.billing_table(),
+        "usage": gcp_usage.get_usage() if gcp_usage.usage_configured() else None,
+        "cost": gcp_usage.get_cost() if gcp_usage.cost_configured() else None,
+        "month_label": now.strftime("%B %Y"),
+    })
+
+
 # ── Admin audit log ───────────────────────────────────────────────────────────
 
 @user_passes_test(is_admin)

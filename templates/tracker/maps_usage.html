@@ -1,0 +1,137 @@
+{% extends "base.html" %}
+{% block title %}Maps Usage – Waypoint{% endblock %}
+
+{% block content %}
+<div class="max-w-4xl mx-auto space-y-6">
+
+  <!-- Header -->
+  <div class="flex flex-wrap items-end justify-between gap-4">
+    <div>
+      <nav class="text-sm text-slate-400 mb-1">
+        <a href="{% url 'admin_dashboard' %}" class="hover:text-brand">Admin</a>
+        <span class="mx-1.5">/</span><span class="text-slate-600">Maps Usage</span>
+      </nav>
+      <h1 class="text-2xl font-bold text-slate-900">Google Maps usage &amp; cost</h1>
+      <p class="text-sm text-slate-500 mt-1">Billing month: {{ month_label }} (cached hourly)</p>
+    </div>
+    <a href="?refresh=1"
+       class="text-sm font-medium px-3 py-2 rounded-lg border border-slate-200 bg-white hover:border-brand/40 hover:text-brand transition-all">
+      ↻ Refresh
+    </a>
+  </div>
+
+  {% if not usage_configured %}
+  <!-- Not configured -->
+  <div class="bg-amber-50 border border-amber-200 rounded-xl p-5 text-sm text-amber-900 space-y-2">
+    <p class="font-semibold">Live usage isn't configured yet.</p>
+    <p>To pull real numbers from Google Cloud, set these in your <code class="bg-amber-100 px-1 rounded">.env</code> and restart:</p>
+    <ul class="list-disc list-inside space-y-1 text-amber-800">
+      <li><code>GCP_PROJECT_ID</code> — your Google Cloud project ID</li>
+      <li><code>GCP_CREDENTIALS_FILE</code> — path to a mounted service-account JSON key</li>
+      <li><code>GCP_BILLING_BQ_TABLE</code> — BigQuery billing-export table (for cost)</li>
+    </ul>
+    <p class="text-amber-800">Full setup steps are in <code>docs/google-maps-costs.md</code>.</p>
+  </div>
+  {% else %}
+
+  <!-- Usage (Cloud Monitoring) -->
+  <div class="bg-white rounded-xl border border-slate-200 overflow-hidden">
+    <div class="px-5 py-3 border-b border-slate-100 flex items-center justify-between">
+      <h2 class="text-sm font-semibold text-slate-700 uppercase tracking-wide">API calls this month</h2>
+      <span class="text-xs text-slate-400">Cloud Monitoring · {{ project_id }}</span>
+    </div>
+    {% if usage.ok %}
+    <table class="w-full text-sm">
+      <thead>
+        <tr class="text-left text-xs text-slate-500 uppercase tracking-wide border-b border-slate-100">
+          <th class="px-5 py-2.5 font-semibold">Service</th>
+          <th class="px-5 py-2.5 font-semibold text-right">Calls</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-slate-100">
+        {% for r in usage.rows %}
+        <tr>
+          <td class="px-5 py-2.5 text-slate-700">{{ r.label }}</td>
+          <td class="px-5 py-2.5 text-right font-mono text-slate-800">{{ r.calls }}</td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="2" class="px-5 py-8 text-center text-slate-400">No Maps API calls recorded this month.</td></tr>
+        {% endfor %}
+      </tbody>
+      {% if usage.rows %}
+      <tfoot>
+        <tr class="border-t border-slate-200 font-semibold">
+          <td class="px-5 py-2.5 text-slate-700">Total</td>
+          <td class="px-5 py-2.5 text-right font-mono text-slate-900">{{ usage.total }}</td>
+        </tr>
+      </tfoot>
+      {% endif %}
+    </table>
+    {% else %}
+    <div class="p-5 text-sm text-red-600">
+      Couldn't load usage: <span class="font-mono text-xs">{{ usage.error }}</span>
+    </div>
+    {% endif %}
+  </div>
+
+  <!-- Cost (BigQuery billing export) -->
+  <div class="bg-white rounded-xl border border-slate-200 overflow-hidden">
+    <div class="px-5 py-3 border-b border-slate-100 flex items-center justify-between">
+      <h2 class="text-sm font-semibold text-slate-700 uppercase tracking-wide">Cost this month</h2>
+      <span class="text-xs text-slate-400">BigQuery billing export</span>
+    </div>
+    {% if not cost_configured %}
+    <div class="p-5 text-sm text-slate-500">
+      Set <code class="bg-slate-100 px-1 rounded">GCP_BILLING_BQ_TABLE</code> to a billing-export table to show real cost.
+      Until then, use the estimated rates in <code>docs/google-maps-costs.md</code>.
+    </div>
+    {% elif cost.ok %}
+    <table class="w-full text-sm">
+      <thead>
+        <tr class="text-left text-xs text-slate-500 uppercase tracking-wide border-b border-slate-100">
+          <th class="px-5 py-2.5 font-semibold">SKU</th>
+          <th class="px-5 py-2.5 font-semibold text-right">Net</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-slate-100">
+        {% for r in cost.rows %}
+        <tr>
+          <td class="px-5 py-2.5 text-slate-700">{{ r.sku }}</td>
+          <td class="px-5 py-2.5 text-right font-mono text-slate-800">{{ r.net }} {{ r.currency }}</td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="2" class="px-5 py-8 text-center text-slate-400">No Maps cost recorded this month — likely within the free tier. 🎉</td></tr>
+        {% endfor %}
+      </tbody>
+      {% if cost.rows %}
+      <tfoot>
+        <tr class="border-t border-slate-200 font-semibold">
+          <td class="px-5 py-2.5 text-slate-700">Net total (after credits)</td>
+          <td class="px-5 py-2.5 text-right font-mono text-slate-900">{{ cost.net_total }} {{ cost.currency }}</td>
+        </tr>
+      </tfoot>
+      {% endif %}
+    </table>
+    {% else %}
+    <div class="p-5 text-sm text-red-600">
+      Couldn't load cost: <span class="font-mono text-xs">{{ cost.error }}</span>
+    </div>
+    {% endif %}
+  </div>
+
+  <!-- Deep links -->
+  <div class="flex flex-wrap gap-2 text-sm">
+    <a href="https://console.cloud.google.com/google/maps-apis/metrics?project={{ project_id }}"
+       target="_blank" rel="noopener"
+       class="px-3 py-2 rounded-lg border border-slate-200 bg-white hover:border-brand/40 hover:text-brand transition-all">
+      Maps metrics in Cloud Console →
+    </a>
+    <a href="https://console.cloud.google.com/billing" target="_blank" rel="noopener"
+       class="px-3 py-2 rounded-lg border border-slate-200 bg-white hover:border-brand/40 hover:text-brand transition-all">
+      Billing reports →
+    </a>
+  </div>
+  {% endif %}
+
+</div>
+{% endblock %}
