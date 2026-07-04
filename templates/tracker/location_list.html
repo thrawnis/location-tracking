@@ -493,7 +493,6 @@ const IS_AUTH = {% if user.is_authenticated %}true{% else %}false{% endif %};
   let markerMap      = {};   // id → { marker, popupContent }
   let activeId       = null;
   let nameFilter     = '';
-  let boundsFilter   = null; // google.maps.LatLngBounds or null
   let catFilter      = '';
   let statusFilter   = '';
   let gfFilter       = '';   // '' | 'dedicated' | 'gf-any'
@@ -504,9 +503,8 @@ const IS_AUTH = {% if user.is_authenticated %}true{% else %}false{% endif %};
   let osmCatFilters  = { food: true, shop: true, fuel: true, poi: true };
   let distFilter     = 'all';
   let ignoreNextIdle = false;
-  let minZoomReady   = false;
 
-  const MAX_RADIUS_M = 40234;   // 25 miles — the widest area the user may view/search
+  const MAX_RADIUS_M = 16093;   // 10 miles — the widest area the user may view/search
 
   // ── Helpers ──────────────────────────────────────────────────
   function escapeHtml(str) {
@@ -542,11 +540,11 @@ const IS_AUTH = {% if user.is_authenticated %}true{% else %}false{% endif %};
     return Math.min(Math.max(Math.round(km * 1000), 500), MAX_RADIUS_M);
   }
 
-  // Enforce the 25-mile cap natively via minZoom. minZoom depends on the map's
-  // pixel size and latitude, so recompute as the user pans. Only active once an
-  // initial location is set, so the opening US-wide view isn't snapped shut.
+  // Enforce the 10-mile cap natively via minZoom. minZoom depends on the map's
+  // pixel size and latitude, so recompute as the user pans. Applied from the
+  // start so the map can never be zoomed out past the cap.
   function updateMinZoom() {
-    if (!minZoomReady || !mainMap) return;
+    if (!mainMap) return;
     const div = document.getElementById('main-map');
     const c   = mainMap.getCenter();
     if (!div || !c) return;
@@ -692,6 +690,9 @@ const IS_AUTH = {% if user.is_authenticated %}true{% else %}false{% endif %};
 
   function applyFilters() {
     if (!mainMap) return;
+    // Filter against the CURRENT map viewport so the list/markers always show
+    // exactly the waypoints within the field of view (re-run on every pan/zoom).
+    const bounds = mainMap.getBounds();
     let visible = 0;
     allCards().forEach(card => {
       const p   = card.dataset;
@@ -703,8 +704,8 @@ const IS_AUTH = {% if user.is_authenticated %}true{% else %}false{% endif %};
                      || (gfFilter === 'dedicated' && p.gf === 'dedicated')
                      || (gfFilter === 'gf-any'    && (p.gf === 'dedicated' || p.gf === 'options'));
       const mineOk   = !mineFilter || p.mine === '1';
-      const boundsOk = !boundsFilter || (!isNaN(lat) && !isNaN(lng) &&
-                        boundsFilter.contains(new google.maps.LatLng(lat, lng)));
+      const boundsOk = !bounds || (!isNaN(lat) && !isNaN(lng) &&
+                        bounds.contains(new google.maps.LatLng(lat, lng)));
       const show = nameOk && catOk && statusOk && gfOk && mineOk && boundsOk;
 
       card.classList.toggle('hidden-card', !show);
@@ -1040,9 +1041,6 @@ const IS_AUTH = {% if user.is_authenticated %}true{% else %}false{% endif %};
     });
     google.maps.event.addListenerOnce(mainMap, 'idle', () => {
       ignoreNextIdle = false;
-      minZoomReady = true;
-      updateMinZoom();
-      boundsFilter = mainMap.getBounds();
       applyFilters();
     });
   }
@@ -1120,6 +1118,10 @@ const IS_AUTH = {% if user.is_authenticated %}true{% else %}false{% endif %};
     geocoder       = new google.maps.Geocoder();
     placesService  = new google.maps.places.PlacesService(mainMap);
 
+    // Apply the 10-mile zoom-out cap immediately (Google clamps the initial
+    // country-wide zoom up to the cap); the idle handler keeps it current on pan.
+    updateMinZoom();
+
     // ── Location search autocomplete ────────────────────────────
     const locInput = document.getElementById('location-search');
     const autocomplete = new google.maps.places.Autocomplete(locInput, {
@@ -1130,32 +1132,27 @@ const IS_AUTH = {% if user.is_authenticated %}true{% else %}false{% endif %};
       if (!place.geometry?.location) return;
       ignoreNextIdle = true;
       if (place.geometry.viewport) {
-        boundsFilter = place.geometry.viewport;
-        mainMap.fitBounds(boundsFilter);
+        mainMap.fitBounds(place.geometry.viewport);
       } else {
-        boundsFilter = null;
         mainMap.setCenter(place.geometry.location);
         mainMap.setZoom(12);
       }
-      minZoomReady = true;
-      updateMinZoom();
       saveLocation(place.name || locInput.value);
       applyFilters();
       if (nameFilter) { showSearchAreaBtn(false); searchGooglePlaces(nameFilter); }
     });
 
-    // Clear bounds when location input is cleared
+    // Forget the saved location when the input is cleared (view stays put)
     locInput.addEventListener('input', () => {
       if (!locInput.value.trim()) {
-        boundsFilter = null;
-        applyFilters();
         try { localStorage.removeItem(LOC_KEY); } catch(_) {}
       }
     });
 
-    // ── Map idle → show "Search this area" ─────────────────────
+    // ── Map idle → keep the list/markers matched to the view ───
     mainMap.addListener('idle', () => {
       updateMinZoom();
+      applyFilters();   // the field of view changed → re-filter waypoints to it
       if (ignoreNextIdle) { ignoreNextIdle = false; return; }
       if (nameFilter) showSearchAreaBtn(true);
     });
@@ -1239,13 +1236,10 @@ const IS_AUTH = {% if user.is_authenticated %}true{% else %}false{% endif %};
         if (status === 'OK' && results[0]) {
           const vp = results[0].geometry.viewport;
           if (vp) {
-            boundsFilter = vp;
             ignoreNextIdle = true;
             mainMap.fitBounds(vp);
             google.maps.event.addListenerOnce(mainMap, 'idle', () => {
               ignoreNextIdle = false;
-              minZoomReady = true;
-              updateMinZoom();
               applyFilters();
             });
           }
