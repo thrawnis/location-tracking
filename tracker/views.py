@@ -57,9 +57,6 @@ def _location_diff(old, new_data):
         "latitude": "Latitude",
         "longitude": "Longitude",
         "overall_rating": "Rating",
-        "phone": "Phone",
-        "website": "Website",
-        "hours": "Hours",
         "gluten_free": "Gluten-free",
         "dietary_notes": "Dietary notes",
         "public_notes": "Public notes",
@@ -150,8 +147,7 @@ def location_detail(request, pk):
 def location_create(request):
     prefill = {f: request.GET[f] for f in [
         'name','address','latitude','longitude','city','state',
-        'phone','website','hours','gluten_free','dietary_notes',
-        'status','google_place_id',
+        'gluten_free','dietary_notes','status','google_place_id',
     ] if request.GET.get(f)}
     form = LocationForm(request.POST or None, initial=prefill or None)
     if request.method == "POST" and form.is_valid():
@@ -823,7 +819,6 @@ def export_locations(request):
                 "properties": {
                     "name": loc.name, "category": loc.category, "status": loc.status,
                     "address": loc.address, "city": loc.city, "state": loc.state,
-                    "phone": loc.phone, "website": loc.website, "hours": loc.hours,
                     "gluten_free": loc.gluten_free, "dietary_notes": loc.dietary_notes,
                     "rating": float(loc.user_avg_rating or loc.overall_rating or 0) or None,
                     "public_notes": loc.public_notes,
@@ -842,7 +837,6 @@ def export_locations(request):
             desc_parts = [p for p in [
                 loc.get_category_display(),
                 loc.address,
-                f"Phone: {loc.phone}" if loc.phone else "",
                 f"GF: {loc.get_gluten_free_display()}" if loc.gluten_free else "",
                 loc.public_notes,
             ] if p]
@@ -869,13 +863,13 @@ def export_locations(request):
     writer = csv.writer(resp)
     writer.writerow([
         "name", "category", "status", "address", "city", "state",
-        "latitude", "longitude", "phone", "website", "hours",
+        "latitude", "longitude",
         "gluten_free", "dietary_notes", "rating", "public_notes",
     ])
     for loc in qs:
         writer.writerow([
             loc.name, loc.category, loc.status, loc.address, loc.city, loc.state,
-            loc.latitude or "", loc.longitude or "", loc.phone, loc.website, loc.hours,
+            loc.latitude or "", loc.longitude or "",
             loc.gluten_free, loc.dietary_notes,
             loc.user_avg_rating or loc.overall_rating or "", loc.public_notes,
         ])
@@ -913,7 +907,6 @@ def _parse_takeout_features(data):
             "address": address,
             "latitude": lat,
             "longitude": lng,
-            "website": (props.get("google_maps_url") or props.get("website") or "")[:500],
         }
 
 

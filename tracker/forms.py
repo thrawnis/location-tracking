@@ -14,6 +14,10 @@ class RegisterForm(UserCreationForm):
 
 
 class LocationForm(forms.ModelForm):
+    # Fields sourced from Google when a waypoint is saved from a map POI.
+    # For such entries they are locked so only manually added waypoints are editable.
+    GOOGLE_SOURCED_FIELDS = ["name", "address", "latitude", "longitude", "city", "state"]
+
     class Meta:
         model = Location
         fields = [
@@ -26,9 +30,6 @@ class LocationForm(forms.ModelForm):
             "latitude",
             "longitude",
             "google_place_id",
-            "phone",
-            "website",
-            "hours",
             "overall_rating",
             "gluten_free",
             "dietary_notes",
@@ -44,9 +45,6 @@ class LocationForm(forms.ModelForm):
             "latitude": forms.HiddenInput(),
             "longitude": forms.HiddenInput(),
             "google_place_id": forms.HiddenInput(),
-            "phone": forms.TextInput(attrs={"placeholder": "+1 (555) 000-0000"}),
-            "website": forms.URLInput(attrs={"placeholder": "https://example.com"}),
-            "hours": forms.Textarea(attrs={"rows": 2, "placeholder": "Mon–Fri 9am–9pm\nSat–Sun 10am–6pm"}),
             "dietary_notes": forms.Textarea(
                 attrs={"rows": 3, "placeholder": "e.g. Dedicated GF fryer, staff trained on cross-contamination, ask for GF menu"}
             ),
@@ -56,6 +54,27 @@ class LocationForm(forms.ModelForm):
             ),
             "overall_rating": forms.HiddenInput(),
         }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        # A Google Place ID (from a saved POI) marks the identity fields as
+        # authoritative; lock them so they can't be edited after the fact.
+        pid = self.initial.get("google_place_id") or getattr(self.instance, "google_place_id", "")
+        self.google_locked = bool(pid)
+        if self.google_locked:
+            for name in self.GOOGLE_SOURCED_FIELDS:
+                field = self.fields.get(name)
+                if field:
+                    field.widget.attrs["readonly"] = True
+
+    def clean(self):
+        """Ignore any tampered edits to locked, Google-sourced fields."""
+        cleaned = super().clean()
+        if getattr(self, "google_locked", False) and self.instance.pk:
+            for name in self.GOOGLE_SOURCED_FIELDS:
+                if name in cleaned:
+                    cleaned[name] = getattr(self.instance, name)
+        return cleaned
 
 
 class ItemForm(forms.ModelForm):

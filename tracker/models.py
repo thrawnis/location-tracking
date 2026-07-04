@@ -47,9 +47,6 @@ class Location(models.Model):
     )
     public_notes = models.TextField(blank=True)
     private_notes = models.TextField(blank=True)
-    phone = models.CharField(max_length=50, blank=True, help_text="Phone number")
-    website = models.URLField(max_length=500, blank=True, help_text="Website URL")
-    hours = models.TextField(blank=True, help_text="Opening hours (e.g. Mon-Fri 9am-5pm)")
 
     GF_UNKNOWN   = ""
     GF_DEDICATED = "dedicated"

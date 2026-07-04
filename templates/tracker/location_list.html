@@ -457,14 +457,6 @@
       <p id="geo-error"
          class="hidden absolute bottom-14 left-1/2 -translate-x-1/2 bg-white/90
                 text-slate-600 text-xs px-3 py-1.5 rounded-full shadow z-[1000] whitespace-nowrap"></p>
-
-      {% if user.is_authenticated %}
-      <a id="add-waypoint-btn" href="{% url 'location_create' %}"
-         class="absolute bottom-4 right-4 z-[1000] bg-brand hover:bg-brand-dark text-white
-                w-11 h-11 rounded-full shadow-lg flex items-center justify-center
-                text-2xl font-light transition-colors"
-         title="Add Waypoint at map center">+</a>
-      {% endif %}
     </div>
 
   </div>
@@ -502,6 +494,9 @@ const IS_AUTH = {% if user.is_authenticated %}true{% else %}false{% endif %};
   let osmCatFilters  = { food: true, shop: true, fuel: true, poi: true };
   let distFilter     = 'all';
   let ignoreNextIdle = false;
+  let minZoomReady   = false;
+
+  const MAX_RADIUS_M = 40234;   // 25 miles — the widest area the user may view/search
 
   // ── Helpers ──────────────────────────────────────────────────
   function escapeHtml(str) {
@@ -526,7 +521,7 @@ const IS_AUTH = {% if user.is_authenticated %}true{% else %}false{% endif %};
   }
 
   // Search radius follows the current map viewport (center → visible edge),
-  // so the zoom level IS the radius. Capped to Google's 50 km textSearch max.
+  // so the zoom level IS the radius. Capped to the 25-mile max area.
   function currentRadiusM() {
     if (!mainMap) return 8047;
     const b = mainMap.getBounds();
@@ -534,7 +529,23 @@ const IS_AUTH = {% if user.is_authenticated %}true{% else %}false{% endif %};
     if (!b || !c) return 8047;
     const ne = b.getNorthEast();
     const km = haversineKm(c.lat(), c.lng(), ne.lat(), ne.lng());
-    return Math.min(Math.max(Math.round(km * 1000), 500), 50000);
+    return Math.min(Math.max(Math.round(km * 1000), 500), MAX_RADIUS_M);
+  }
+
+  // Enforce the 25-mile cap natively via minZoom. minZoom depends on the map's
+  // pixel size and latitude, so recompute as the user pans. Only active once an
+  // initial location is set, so the opening US-wide view isn't snapped shut.
+  function updateMinZoom() {
+    if (!minZoomReady || !mainMap) return;
+    const div = document.getElementById('main-map');
+    const c   = mainMap.getCenter();
+    if (!div || !c) return;
+    const w = div.offsetWidth || 800, h = div.offsetHeight || 600;
+    const diagPx = Math.sqrt(w * w + h * h);
+    const base = 156543.03392 * Math.cos(c.lat() * Math.PI / 180);
+    // radius(center→corner) = 0.5 * (base / 2^z) * diagPx; solve z at MAX_RADIUS_M
+    const minZ = Math.max(0, Math.ceil(Math.log2(0.5 * base * diagPx / MAX_RADIUS_M)));
+    if (mainMap.get('minZoom') !== minZ) mainMap.setOptions({ minZoom: minZ });
   }
 
   // ── Rating colour ────────────────────────────────────────────
@@ -1018,6 +1029,8 @@ const IS_AUTH = {% if user.is_authenticated %}true{% else %}false{% endif %};
     });
     google.maps.event.addListenerOnce(mainMap, 'idle', () => {
       ignoreNextIdle = false;
+      minZoomReady = true;
+      updateMinZoom();
       boundsFilter = mainMap.getBounds();
       applyFilters();
     });
@@ -1113,6 +1126,8 @@ const IS_AUTH = {% if user.is_authenticated %}true{% else %}false{% endif %};
         mainMap.setCenter(place.geometry.location);
         mainMap.setZoom(12);
       }
+      minZoomReady = true;
+      updateMinZoom();
       saveLocation(place.name || locInput.value);
       applyFilters();
       if (nameFilter) { showSearchAreaBtn(false); searchGooglePlaces(nameFilter); }
@@ -1129,6 +1144,7 @@ const IS_AUTH = {% if user.is_authenticated %}true{% else %}false{% endif %};
 
     // ── Map idle → show "Search this area" ─────────────────────
     mainMap.addListener('idle', () => {
+      updateMinZoom();
       if (ignoreNextIdle) { ignoreNextIdle = false; return; }
       if (nameFilter) showSearchAreaBtn(true);
     });
@@ -1214,6 +1230,8 @@ const IS_AUTH = {% if user.is_authenticated %}true{% else %}false{% endif %};
             mainMap.fitBounds(vp);
             google.maps.event.addListenerOnce(mainMap, 'idle', () => {
               ignoreNextIdle = false;
+              minZoomReady = true;
+              updateMinZoom();
               applyFilters();
             });
           }
@@ -1229,14 +1247,6 @@ const IS_AUTH = {% if user.is_authenticated %}true{% else %}false{% endif %};
     document.getElementById('locate-btn')?.addEventListener('click', locateUser);
     document.getElementById('tab-saved')?.addEventListener('click',  () => switchTab('saved'));
     document.getElementById('tab-nearby')?.addEventListener('click', () => switchTab('nearby'));
-
-    const addBtn = document.getElementById('add-waypoint-btn');
-    if (addBtn) {
-      addBtn.addEventListener('click', () => {
-        const c = mainMap.getCenter();
-        addBtn.href = `/locations/new/?lat=${c.lat().toFixed(6)}&lng=${c.lng().toFixed(6)}`;
-      });
-    }
 
     document.getElementById('name-search').addEventListener('input', e => {
       nameFilter = e.target.value.trim().toLowerCase();
