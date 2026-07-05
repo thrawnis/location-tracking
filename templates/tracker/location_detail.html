@@ -205,6 +205,40 @@
 {% endblock %}
 
 {% block extra_js %}
+<script>
+// ── Dish sort (client-side; survives HTMX swaps via localStorage) ────────────
+(function () {
+  function applyDishSort() {
+    const sel  = document.getElementById('dish-sort');
+    const list = document.getElementById('dish-list');
+    if (!sel || !list) return;
+    const saved = localStorage.getItem('dish_sort');
+    if (saved) sel.value = saved;
+    const mode = sel.value;
+    const dishes = Array.from(list.querySelectorAll('.dish'));
+    dishes.sort((a, b) => {
+      const an = a.dataset.name || '', bn = b.dataset.name || '';
+      const ar = parseFloat(a.dataset.rating) || 0, br = parseFloat(b.dataset.rating) || 0;
+      const at = parseInt(a.dataset.recent, 10) || 0, bt = parseInt(b.dataset.recent, 10) || 0;
+      if (mode === 'rating_desc') return br - ar || an.localeCompare(bn);
+      if (mode === 'rating_asc')  return ar - br || an.localeCompare(bn);
+      if (mode === 'recent')      return bt - at || an.localeCompare(bn);
+      return an.localeCompare(bn);
+    });
+    dishes.forEach(d => list.appendChild(d));
+  }
+  document.addEventListener('change', (e) => {
+    if (e.target && e.target.id === 'dish-sort') {
+      localStorage.setItem('dish_sort', e.target.value);
+      applyDishSort();
+    }
+  });
+  // Re-apply after the items section is re-rendered by HTMX
+  document.body.addEventListener('htmx:afterSwap', applyDishSort);
+  document.addEventListener('DOMContentLoaded', applyDishSort);
+  applyDishSort();
+})();
+</script>
 {% if location.has_coords %}
 <script>
 window.initDetailMap = function () {

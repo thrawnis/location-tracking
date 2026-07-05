@@ -14,8 +14,8 @@ from django.contrib.auth.decorators import login_required, user_passes_test
 from django.core.cache import cache
 from django.contrib.auth.forms import AuthenticationForm
 from django.contrib.auth.models import User
-from django.db.models import Avg, Count, Exists, OuterRef, Q
-from django.http import JsonResponse
+from django.db.models import Avg, Count, Exists, Max, OuterRef, Q
+from django.http import HttpResponseForbidden, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.views.decorators.http import require_POST
@@ -353,6 +353,7 @@ def _annotated_items(location):
         .annotate(
             avg_rating=Avg("reviews__rating"),
             review_count=Count("reviews", distinct=True),
+            latest_review=Max("reviews__created_at"),
         )
         .prefetch_related("reviews__user")
         .order_by("name")
@@ -418,6 +419,8 @@ def item_add(request, pk):
 
 @login_required
 def item_edit(request, pk, item_pk):
+    if not is_admin(request.user):
+        return HttpResponseForbidden("Only admins can edit items.")
     location = get_object_or_404(Location, pk=pk)
     item = get_object_or_404(Item, pk=item_pk, location=location)
     if request.method == "POST":
@@ -496,6 +499,8 @@ def item_review_delete(request, pk, item_pk):
 @login_required
 @require_POST
 def item_delete(request, pk, item_pk):
+    if not is_admin(request.user):
+        return HttpResponseForbidden("Only admins can delete items.")
     location = get_object_or_404(Location, pk=pk)
     item = get_object_or_404(Item, pk=item_pk, location=location)
     _log(
