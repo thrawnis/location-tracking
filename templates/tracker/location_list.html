@@ -528,15 +528,78 @@ const CSRF_TOKEN = '{{ csrf_token }}';
     </form>`;
   }
 
+  // Build the Waypoint POI popup (Google + Waypoint ratings + Rate Me!) from a
+  // Places result. Used for nearby-search pins AND clicks on Google's built-in
+  // base-map POI icons. distKm may be null (distance line is then omitted).
+  function poiPopupHtml(place, distKm) {
+    const name      = place.name || '';
+    const types     = place.types || [];
+    const cat       = classifyPlace(types);
+    const info      = OSM_CATS[cat];
+    const dist      = (distKm != null && !isNaN(distKm)) ? formatDist(distKm) : '';
+    const addr      = place.vicinity || place.formatted_address || '';
+    const gRating   = place.rating;
+    const numRat    = place.user_ratings_total || 0;
+    const oh        = place.opening_hours;
+    const openNow   = oh
+      ? (typeof oh.open_now === 'boolean' ? oh.open_now : (oh.isOpen ? oh.isOpen() : undefined))
+      : undefined;
+    const typeLabel = types[0] ? types[0].replace(/_/g, ' ') : info.label;
+    const placeId   = place.place_id;
+    const lat       = place.geometry.location.lat();
+    const lng       = place.geometry.location.lng();
+    const gmapsUrl  = `https://www.google.com/maps/place/?q=place_id:${placeId}`;
+    const rateParams = {
+      name, latitude: lat.toFixed(6), longitude: lng.toFixed(6),
+      address: addr || '', google_place_id: placeId || '',
+    };
+    const saved = placeId ? savedByPlaceId[placeId] : null;
+    const googleRatingLine = gRating
+      ? `Google Rating: <strong>${gRating.toFixed(1)}/5</strong> (${numRat})`
+      : 'Google Rating: <span style="color:#94a3b8">not rated</span>';
+    const wpRatingLine = (saved && saved.rating)
+      ? `Waypoint Rating: <strong>${saved.rating}/5</strong> (${saved.count})`
+      : 'Waypoint Rating: <span style="color:#94a3b8">not yet rated</span>';
+    const openHtml = openNow !== undefined
+      ? `<span style="font-size:11px;font-weight:600;color:${openNow ? '#059669' : '#dc2626'}">${openNow ? '✓ Open' : '✗ Closed'}</span>`
+      : '';
+    const rateBtnStyle = 'font-size:12px;color:white;background:#ec4899;border:none;'
+      + 'padding:4px 12px;border-radius:6px;font-weight:700;cursor:pointer';
+    return `<div style="min-width:220px;font-family:inherit;padding:2px">
+      <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:4px">
+        <span style="font-size:11px;background:${info.color}22;color:${info.color};padding:1px 7px;border-radius:4px;font-weight:600">${info.emoji} ${typeLabel}</span>
+        ${dist ? `<span style="font-size:11px;color:#64748b;font-weight:600">📍 ${dist}</span>` : ''}
+      </div>
+      ${addr ? `<p style="font-size:12px;color:#475569;margin:2px 0">${escapeHtml(addr)}</p>` : ''}
+      <p style="font-size:12px;color:#334155;margin:3px 0 0">${googleRatingLine}</p>
+      <p style="font-size:12px;color:#334155;margin:1px 0 0">${wpRatingLine}</p>
+      ${openHtml ? `<p style="margin:4px 0 0">${openHtml}</p>` : ''}
+      <div style="display:flex;gap:10px;margin-top:8px;flex-wrap:wrap;align-items:center">
+        <a href="${gmapsUrl}" target="_blank" rel="noopener"
+           style="font-size:12px;color:#6366f1;font-weight:600">Google Maps →</a>
+        ${IS_AUTH ? rateMeForm(rateParams, rateBtnStyle) : ''}
+      </div>
+    </div>`;
+  }
+
   // Open the shared InfoWindow with the name in the header, so Google renders
   // the close (X) button inline next to the name instead of floating above.
-  function openInfo(anchor, bodyHtml, name) {
+  function nameHeaderEl(name) {
     const header = document.createElement('span');
     header.textContent = name || '';
     header.style.cssText = 'font-weight:700;font-size:14px;color:#0f172a';
-    mainInfoWindow.setOptions({ headerContent: header });
+    return header;
+  }
+  function openInfo(anchor, bodyHtml, name) {
+    mainInfoWindow.setOptions({ headerContent: nameHeaderEl(name) });
     mainInfoWindow.setContent(bodyHtml);
     mainInfoWindow.open({ map: mainMap, anchor });
+  }
+  function openInfoAt(position, bodyHtml, name) {
+    mainInfoWindow.setOptions({ headerContent: nameHeaderEl(name) });
+    mainInfoWindow.setContent(bodyHtml);
+    mainInfoWindow.setPosition(position);
+    mainInfoWindow.open(mainMap);
   }
 
   // Split a stored address into [street, city/state/zip/country] for two lines.
@@ -928,7 +991,6 @@ const CSRF_TOKEN = '{{ csrf_token }}';
         const openNow   = place.opening_hours?.open_now;
         const typeLabel = types[0] ? types[0].replace(/_/g, ' ') : info.label;
         const placeId   = place.place_id;
-        const gmapsUrl  = `https://www.google.com/maps/place/?q=place_id:${placeId}`;
 
         const rateParams = {
           name,
@@ -940,12 +1002,6 @@ const CSRF_TOKEN = '{{ csrf_token }}';
 
         // Waypoint rating for this POI, if it's already a saved waypoint
         const saved = placeId ? savedByPlaceId[placeId] : null;
-        const googleRatingLine = gRating
-          ? `Google Rating: <strong>${gRating.toFixed(1)}/5</strong> (${numRat})`
-          : 'Google Rating: <span style="color:#94a3b8">not rated</span>';
-        const wpRatingLine = (saved && saved.rating)
-          ? `Waypoint Rating: <strong>${saved.rating}/5</strong> (${saved.count})`
-          : 'Waypoint Rating: <span style="color:#94a3b8">not yet rated</span>';
 
         // Map marker
         const pinEl = document.createElement('div');
@@ -958,27 +1014,7 @@ const CSRF_TOKEN = '{{ csrf_token }}';
           zIndex:   0,
         });
 
-        const openHtml = openNow !== undefined
-          ? `<span style="font-size:11px;font-weight:600;color:${openNow ? '#059669' : '#dc2626'}">${openNow ? '✓ Open' : '✗ Closed'}</span>`
-          : '';
-        const rateBtnStyle = 'font-size:12px;color:white;background:#ec4899;border:none;'
-          + 'padding:4px 12px;border-radius:6px;font-weight:700;cursor:pointer';
-
-        const popupHtml = `<div style="min-width:220px;font-family:inherit;padding:2px">
-          <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:4px">
-            <span style="font-size:11px;background:${info.color}22;color:${info.color};padding:1px 7px;border-radius:4px;font-weight:600">${info.emoji} ${typeLabel}</span>
-            <span style="font-size:11px;color:#64748b;font-weight:600">📍 ${dist}</span>
-          </div>
-          ${addr ? `<p style="font-size:12px;color:#475569;margin:2px 0">${escapeHtml(addr)}</p>` : ''}
-          <p style="font-size:12px;color:#334155;margin:3px 0 0">${googleRatingLine}</p>
-          <p style="font-size:12px;color:#334155;margin:1px 0 0">${wpRatingLine}</p>
-          ${openHtml ? `<p style="margin:4px 0 0">${openHtml}</p>` : ''}
-          <div style="display:flex;gap:10px;margin-top:8px;flex-wrap:wrap;align-items:center">
-            <a href="${gmapsUrl}" target="_blank" rel="noopener"
-               style="font-size:12px;color:#6366f1;font-weight:600">Google Maps →</a>
-            ${IS_AUTH ? rateMeForm(rateParams, rateBtnStyle) : ''}
-          </div>
-        </div>`;
+        const popupHtml = poiPopupHtml(place, distKm);
 
         marker.addListener('click', () => {
           openInfo(marker, popupHtml, name);
@@ -1188,6 +1224,23 @@ const CSRF_TOKEN = '{{ csrf_token }}';
       if (!locInput.value.trim()) {
         try { localStorage.removeItem(LOC_KEY); } catch(_) {}
       }
+    });
+
+    // ── Clicking Google's built-in POI icons → show the Waypoint popup ──
+    mainMap.addListener('click', (e) => {
+      if (!e.placeId) return;             // not one of Google's base-map POIs
+      e.stop();                           // suppress Google's default info window
+      placesService.getDetails({
+        placeId: e.placeId,
+        fields: ['name', 'geometry', 'formatted_address', 'vicinity', 'types',
+                 'rating', 'user_ratings_total', 'opening_hours', 'place_id'],
+      }, (place, status) => {
+        if (status !== google.maps.places.PlacesServiceStatus.OK || !place || !place.geometry) return;
+        const c = mainMap.getCenter();
+        const pos = place.geometry.location;
+        const distKm = c ? haversineKm(c.lat(), c.lng(), pos.lat(), pos.lng()) : null;
+        openInfoAt(pos, poiPopupHtml(place, distKm), place.name);
+      });
     });
 
     // ── Map idle → keep the list/markers matched to the view ───

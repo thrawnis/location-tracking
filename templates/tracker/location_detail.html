@@ -73,6 +73,8 @@
           {% endif %}
         </div>
         {% endwith %}
+        <!-- Google rating (filled by JS from Place Details when a place_id is known) -->
+        <span id="google-rating-badge"></span>
         {% if location.status == 'want' %}
         <span class="inline-flex items-center gap-1 text-xs font-semibold px-2.5 py-1 rounded-full
                      bg-sky-100 text-sky-700 border border-sky-200">
@@ -277,17 +279,28 @@ window.initDetailMap = function () {
   infoWindow.open({ map, anchor: marker });
 
   {% if location.google_place_id %}
-  // Live open/closed status via Place Details (place_id stored on the waypoint)
+  // Live Google rating + open/closed status via Place Details (place_id stored)
   const svc = new google.maps.places.PlacesService(map);
   svc.getDetails({
     placeId: '{{ location.google_place_id|escapejs }}',
-    fields: ['opening_hours'],
+    fields: ['opening_hours', 'rating', 'user_ratings_total'],
   }, (place, status) => {
-    if (status !== google.maps.places.PlacesServiceStatus.OK || !place?.opening_hours) return;
-    const open = place.opening_hours.isOpen ? place.opening_hours.isOpen() : undefined;
-    if (open === undefined) return;
+    if (status !== google.maps.places.PlacesServiceStatus.OK || !place) return;
+
+    // Google rating badge — shown next to the Waypoint rating
+    const gBadge = document.getElementById('google-rating-badge');
+    if (gBadge && place.rating) {
+      gBadge.innerHTML =
+        '<span class="inline-flex items-center gap-1 text-xs font-semibold px-2.5 py-1 rounded-full '
+        + 'bg-amber-50 text-amber-700 border border-amber-200" title="Google rating">'
+        + 'Google ' + place.rating.toFixed(1) + ' ★ (' + (place.user_ratings_total || 0) + ')</span>';
+    }
+
+    // Open / closed status
+    const oh = place.opening_hours;
+    const open = oh && oh.isOpen ? oh.isOpen() : undefined;
     const badge = document.getElementById('open-now-badge');
-    if (badge) {
+    if (badge && open !== undefined) {
       badge.innerHTML = open
         ? '<span class="inline-flex items-center gap-1 text-xs font-semibold px-2.5 py-1 rounded-full bg-emerald-100 text-emerald-700 border border-emerald-200">✓ Open now</span>'
         : '<span class="inline-flex items-center gap-1 text-xs font-semibold px-2.5 py-1 rounded-full bg-red-100 text-red-700 border border-red-200">✗ Closed</span>';
