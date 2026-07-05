@@ -58,6 +58,13 @@
             {% else %}text-slate-700{% endif %}">{{ location.dietary_notes }}</p>
   {% endif %}
 
+  <!-- Where this data came from -->
+  <p class="text-[11px] text-slate-400 mt-2 leading-snug">
+    ⓘ Gluten-free info is community-contributed by Waypoint users{% if location.created_by %}
+    (this waypoint was added by <span class="font-medium text-slate-500">{{ location.created_by.username }}</span>){% endif %} —
+    not officially verified. Please confirm with the venue, especially for celiac needs.
+  </p>
+
   <!-- Community validation: agree / disagree -->
   {% if gf %}
   <div class="mt-3 pt-3 border-t border-black/5">
