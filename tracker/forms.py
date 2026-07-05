@@ -1,8 +1,23 @@
+import re
+
 from django import forms
 from django.contrib.auth.forms import UserCreationForm
 from django.contrib.auth.models import User
 
 from .models import Collection, Item, ItemReview, Location, LocationReview, Photo, Visit
+
+
+def normalize_case(text):
+    """Title-case a value only if the user typed it in ALL CAPS or all lowercase
+    (i.e. not intentional casing). Mixed-case values are returned untouched."""
+    if not text:
+        return text
+    s = text.strip()
+    if not any(c.isalpha() for c in s):
+        return s
+    if s == s.upper() or s == s.lower():
+        return re.sub(r"[A-Za-z']+", lambda m: m.group(0).capitalize(), s)
+    return s
 
 
 class RegisterForm(UserCreationForm):
@@ -68,6 +83,19 @@ class LocationForm(forms.ModelForm):
                 if field:
                     field.widget.attrs["readonly"] = True
 
+    # Fix up shouting / all-lowercase entry on the identifying fields.
+    def clean_name(self):
+        return normalize_case(self.cleaned_data.get("name", ""))
+
+    def clean_address(self):
+        return normalize_case(self.cleaned_data.get("address", ""))
+
+    def clean_city(self):
+        return normalize_case(self.cleaned_data.get("city", ""))
+
+    def clean_state(self):
+        return normalize_case(self.cleaned_data.get("state", ""))
+
     def clean(self):
         """Ignore any tampered edits to locked, Google-sourced fields."""
         cleaned = super().clean()
@@ -88,6 +116,9 @@ class ItemForm(forms.ModelForm):
             "name": forms.TextInput(attrs={"placeholder": "Item or dish name"}),
             "notes": forms.Textarea(attrs={"rows": 2, "placeholder": "Description (optional)"}),
         }
+
+    def clean_name(self):
+        return normalize_case(self.cleaned_data.get("name", ""))
 
 
 class ItemReviewForm(forms.ModelForm):
