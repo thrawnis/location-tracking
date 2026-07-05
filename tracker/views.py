@@ -6,6 +6,7 @@ import urllib.parse
 from decimal import Decimal, ROUND_HALF_UP
 from datetime import timedelta
 
+from django.conf import settings
 from django.utils import timezone
 
 from django.contrib import messages
@@ -26,7 +27,7 @@ from .forms import (
 )
 from .models import (
     AuditLog, Collection, Item, ItemReview, Location, LocationReview,
-    OsmSearchCache, Photo, Visit,
+    OsmSearchCache, Photo, TermsAcceptance, Visit,
 )
 
 
@@ -119,6 +120,46 @@ def register_view(request):
             messages.success(request, "Welcome, {}!".format(user.username))
         return redirect("location_list")
     return render(request, "registration/register.html", {"form": form})
+
+
+# ── Terms of Service ──────────────────────────────────────────────────────────
+
+def terms(request):
+    """Show the Terms of Service and, for signed-in users, the accept/decline
+    controls. The TermsAcceptanceMiddleware sends unaccepted users here."""
+    current = settings.TERMS_VERSION
+    accepted = None
+    if request.user.is_authenticated:
+        accepted = TermsAcceptance.objects.filter(user=request.user, version=current).first()
+    return render(request, "legal/terms.html", {
+        "terms_version": current,
+        "accepted": accepted,
+        "next": request.GET.get("next", ""),
+    })
+
+
+@login_required
+@require_POST
+def terms_accept(request):
+    TermsAcceptance.objects.get_or_create(
+        user=request.user,
+        version=settings.TERMS_VERSION,
+        defaults={"ip_address": _get_ip(request)},
+    )
+    request.session["tos_accepted_version"] = settings.TERMS_VERSION
+    messages.success(request, "Thanks — you're all set.")
+    nxt = request.POST.get("next", "")
+    if nxt.startswith("/") and not nxt.startswith("//"):  # same-site paths only
+        return redirect(nxt)
+    return redirect("location_list")
+
+
+@login_required
+@require_POST
+def terms_decline(request):
+    logout(request)
+    messages.info(request, "You must accept the Terms of Service to use Waypoint.")
+    return redirect("login")
 
 
 # ── Locations ─────────────────────────────────────────────────────────────────

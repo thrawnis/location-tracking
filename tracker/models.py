@@ -303,3 +303,22 @@ class AuditLog(models.Model):
     def __str__(self):
         user_str = self.user.username if self.user else "anonymous"
         return f"{self.timestamp:%Y-%m-%d %H:%M} | {user_str} | {self.action} {self.model_name} #{self.object_id}"
+
+
+class TermsAcceptance(models.Model):
+    """Records that a user accepted a specific version of the Terms of Service.
+
+    Bumping settings.TERMS_VERSION invalidates prior acceptances (no row exists
+    for the new version), so every user is prompted to review and re-accept.
+    """
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="terms_acceptances")
+    version = models.CharField(max_length=40)
+    accepted_at = models.DateTimeField(auto_now_add=True)
+    ip_address = models.GenericIPAddressField(null=True, blank=True)
+
+    class Meta:
+        unique_together = [("user", "version")]
+        ordering = ["-accepted_at"]
+
+    def __str__(self):
+        return f"{self.user.username} accepted TOS {self.version} on {self.accepted_at:%Y-%m-%d}"

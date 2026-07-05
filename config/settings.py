@@ -29,6 +29,7 @@ MIDDLEWARE = [
     "django.contrib.auth.middleware.AuthenticationMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
+    "tracker.middleware.TermsAcceptanceMiddleware",
 ]
 
 ROOT_URLCONF = "config.urls"
@@ -83,6 +84,10 @@ DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 APP_VERSION = os.environ.get("GIT_COMMIT", "dev")
 
 GOOGLE_MAPS_API_KEY = os.environ.get("GOOGLE_MAPS_API_KEY", "")
+
+# Terms of Service. Bump this version whenever the terms text changes
+# (tracker/templates/legal/terms.html) to force every user to re-accept.
+TERMS_VERSION = os.environ.get("TERMS_VERSION", "2026-01-05")
 
 # ── Google Cloud usage/cost reporting (admin "Maps usage" page) ────────────────
 # Optional. When set, the admin page pulls real call counts (Cloud Monitoring)

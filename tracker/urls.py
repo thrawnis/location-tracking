@@ -3,6 +3,11 @@ from django.urls import path
 from . import views
 
 urlpatterns = [
+    # Terms of Service
+    path("terms/", views.terms, name="terms"),
+    path("terms/accept/", views.terms_accept, name="terms_accept"),
+    path("terms/decline/", views.terms_decline, name="terms_decline"),
+
     # Locations
     path("", views.location_list, name="location_list"),
     path("locations/new/", views.location_create, name="location_create"),

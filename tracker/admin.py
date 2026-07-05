@@ -1,7 +1,8 @@
 from django.contrib import admin
 
 from .models import (
-    Collection, Item, ItemReview, Location, LocationReview, OsmSearchCache, Visit,
+    Collection, Item, ItemReview, Location, LocationReview, OsmSearchCache,
+    TermsAcceptance, Visit,
 )
 
 
@@ -62,3 +63,10 @@ class OsmSearchCacheAdmin(admin.ModelAdmin):
 class VisitAdmin(admin.ModelAdmin):
     list_display = ("location", "date", "user")
     list_filter = ("date",)
+
+
+@admin.register(TermsAcceptance)
+class TermsAcceptanceAdmin(admin.ModelAdmin):
+    list_display = ("user", "version", "accepted_at", "ip_address")
+    list_filter = ("version",)
+    search_fields = ("user__username",)
