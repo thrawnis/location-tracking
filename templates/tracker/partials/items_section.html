@@ -25,25 +25,21 @@
     <div class="bg-slate-50 rounded-xl border border-slate-100 overflow-hidden">
 
       <!-- Item header row -->
-      <div class="flex items-start gap-3 px-3 py-2.5">
+      <div class="flex items-start gap-2 px-3 py-2.5">
         <div class="min-w-0 flex-1">
           <p class="font-semibold text-sm text-slate-800">{{ item.name }}</p>
           {% if item.notes %}
           <p class="text-xs text-slate-500 mt-0.5 leading-snug">{{ item.notes }}</p>
           {% endif %}
-        </div>
-
-        <!-- Average rating badge -->
-        <div class="shrink-0 flex flex-col items-end gap-0.5">
-          {% if item.avg_rating %}
-          <div class="flex items-center gap-1">
+          <!-- Average rating — kept on a single line below the name -->
+          <div class="flex items-center gap-1.5 mt-1">
+            {% if item.avg_rating %}
             {% stars_display item.avg_rating "sm" %}
-            <span class="text-xs font-bold text-slate-700">{{ item.avg_rating|floatformat:1 }}</span>
+            <span class="text-[11px] text-slate-400">{{ item.review_count }} review{{ item.review_count|pluralize }}</span>
+            {% else %}
+            <span class="text-xs text-slate-400 italic">No reviews yet</span>
+            {% endif %}
           </div>
-          <span class="text-[10px] text-slate-400">{{ item.review_count }} review{{ item.review_count|pluralize }}</span>
-          {% else %}
-          <span class="text-xs text-slate-400 italic">No reviews</span>
-          {% endif %}
         </div>
 
         <!-- Edit / Delete item (any authenticated user) -->
@@ -77,16 +73,10 @@
       <div class="border-t border-slate-200 divide-y divide-slate-100">
         {% for review in item.reviews.all %}
         <div class="flex items-start gap-2.5 px-3 py-2 {% if review.user == user %}bg-indigo-50/50{% endif %}">
-          <!-- User avatar initial -->
-          <span class="w-6 h-6 rounded-full bg-brand-light text-brand flex items-center justify-center
-                       font-semibold text-[10px] uppercase shrink-0 mt-0.5">
-            {{ review.user.username|slice:":1" }}
-          </span>
           <div class="min-w-0 flex-1">
             <div class="flex items-center gap-2 flex-wrap">
               <span class="text-xs font-semibold text-slate-700">{{ review.user.username }}</span>
               {% stars_display review.rating "sm" %}
-              <span class="text-xs font-bold text-yellow-600">{{ review.rating }}</span>
               <span class="text-[10px] text-slate-400 ml-auto">{{ review.updated_at|date:"M j, Y" }}</span>
             </div>
             {% if review.notes %}
