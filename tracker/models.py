@@ -71,17 +71,6 @@ class Location(models.Model):
         blank=True,
         help_text="Dietary notes: allergies, cross-contamination info, etc.",
     )
-    gluten_free_verified_by = models.ForeignKey(
-        User,
-        on_delete=models.SET_NULL,
-        null=True, blank=True,
-        related_name="gf_verifications",
-        help_text="User who verified the GF status first-hand",
-    )
-    gluten_free_verified_at = models.DateTimeField(
-        null=True, blank=True,
-        help_text="When the GF status was last verified",
-    )
     overall_rating = models.DecimalField(
         max_digits=2,
         decimal_places=1,
@@ -104,15 +93,13 @@ class Location(models.Model):
     def has_coords(self):
         return self.latitude is not None and self.longitude is not None
 
-    GF_VERIFICATION_MAX_AGE_DAYS = 365
+    @property
+    def gf_agree_count(self):
+        return self.gf_votes.filter(agrees=True).count()
 
     @property
-    def gf_verification_stale(self):
-        """True if the GF verification is older than a year (menus/kitchens change)."""
-        if not self.gluten_free_verified_at:
-            return False
-        age = timezone.now() - self.gluten_free_verified_at
-        return age.days > self.GF_VERIFICATION_MAX_AGE_DAYS
+    def gf_disagree_count(self):
+        return self.gf_votes.filter(agrees=False).count()
 
     @property
     def avg_user_rating(self):
@@ -165,6 +152,24 @@ class LocationReview(models.Model):
 
     def __str__(self):
         return f"{self.user.username} → {self.location.name}: {self.rating}"
+
+
+class GlutenFreeVote(models.Model):
+    """A community up/down vote on whether a location's gluten-free status is
+    accurate. One vote per user per location; re-voting the same way clears it."""
+
+    location = models.ForeignKey(Location, on_delete=models.CASCADE, related_name="gf_votes")
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="gf_votes")
+    agrees = models.BooleanField(help_text="True = agrees the GF status is accurate")
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        unique_together = [("location", "user")]
+
+    def __str__(self):
+        verb = "agrees" if self.agrees else "disagrees"
+        return f"{self.user.username} {verb} on GF for {self.location.name}"
 
 
 class Visit(models.Model):

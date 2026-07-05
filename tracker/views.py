@@ -26,7 +26,7 @@ from .forms import (
     PhotoForm, RegisterForm, TakeoutImportForm, VisitForm,
 )
 from .models import (
-    AuditLog, Collection, Item, ItemReview, Location, LocationReview,
+    AuditLog, Collection, GlutenFreeVote, Item, ItemReview, Location, LocationReview,
     OsmSearchCache, Photo, TermsAcceptance, Visit,
 )
 
@@ -204,12 +204,14 @@ def location_detail(request, pk):
     }
     # "Rate Me!" from the map lands here with ?rate=1 to open the review form
     open_review = request.GET.get("rate") == "1"
+    gf_my_vote = location.gf_votes.filter(user=request.user).first()
     return render(request, "tracker/location_detail.html", {
         "location": location,
         "visit_form": VisitForm(),
         "item_form": ItemForm(),
         "photo_form": PhotoForm(),
         "my_review": my_review,
+        "gf_my_vote": gf_my_vote,
         "all_collections": Collection.objects.all(),
         # Needed by the items_section partial so existing dishes render on load
         "items": _annotated_items(location),
@@ -318,26 +320,31 @@ def location_delete(request, pk):
 
 @login_required
 @require_POST
-def gf_verify(request, pk):
-    """Mark/update the gluten-free verification for a location."""
+def gf_vote(request, pk):
+    """Cast/toggle the current user's agree/disagree vote on a location's GF
+    status. Re-voting the same way clears the vote. Re-renders the GF card."""
     location = get_object_or_404(Location, pk=pk)
-    action = request.POST.get("action", "verify")   # "verify" | "unverify"
+    choice = request.POST.get("vote")   # "agree" | "disagree"
+    existing = GlutenFreeVote.objects.filter(location=location, user=request.user).first()
 
-    if action == "unverify":
-        location.gluten_free_verified_by = None
-        location.gluten_free_verified_at = None
-        detail = "GF verification removed"
-    else:
-        location.gluten_free_verified_by = request.user
-        location.gluten_free_verified_at = timezone.now()
-        detail = f"GF status verified as '{location.get_gluten_free_display()}'"
+    if choice in ("agree", "disagree"):
+        agrees = choice == "agree"
+        if existing and existing.agrees == agrees:
+            existing.delete()                       # clicking the same vote un-votes
+            detail = "Cleared GF vote"
+        elif existing:
+            existing.agrees = agrees
+            existing.save(update_fields=["agrees", "updated_at"])
+            detail = "Changed GF vote to {}".format(choice)
+        else:
+            GlutenFreeVote.objects.create(location=location, user=request.user, agrees=agrees)
+            detail = "Voted {} on GF status".format(choice)
+        _log(request, AuditLog.ACTION_UPDATE, location, detail)
 
-    location.save(update_fields=["gluten_free_verified_by", "gluten_free_verified_at", "updated_at"])
-    _log(request, AuditLog.ACTION_UPDATE, location, detail)
-
-    from django.http import HttpResponse
-    # Re-render just the GF card partial via HTMX
-    return render(request, "tracker/partials/gf_card.html", {"location": location})
+    gf_my_vote = GlutenFreeVote.objects.filter(location=location, user=request.user).first()
+    return render(request, "tracker/partials/gf_card.html", {
+        "location": location, "gf_my_vote": gf_my_vote,
+    })
 
 
 @login_required

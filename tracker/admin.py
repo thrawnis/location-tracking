@@ -1,8 +1,8 @@
 from django.contrib import admin
 
 from .models import (
-    Collection, Item, ItemReview, Location, LocationReview, OsmSearchCache,
-    TermsAcceptance, Visit,
+    Collection, GlutenFreeVote, Item, ItemReview, Location, LocationReview,
+    OsmSearchCache, TermsAcceptance, Visit,
 )
 
 
@@ -63,6 +63,13 @@ class OsmSearchCacheAdmin(admin.ModelAdmin):
 class VisitAdmin(admin.ModelAdmin):
     list_display = ("location", "date", "user")
     list_filter = ("date",)
+
+
+@admin.register(GlutenFreeVote)
+class GlutenFreeVoteAdmin(admin.ModelAdmin):
+    list_display = ("location", "user", "agrees", "updated_at")
+    list_filter = ("agrees",)
+    search_fields = ("location__name", "user__username")
 
 
 @admin.register(TermsAcceptance)
