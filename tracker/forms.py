@@ -21,11 +21,17 @@ def normalize_case(text):
 
 
 class RegisterForm(UserCreationForm):
-    email = forms.EmailField(required=False)
+    email = forms.EmailField(required=True, help_text="You'll need to verify this address.")
 
     class Meta:
         model = User
         fields = ("username", "email", "password1", "password2")
+
+    def clean_email(self):
+        email = self.cleaned_data.get("email", "").strip()
+        if email and User.objects.filter(email__iexact=email).exists():
+            raise forms.ValidationError("An account with this email already exists.")
+        return email
 
 
 class LocationForm(forms.ModelForm):

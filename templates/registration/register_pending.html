@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+{% block title %}Confirm your email – Waypoint{% endblock %}
+
+{% block content %}
+<div class="max-w-md mx-auto">
+  <div class="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+    <div class="px-6 py-5 border-b border-slate-100">
+      <h1 class="text-xl font-bold text-slate-900">Check your email</h1>
+    </div>
+    <div class="px-6 py-6 space-y-4 text-sm text-slate-600">
+      <p>
+        We sent a confirmation link to
+        <strong class="text-slate-800">{{ email }}</strong>.
+        Open it to finish creating your account.
+      </p>
+      <p class="text-xs text-slate-400">
+        Your account isn't created until you confirm — so an unverified email
+        can't register. The link expires in 3 days. Check your spam folder if it
+        doesn't arrive.
+      </p>
+      <p class="text-xs text-slate-400">
+        Entered the wrong address? Just
+        <a href="{% url 'register' %}" class="text-brand hover:underline">register again</a>.
+      </p>
+    </div>
+  </div>
+</div>
+{% endblock %}

@@ -7,6 +7,8 @@ from decimal import Decimal, ROUND_HALF_UP
 from datetime import timedelta
 
 from django.conf import settings
+from django.core import signing
+from django.core.mail import send_mail
 from django.utils import timezone
 
 from django.contrib import messages
@@ -26,8 +28,8 @@ from .forms import (
     PhotoForm, RegisterForm, TakeoutImportForm,
 )
 from .models import (
-    AuditLog, Collection, GlutenFreeVote, Item, ItemReview, Location, LocationReview,
-    OsmSearchCache, Photo, TermsAcceptance,
+    AuditLog, Collection, EmailVerification, GlutenFreeVote, Item, ItemReview,
+    Location, LocationReview, OsmSearchCache, PendingRegistration, Photo, TermsAcceptance,
 )
 
 
@@ -99,27 +101,184 @@ def logout_view(request):
     return redirect("location_list")
 
 
+def _make_admin_if_first(user):
+    """The very first account to exist becomes the site admin automatically."""
+    if User.objects.count() == 1:  # this user is the only one
+        user.is_staff = True
+        user.is_superuser = True
+        user.save(update_fields=["is_staff", "is_superuser"])
+
+
 def register_view(request):
     if request.user.is_authenticated:
         return redirect("location_list")
     form = RegisterForm(request.POST or None)
     if request.method == "POST" and form.is_valid():
-        # The very first account to exist becomes the admin automatically.
-        first_user = not User.objects.exists()
-        user = form.save()
-        if first_user:
-            user.is_staff = True
-            user.is_superuser = True
-            user.save(update_fields=["is_staff", "is_superuser"])
-        login(request, user)
-        if first_user:
-            messages.success(
-                request, "Welcome, {}! You're the admin for this site.".format(user.username)
-            )
-        else:
+        if not settings.REQUIRE_EMAIL_VERIFICATION:
+            # Verification disabled — create the account directly.
+            user = form.save()
+            _make_admin_if_first(user)
+            EmailVerification.objects.get_or_create(user=user, defaults={"verified": True})
+            login(request, user)
             messages.success(request, "Welcome, {}!".format(user.username))
-        return redirect("location_list")
+            return redirect("location_list")
+
+        # Verify-first: store a pending signup and email a confirmation link.
+        # No User account is created until the email is confirmed.
+        import secrets
+        from django.contrib.auth.hashers import make_password
+        PendingRegistration.objects.filter(email__iexact=form.cleaned_data["email"]).delete()
+        pending = PendingRegistration.objects.create(
+            username=form.cleaned_data["username"],
+            email=form.cleaned_data["email"],
+            password=make_password(form.cleaned_data["password1"]),
+            token=secrets.token_urlsafe(32),
+        )
+        _send_registration_email(request, pending)
+        return render(request, "registration/register_pending.html", {"email": pending.email})
     return render(request, "registration/register.html", {"form": form})
+
+
+# ── Registration email confirmation (verify-first) ─────────────────────────────
+
+_REGISTER_MAX_AGE_DAYS = 3
+
+
+def _send_registration_email(request, pending):
+    link = request.build_absolute_uri(
+        "{}?token={}".format(reverse("register_confirm"), pending.token)
+    )
+    body = (
+        "Hi {},\n\n"
+        "Confirm your email to finish creating your Waypoint account:\n\n"
+        "{}\n\n"
+        "This link expires in {} days. If you didn't request this, ignore this email.\n".format(
+            pending.username, link, _REGISTER_MAX_AGE_DAYS
+        )
+    )
+    try:
+        send_mail("Confirm your Waypoint registration", body,
+                  settings.DEFAULT_FROM_EMAIL, [pending.email], fail_silently=False)
+    except Exception:
+        pass
+
+
+def register_confirm(request):
+    """Create the real account once the emailed link is opened."""
+    token = request.GET.get("token", "")
+    pending = PendingRegistration.objects.filter(token=token).first()
+    if pending is None:
+        messages.error(request, "That confirmation link is invalid or already used.")
+        return redirect("register")
+
+    if (timezone.now() - pending.created_at).days > _REGISTER_MAX_AGE_DAYS:
+        pending.delete()
+        messages.error(request, "That confirmation link has expired. Please register again.")
+        return redirect("register")
+
+    # Guard against the username/email being taken between request and confirm.
+    if (User.objects.filter(username__iexact=pending.username).exists()
+            or User.objects.filter(email__iexact=pending.email).exists()):
+        pending.delete()
+        messages.info(request, "That account already exists — please sign in.")
+        return redirect("login")
+
+    user = User(username=pending.username, email=pending.email, password=pending.password)
+    user.save()
+    _make_admin_if_first(user)
+    EmailVerification.objects.create(user=user, verified=True, verified_at=timezone.now())
+    pending.delete()
+    login(request, user)
+    request.session["email_verified"] = True
+    messages.success(request, "Welcome, {}! Your email is verified.".format(user.username))
+    return redirect("location_list")
+
+
+# ── Email verification ────────────────────────────────────────────────────────
+
+_EMAIL_VERIFY_SALT = "wp-email-verify"
+_EMAIL_VERIFY_MAX_AGE = 60 * 60 * 24 * 3   # 3 days
+
+
+def _send_verification_email(request, user):
+    if not user.email:
+        return False
+    token = signing.dumps({"uid": user.pk, "email": user.email}, salt=_EMAIL_VERIFY_SALT)
+    link = request.build_absolute_uri(
+        "{}?token={}".format(reverse("verify_email_confirm"), token)
+    )
+    body = (
+        "Hi {},\n\n"
+        "Please confirm your email address for Waypoint by opening this link:\n\n"
+        "{}\n\n"
+        "This link expires in 3 days. If you didn't create a Waypoint account, "
+        "you can ignore this email.\n".format(user.username, link)
+    )
+    try:
+        send_mail(
+            "Confirm your Waypoint email",
+            body,
+            settings.DEFAULT_FROM_EMAIL,
+            [user.email],
+            fail_silently=False,
+        )
+        EmailVerification.objects.update_or_create(
+            user=user, defaults={"last_sent_at": timezone.now()}
+        )
+        return True
+    except Exception:
+        return False
+
+
+@login_required
+def verify_email(request):
+    """Landing page telling the user to check their email, with resend + the
+    option to set/correct the address. The middleware sends them here."""
+    ev, _ = EmailVerification.objects.get_or_create(user=request.user)
+    if ev.verified:
+        request.session["email_verified"] = True
+        return redirect("location_list")
+    return render(request, "registration/verify_email.html", {"email": request.user.email})
+
+
+@require_POST
+@login_required
+def verify_email_resend(request):
+    # Allow the user to set/correct their email here if it's missing or wrong.
+    new_email = (request.POST.get("email") or "").strip()
+    if new_email:
+        if User.objects.filter(email__iexact=new_email).exclude(pk=request.user.pk).exists():
+            messages.error(request, "That email is already in use by another account.")
+            return redirect("verify_email")
+        request.user.email = new_email
+        request.user.save(update_fields=["email"])
+    if _send_verification_email(request, request.user):
+        messages.success(request, "Verification email sent to {}.".format(request.user.email))
+    else:
+        messages.error(request, "Couldn't send the email — add a valid address below.")
+    return redirect("verify_email")
+
+
+def verify_email_confirm(request):
+    """Validate the emailed token and mark the user's email verified. Works
+    even if the user is logged out (the token identifies the account)."""
+    token = request.GET.get("token", "")
+    try:
+        data = signing.loads(token, salt=_EMAIL_VERIFY_SALT, max_age=_EMAIL_VERIFY_MAX_AGE)
+        user = User.objects.get(pk=data["uid"])
+        if user.email != data["email"]:
+            raise ValueError("email changed")
+    except Exception:
+        messages.error(request, "That verification link is invalid or has expired. Please resend.")
+        return redirect("verify_email" if request.user.is_authenticated else "login")
+
+    EmailVerification.objects.update_or_create(
+        user=user, defaults={"verified": True, "verified_at": timezone.now()}
+    )
+    if request.user.is_authenticated and request.user.pk == user.pk:
+        request.session["email_verified"] = True
+    messages.success(request, "Your email is verified — thanks!")
+    return redirect("location_list" if request.user.is_authenticated else "login")
 
 
 # ── Terms of Service ──────────────────────────────────────────────────────────

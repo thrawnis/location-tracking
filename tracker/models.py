@@ -313,3 +313,29 @@ class TermsAcceptance(models.Model):
 
     def __str__(self):
         return f"{self.user.username} accepted TOS {self.version} on {self.accepted_at:%Y-%m-%d}"
+
+
+class EmailVerification(models.Model):
+    """Tracks whether a user has confirmed their email address. Users must
+    verify before they can use the app (enforced by middleware)."""
+    user = models.OneToOneField(User, on_delete=models.CASCADE, related_name="email_verification")
+    verified = models.BooleanField(default=False)
+    verified_at = models.DateTimeField(null=True, blank=True)
+    last_sent_at = models.DateTimeField(null=True, blank=True)
+
+    def __str__(self):
+        state = "verified" if self.verified else "unverified"
+        return f"{self.user.username}: {state}"
+
+
+class PendingRegistration(models.Model):
+    """A signup awaiting email confirmation. No User account exists until the
+    emailed link is clicked, so an unverified email can never register."""
+    username = models.CharField(max_length=150)
+    email = models.EmailField()
+    password = models.CharField(max_length=128)   # already hashed
+    token = models.CharField(max_length=64, unique=True, db_index=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"pending {self.username} <{self.email}>"

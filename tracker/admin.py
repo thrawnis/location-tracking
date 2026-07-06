@@ -1,8 +1,8 @@
 from django.contrib import admin
 
 from .models import (
-    Collection, GlutenFreeVote, Item, ItemReview, Location, LocationReview,
-    OsmSearchCache, TermsAcceptance,
+    Collection, EmailVerification, GlutenFreeVote, Item, ItemReview, Location,
+    LocationReview, OsmSearchCache, TermsAcceptance,
 )
 
 
@@ -59,6 +59,13 @@ class GlutenFreeVoteAdmin(admin.ModelAdmin):
     list_display = ("location", "user", "agrees", "updated_at")
     list_filter = ("agrees",)
     search_fields = ("location__name", "user__username")
+
+
+@admin.register(EmailVerification)
+class EmailVerificationAdmin(admin.ModelAdmin):
+    list_display = ("user", "verified", "verified_at", "last_sent_at")
+    list_filter = ("verified",)
+    search_fields = ("user__username", "user__email")
 
 
 @admin.register(TermsAcceptance)

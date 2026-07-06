@@ -29,6 +29,7 @@ MIDDLEWARE = [
     "django.contrib.auth.middleware.AuthenticationMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
+    "tracker.middleware.EmailVerificationMiddleware",
     "tracker.middleware.TermsAcceptanceMiddleware",
 ]
 
@@ -88,6 +89,22 @@ GOOGLE_MAPS_API_KEY = os.environ.get("GOOGLE_MAPS_API_KEY", "")
 # Terms of Service. Bump this version whenever the terms text changes
 # (tracker/templates/legal/terms.html) to force every user to re-accept.
 TERMS_VERSION = os.environ.get("TERMS_VERSION", "2026-01-05")
+
+# ── Email / verification ───────────────────────────────────────────────────────
+# Require users to confirm their email before using the app. Set to False to
+# disable (e.g. if no mail server is available).
+REQUIRE_EMAIL_VERIFICATION = os.environ.get("REQUIRE_EMAIL_VERIFICATION", "True").lower() == "true"
+# Default to the console backend (prints emails to the container logs) so the
+# app works out of the box; set EMAIL_HOST etc. in .env to send real mail.
+EMAIL_BACKEND = os.environ.get(
+    "EMAIL_BACKEND", "django.core.mail.backends.console.EmailBackend"
+)
+EMAIL_HOST = os.environ.get("EMAIL_HOST", "")
+EMAIL_PORT = int(os.environ.get("EMAIL_PORT", "587"))
+EMAIL_HOST_USER = os.environ.get("EMAIL_HOST_USER", "")
+EMAIL_HOST_PASSWORD = os.environ.get("EMAIL_HOST_PASSWORD", "")
+EMAIL_USE_TLS = os.environ.get("EMAIL_USE_TLS", "True").lower() == "true"
+DEFAULT_FROM_EMAIL = os.environ.get("DEFAULT_FROM_EMAIL", "Waypoint <no-reply@waypoint.local>")
 
 # ── Google Cloud usage/cost reporting (admin "Maps usage" page) ────────────────
 # Optional. When set, the admin page pulls real call counts (Cloud Monitoring)

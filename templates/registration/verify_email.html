@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+{% block title %}Verify your email – Waypoint{% endblock %}
+
+{% block content %}
+<div class="max-w-md mx-auto">
+  <div class="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+    <div class="px-6 py-5 border-b border-slate-100">
+      <h1 class="text-xl font-bold text-slate-900">Confirm your email</h1>
+    </div>
+
+    <div class="px-6 py-5 space-y-4 text-sm text-slate-600">
+      {% if email %}
+      <p>
+        We sent a verification link to
+        <strong class="text-slate-800">{{ email }}</strong>.
+        Open it to finish setting up your account. You can't use Waypoint until
+        your email is confirmed.
+      </p>
+      <p class="text-xs text-slate-400">
+        Didn't get it? Check your spam folder, or resend below. Wrong address?
+        Update it and we'll send a new link.
+      </p>
+      {% else %}
+      <p>Add your email address below and we'll send you a verification link.</p>
+      {% endif %}
+
+      <form method="post" action="{% url 'verify_email_resend' %}" class="space-y-3">
+        {% csrf_token %}
+        <div>
+          <label class="block text-xs font-medium text-slate-600 mb-1">Email address</label>
+          <input type="email" name="email" value="{{ email }}" placeholder="you@example.com"
+                 class="block w-full text-sm border border-slate-200 rounded-lg px-3 py-2
+                        focus:outline-none focus:ring-2 focus:ring-brand/30 focus:border-brand">
+        </div>
+        <button type="submit"
+                class="bg-brand hover:bg-brand-dark text-white font-semibold px-5 py-2.5 rounded-lg transition-colors">
+          {% if email %}Resend verification email{% else %}Send verification email{% endif %}
+        </button>
+      </form>
+    </div>
+
+    <div class="px-6 py-4 border-t border-slate-100 bg-slate-50">
+      <form method="post" action="{% url 'logout' %}">
+        {% csrf_token %}
+        <button type="submit" class="text-sm text-slate-500 hover:text-red-600">Sign out</button>
+      </form>
+    </div>
+  </div>
+</div>
+{% endblock %}

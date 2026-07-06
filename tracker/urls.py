@@ -3,6 +3,14 @@ from django.urls import path
 from . import views
 
 urlpatterns = [
+    # Registration email confirmation (verify-first)
+    path("register/confirm/", views.register_confirm, name="register_confirm"),
+
+    # Email verification (for existing/legacy accounts)
+    path("verify-email/", views.verify_email, name="verify_email"),
+    path("verify-email/resend/", views.verify_email_resend, name="verify_email_resend"),
+    path("verify-email/confirm/", views.verify_email_confirm, name="verify_email_confirm"),
+
     # Terms of Service
     path("terms/", views.terms, name="terms"),
     path("terms/accept/", views.terms_accept, name="terms_accept"),
