@@ -1108,10 +1108,9 @@ const CSRF_TOKEN = '{{ csrf_token }}';
     }
   }
 
-  // ── localStorage ─────────────────────────────────────────────
+  // ── localStorage (remembers the last location label for the search box) ──
   const LOC_KEY = 'wp_last_location';
   function saveLocation(val) { try { localStorage.setItem(LOC_KEY, val); } catch(_){} }
-  function loadLocation()    { try { return localStorage.getItem(LOC_KEY) || ''; } catch(_){ return ''; } }
 
   // ── Geo error ─────────────────────────────────────────────────
   function showGeoError(msg) {
@@ -1361,26 +1360,11 @@ const CSRF_TOKEN = '{{ csrf_token }}';
         applyFilters();
       });
 
-    // ── Restore or geolocate ────────────────────────────────────
-    const saved = loadLocation();
-    if (saved) {
-      locInput.value = saved;
-      geocoder.geocode({ address: saved }, (results, status) => {
-        if (status === 'OK' && results[0]) {
-          const vp = results[0].geometry.viewport;
-          if (vp) {
-            ignoreNextIdle = true;
-            mainMap.fitBounds(vp);
-            google.maps.event.addListenerOnce(mainMap, 'idle', () => {
-              ignoreNextIdle = false;
-              applyFilters();
-            });
-          }
-        }
-      });
-    } else {
-      locateUser();
-    }
+    // ── Center on the user's current location on startup ────────
+    // Always geolocate so the map opens at your precise position (GPS on a
+    // secure origin), rather than a remembered city. locateUser() falls back
+    // to IP-based location if GPS is denied or unavailable.
+    locateUser();
 
     // ── Wire up UI events ───────────────────────────────────────
     document.getElementById('sidebar-close')?.addEventListener('click', () => setSidebarClosed());
