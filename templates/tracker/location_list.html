@@ -377,9 +377,6 @@
             <div class="flex items-center gap-2 mt-1 flex-wrap">
               {% if loc.user_avg_rating %}{% stars_display loc.user_avg_rating "sm" %}
               {% else %}{% stars_display loc.overall_rating "sm" %}{% endif %}
-              <span class="text-[10px] text-slate-400">
-                {% with vc=loc.visits.all|length %}{{ vc }} visit{{ vc|pluralize }}{% endwith %}
-              </span>
               {% if loc.mine %}
               <span class="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-violet-100 text-violet-700">✓ You reviewed</span>
               {% endif %}

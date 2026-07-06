@@ -84,10 +84,6 @@
         <span id="open-now-badge"></span>
         <span class="text-slate-300">·</span>
         <span class="text-sm text-slate-500">
-          {% with vc=location.visits.all|length %}{{ vc }} visit{{ vc|pluralize }}{% endwith %}
-        </span>
-        <span class="text-slate-300">·</span>
-        <span class="text-sm text-slate-500">
           {% with ic=location.items.all|length %}{{ ic }} item{{ ic|pluralize }}{% endwith %}
         </span>
       </div>
@@ -183,7 +179,7 @@
 
     </div>
 
-    <!-- Right sidebar: items + visits -->
+    <!-- Right sidebar: collections + items -->
     <div class="space-y-5">
       <!-- Collections (HTMX-swappable) -->
       <div class="bg-white rounded-xl border border-slate-200 shadow-sm p-5">
@@ -191,9 +187,6 @@
       </div>
       <div class="bg-white rounded-xl border border-slate-200 shadow-sm p-5">
         {% include "tracker/partials/items_section.html" with location=location item_form=item_form %}
-      </div>
-      <div class="bg-white rounded-xl border border-slate-200 shadow-sm p-5">
-        {% include "tracker/partials/visits_section.html" with location=location visit_form=visit_form %}
       </div>
       <div class="bg-white rounded-xl border border-slate-100 shadow-sm p-4 text-xs text-slate-400 space-y-1">
         <p>Added {{ location.created_at|date:"N j, Y" }}{% if location.created_by %} by {{ location.created_by.username }}{% endif %}</p>

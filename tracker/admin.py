@@ -2,7 +2,7 @@ from django.contrib import admin
 
 from .models import (
     Collection, GlutenFreeVote, Item, ItemReview, Location, LocationReview,
-    OsmSearchCache, TermsAcceptance, Visit,
+    OsmSearchCache, TermsAcceptance,
 )
 
 
@@ -11,17 +11,12 @@ class ItemInline(admin.TabularInline):
     extra = 0
 
 
-class VisitInline(admin.TabularInline):
-    model = Visit
-    extra = 0
-
-
 @admin.register(Location)
 class LocationAdmin(admin.ModelAdmin):
     list_display = ("name", "category", "status", "overall_rating", "created_by", "created_at")
     list_filter = ("category", "status", "gluten_free")
     search_fields = ("name", "address")
-    inlines = [ItemInline, VisitInline]
+    inlines = [ItemInline]
 
 
 @admin.register(Collection)
@@ -57,12 +52,6 @@ class OsmSearchCacheAdmin(admin.ModelAdmin):
     list_filter = ("radius_m",)
     search_fields = ("query",)
     readonly_fields = ("fetched_at",)
-
-
-@admin.register(Visit)
-class VisitAdmin(admin.ModelAdmin):
-    list_display = ("location", "date", "user")
-    list_filter = ("date",)
 
 
 @admin.register(GlutenFreeVote)

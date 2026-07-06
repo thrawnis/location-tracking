@@ -15,7 +15,6 @@
                    {% else %}bg-red-50{% endif %}">
         {% if log.model_name == 'LocationReview' or log.model_name == 'ItemReview' %}⭐
         {% elif log.model_name == 'Photo' %}📷
-        {% elif log.model_name == 'Visit' %}📅
         {% elif log.model_name == 'Item' %}🍽
         {% elif log.action == 'create' %}📍
         {% elif log.action == 'delete' %}🗑

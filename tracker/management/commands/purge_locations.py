@@ -6,7 +6,7 @@ from tracker.models import Location, OsmSearchCache
 
 class Command(BaseCommand):
     help = (
-        "Delete all saved Locations (and their cascaded visits, items, photos, "
+        "Delete all saved Locations (and their cascaded items, photos, "
         "reviews, and collection memberships). Intended for wiping legacy "
         "OSM-era waypoints before real use. Also clears the OSM search cache."
     )
@@ -33,7 +33,7 @@ class Command(BaseCommand):
 
         self.stdout.write(
             "This will permanently delete {} location(s) and everything attached "
-            "to them (visits, items, photos, reviews, collection links){}.".format(
+            "to them (items, photos, reviews, collection links){}.".format(
                 loc_count,
                 "" if options["keep_cache"] else ", plus {} cache row(s)".format(cache_count),
             )

@@ -23,11 +23,11 @@ from django.views.decorators.http import require_POST
 
 from .forms import (
     CollectionForm, ItemForm, ItemReviewForm, LocationForm, LocationReviewForm,
-    PhotoForm, RegisterForm, TakeoutImportForm, VisitForm,
+    PhotoForm, RegisterForm, TakeoutImportForm,
 )
 from .models import (
     AuditLog, Collection, GlutenFreeVote, Item, ItemReview, Location, LocationReview,
-    OsmSearchCache, Photo, TermsAcceptance, Visit,
+    OsmSearchCache, Photo, TermsAcceptance,
 )
 
 
@@ -169,7 +169,7 @@ def location_list(request):
     my_reviews = LocationReview.objects.filter(location=OuterRef("pk"), user=request.user)
     locations = (
         Location.objects
-        .prefetch_related("photos", "visits", "items", "collections")
+        .prefetch_related("photos", "items", "collections")
         .annotate(
             user_avg_rating=Avg("reviews__rating"),
             user_review_count=Count("reviews", distinct=True),
@@ -190,7 +190,7 @@ def location_list(request):
 def location_detail(request, pk):
     location = get_object_or_404(
         Location.objects.prefetch_related(
-            "photos", "visits__user", "items__reviews__user",
+            "photos", "items__reviews__user",
             "reviews__user", "collections",
         ),
         pk=pk,
@@ -207,7 +207,6 @@ def location_detail(request, pk):
     gf_my_vote = location.gf_votes.filter(user=request.user).first()
     return render(request, "tracker/location_detail.html", {
         "location": location,
-        "visit_form": VisitForm(),
         "item_form": ItemForm(),
         "photo_form": PhotoForm(),
         "my_review": my_review,
@@ -559,53 +558,6 @@ def item_delete(request, pk, item_pk):
     )
     item.delete()
     return _render_items_section(request, location)
-
-
-# ── Visits (HTMX) ─────────────────────────────────────────────────────────────
-
-def _render_visits_section(request, location, visit_form=None, show_form=False):
-    return render(request, "tracker/partials/visits_section.html", {
-        "location": location,
-        "visit_form": visit_form or VisitForm(),
-        "show_form": show_form,
-    })
-
-
-@login_required
-def visit_add(request, pk):
-    location = get_object_or_404(Location, pk=pk)
-    if request.method == "POST":
-        form = VisitForm(request.POST)
-        if form.is_valid():
-            visit = form.save(commit=False)
-            visit.location = location
-            visit.user = request.user
-            visit.save()
-            _log(
-                request,
-                AuditLog.ACTION_CREATE,
-                visit,
-                'Logged visit to "{}" on {}'.format(location.name, visit.date),
-            )
-            return _render_visits_section(request, location)
-        return _render_visits_section(request, location, visit_form=form, show_form=True)
-    show = request.GET.get("show", "1") != "0"
-    return _render_visits_section(request, location, show_form=show)
-
-
-@login_required
-@require_POST
-def visit_delete(request, pk, visit_pk):
-    location = get_object_or_404(Location, pk=pk)
-    visit = get_object_or_404(Visit, pk=visit_pk, location=location)
-    _log(
-        request,
-        AuditLog.ACTION_DELETE,
-        visit,
-        'Deleted visit to "{}" dated {}'.format(location.name, visit.date),
-    )
-    visit.delete()
-    return _render_visits_section(request, location)
 
 
 # ── Photos (HTMX) ─────────────────────────────────────────────────────────────
@@ -1094,7 +1046,7 @@ def activity_feed(request):
         AuditLog.objects
         .select_related("user")
         .filter(model_name__in=[
-            "Location", "LocationReview", "ItemReview", "Item", "Photo", "Visit",
+            "Location", "LocationReview", "ItemReview", "Item", "Photo",
         ])
         .order_by("-timestamp")[:100]
     )

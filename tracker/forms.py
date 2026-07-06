@@ -4,7 +4,7 @@ from django import forms
 from django.contrib.auth.forms import UserCreationForm
 from django.contrib.auth.models import User
 
-from .models import Collection, Item, ItemReview, Location, LocationReview, Photo, Visit
+from .models import Collection, Item, ItemReview, Location, LocationReview, Photo
 
 
 def normalize_case(text):
@@ -183,15 +183,6 @@ class TakeoutImportForm(forms.Form):
         label="Import as",
         help_text="Status to assign to imported places",
     )
-
-
-class VisitForm(forms.ModelForm):
-    class Meta:
-        model = Visit
-        fields = ["date"]
-        widgets = {
-            "date": forms.DateInput(attrs={"type": "date"}),
-        }
 
 
 class PhotoForm(forms.ModelForm):
