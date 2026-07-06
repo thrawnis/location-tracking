@@ -44,6 +44,11 @@ def is_admin(user):
 # ── Audit helpers ─────────────────────────────────────────────────────────────
 
 def _get_ip(request):
+    # Behind Cloudflare (Tunnel), CF-Connecting-IP holds the real visitor IP.
+    # Without it we'd see Cloudflare's edge IP and geolocate the wrong place.
+    cf = request.META.get("HTTP_CF_CONNECTING_IP")
+    if cf:
+        return cf.strip()
     xff = request.META.get("HTTP_X_FORWARDED_FOR")
     return xff.split(",")[0].strip() if xff else request.META.get("REMOTE_ADDR")
 
@@ -913,28 +918,32 @@ _PRIVATE_PREFIXES = ("10.", "172.16.", "172.17.", "172.18.", "172.19.",
 
 @login_required
 def geoip_view(request):
-    # Rate-limit: one successful lookup per user per 60 seconds
-    rate_key = f"geoip_rl_{request.user.pk}"
-    if cache.get(rate_key):
-        return JsonResponse({"status": "rate_limited"}, status=429)
-
-    ip = _get_ip(request)
+    ip = _get_ip(request) or ""
     is_private = ip in ("127.0.0.1", "::1") or any(ip.startswith(p) for p in _PRIVATE_PREFIXES)
     if is_private:
         return JsonResponse({"status": "private"})
+
+    # Cache the result per IP so repeat locate attempts don't re-hit (and get
+    # rate-limited by) the external service — they return the cached city.
+    cache_key = f"geoip_result_{ip}"
+    cached = cache.get(cache_key)
+    if cached:
+        return JsonResponse(cached)
+
     try:
-        url = f"http://ip-api.com/json/{ip}?fields=status,lat,lon,city,regionName"
+        url = f"http://ip-api.com/json/{ip}?fields=status,message,lat,lon,city,regionName"
         with urllib.request.urlopen(url, timeout=5) as resp:
             data = json.loads(resp.read())
         if data.get("status") == "success":
-            cache.set(rate_key, True, 60)
-            return JsonResponse({
+            result = {
                 "status": "ok",
                 "lat": data["lat"],
                 "lng": data["lon"],
                 "city": data.get("city", ""),
                 "region": data.get("regionName", ""),
-            })
+            }
+            cache.set(cache_key, result, 60 * 30)   # 30 minutes per IP
+            return JsonResponse(result)
     except Exception:
         pass
     return JsonResponse({"status": "error"})

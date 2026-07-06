@@ -1223,8 +1223,8 @@ const CSRF_TOKEN = '{{ csrf_token }}';
         if (best) { settle(); return; }
         settled = true; stop();
         showGeoError(err.code === 1
-          ? 'Location access denied — using approximate (IP) location'
-          : 'GPS unavailable — using approximate (IP) location');
+          ? 'Location blocked by your browser — allow it for this site (Brave/iOS: tap the shield or lock icon), or type your location above.'
+          : 'GPS unavailable — showing approximate location. You can type your location above.', 9000);
         ipFallback();
       },
       { enableHighAccuracy: true, timeout: 20000, maximumAge: 0 }
