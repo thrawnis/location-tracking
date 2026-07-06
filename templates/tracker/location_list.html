@@ -1112,14 +1112,14 @@ const CSRF_TOKEN = '{{ csrf_token }}';
   const LOC_KEY = 'wp_last_location';
   function saveLocation(val) { try { localStorage.setItem(LOC_KEY, val); } catch(_){} }
 
-  // ── Geo error ─────────────────────────────────────────────────
-  function showGeoError(msg) {
+  // ── Geo status toast ──────────────────────────────────────────
+  function showGeoError(msg, ms) {
     const el = document.getElementById('geo-error');
     if (!el) return;
     el.textContent = msg;
     el.classList.remove('hidden');
     clearTimeout(el._t);
-    el._t = setTimeout(() => el.classList.add('hidden'), 6000);
+    if (ms !== 0) el._t = setTimeout(() => el.classList.add('hidden'), ms || 6000);
   }
 
   // ── User location dot ─────────────────────────────────────────
@@ -1170,43 +1170,66 @@ const CSRF_TOKEN = '{{ csrf_token }}';
     }
   }
 
+  function reverseGeocodeFill(lat, lng) {
+    geocoder.geocode({ location: { lat, lng } }, (results, status) => {
+      if (status === 'OK' && results[0]) {
+        const comps = results[0].address_components;
+        const city  = comps.find(c => c.types.includes('locality'))?.long_name ||
+                      comps.find(c => c.types.includes('administrative_area_level_2'))?.long_name || '';
+        const state = comps.find(c => c.types.includes('administrative_area_level_1'))?.short_name || '';
+        const label = [city, state].filter(Boolean).join(', ');
+        if (label) fillLocationSearch(label);
+      }
+    });
+  }
+
   function locateUser() {
     try { localStorage.removeItem(LOC_KEY); } catch(_) {}
     const input = document.getElementById('location-search');
     if (input) input.value = '';
     if (!navigator.geolocation) { ipFallback(); return; }
-    // Requires a secure context (HTTPS): browsers block precise geolocation
-    // over plain HTTP, which silently forces the coarse IP fallback.
+    // Precise geolocation requires a secure context (HTTPS). Over plain HTTP
+    // the browser blocks it, so we fall back to coarse IP location.
     if (!window.isSecureContext) {
-      showGeoError('Precise location needs HTTPS — using approximate location');
+      showGeoError('Precise location needs HTTPS — using approximate (IP) location');
       ipFallback();
       return;
     }
-    navigator.geolocation.getCurrentPosition(
+
+    // getCurrentPosition often returns a fast COARSE (wifi/cell) fix. Watch for
+    // readings and settle on the best-accuracy one, stopping early on a solid
+    // GPS lock. The accuracy is surfaced so it's clear what kind of fix it is.
+    showGeoError('Locating you…', 0);
+    let best = null, settled = false, watchId = null, timer = null;
+    const stop = () => { if (watchId != null) navigator.geolocation.clearWatch(watchId); clearTimeout(timer); };
+    const settle = () => {
+      if (settled) return;
+      settled = true; stop();
+      if (!best) { showGeoError('Couldn’t get a GPS fix — using approximate (IP) location'); ipFallback(); return; }
+      const acc = Math.round(best.coords.accuracy);
+      const zoom = acc <= 100 ? 16 : (acc <= 800 ? 14 : 12);
+      placeUserDot(best.coords.latitude, best.coords.longitude, 'You are here', zoom);
+      reverseGeocodeFill(best.coords.latitude, best.coords.longitude);
+      showGeoError(acc <= 150
+        ? `📍 Located to ±${acc} m`
+        : `📍 Approx. ±${acc} m — for a precise fix, allow location & go outdoors`);
+    };
+    watchId = navigator.geolocation.watchPosition(
       pos => {
-        const { latitude: lat, longitude: lng } = pos.coords;
-        // Zoom tighter for a real GPS fix; looser if the fix is coarse.
-        const zoom = (pos.coords.accuracy && pos.coords.accuracy <= 100) ? 15 : 13;
-        placeUserDot(lat, lng, 'You are here', zoom);
-        geocoder.geocode({ location: { lat, lng } }, (results, status) => {
-          if (status === 'OK' && results[0]) {
-            const comps = results[0].address_components;
-            const city  = comps.find(c => c.types.includes('locality'))?.long_name ||
-                          comps.find(c => c.types.includes('administrative_area_level_2'))?.long_name || '';
-            const state = comps.find(c => c.types.includes('administrative_area_level_1'))?.short_name || '';
-            const label = [city, state].filter(Boolean).join(', ');
-            if (label) fillLocationSearch(label);
-          }
-        });
+        if (!best || pos.coords.accuracy < best.coords.accuracy) best = pos;
+        if (pos.coords.accuracy <= 50) settle();   // solid GPS lock → done early
       },
       err => {
-        if (err.code === 1) showGeoError('Location access denied — using IP approximation');
+        if (best) { settle(); return; }
+        settled = true; stop();
+        showGeoError(err.code === 1
+          ? 'Location access denied — using approximate (IP) location'
+          : 'GPS unavailable — using approximate (IP) location');
         ipFallback();
       },
-      // enableHighAccuracy asks for GPS on mobile; without it phones return a
-      // coarse network fix. maximumAge:0 avoids a stale cached position.
-      { enableHighAccuracy: true, timeout: 12000, maximumAge: 0 }
+      { enableHighAccuracy: true, timeout: 20000, maximumAge: 0 }
     );
+    timer = setTimeout(settle, 12000);   // otherwise settle on the best fix so far
   }
 
   // ── Map initialisation (Google Maps callback) ─────────────────
