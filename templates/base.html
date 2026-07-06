@@ -51,6 +51,16 @@
 
         <!-- Right side -->
         <div class="flex items-center gap-3">
+          <!-- PWA install (shown only when installable / on iOS) -->
+          <button id="install-btn"
+                  class="hidden items-center gap-1.5 text-sm font-medium px-3 py-1.5 rounded-lg
+                         border border-brand/30 text-brand hover:bg-brand/5 transition-colors">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                    d="M12 4v12m0 0l-4-4m4 4l4-4M4 20h16"/>
+            </svg>
+            Install
+          </button>
           {% if user.is_authenticated %}
             <div class="relative" x-data="{ open: false }">
               <button @click="open = !open" @keydown.escape="open = false"
@@ -189,6 +199,17 @@
     &mdash; <a href="{% url 'terms' %}" class="hover:text-brand">Terms</a>
   </footer>
 
+  <!-- iOS "Add to Home Screen" instructions (no programmatic install on iOS) -->
+  <div id="ios-install-help"
+       class="hidden fixed bottom-4 left-1/2 -translate-x-1/2 z-50 bg-white border border-slate-200
+              rounded-xl shadow-xl p-4 max-w-xs text-sm text-slate-600">
+    To install Waypoint: tap the <strong>Share</strong> button
+    <svg class="inline w-4 h-4 -mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v12m0-12L8 8m4-4l4 4M6 14v4a2 2 0 002 2h8a2 2 0 002-2v-4"/></svg>,
+    then choose <strong>“Add to Home Screen.”</strong>
+    <button onclick="document.getElementById('ios-install-help').classList.add('hidden')"
+            class="block mt-2 text-brand font-medium">Got it</button>
+  </div>
+
   <!-- HTMX CSRF setup -->
   <script>
     document.body.addEventListener("htmx:configRequest", (e) => {
@@ -198,6 +219,40 @@
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.register("{% static 'sw.js' %}").catch(() => {});
     }
+
+    // ── PWA install button ────────────────────────────────────────────
+    (function () {
+      const btn = document.getElementById('install-btn');
+      if (!btn) return;
+      let deferredPrompt = null;
+      const isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent);
+      const standalone = window.matchMedia('(display-mode: standalone)').matches
+                         || window.navigator.standalone === true;
+      const show = () => { btn.classList.remove('hidden'); btn.classList.add('inline-flex'); };
+      const hide = () => { btn.classList.add('hidden'); btn.classList.remove('inline-flex'); };
+
+      // Android / desktop Chrome fire this when the app is installable
+      window.addEventListener('beforeinstallprompt', (e) => {
+        e.preventDefault();
+        deferredPrompt = e;
+        show();
+      });
+      window.addEventListener('appinstalled', hide);
+
+      // iOS Safari has no install event — offer instructions instead
+      if (isIOS && !standalone) show();
+
+      btn.addEventListener('click', async () => {
+        if (deferredPrompt) {
+          deferredPrompt.prompt();
+          await deferredPrompt.userChoice;
+          deferredPrompt = null;
+          hide();
+        } else if (isIOS) {
+          document.getElementById('ios-install-help')?.classList.toggle('hidden');
+        }
+      });
+    })();
   </script>
   {% block extra_js %}{% endblock %}
 </body>
