@@ -16,6 +16,12 @@
   <div class="flex items-center gap-0.5">
     <template x-for="i in [1,2,3,4,5]" :key="i">
       <div class="relative w-8 h-8 cursor-pointer select-none" @mouseleave="hover = 0">
+        {% if whole %}
+        <!-- whole-star click zone (no half stars) -->
+        <div class="absolute inset-0 z-10"
+             @mouseenter="hover = i"
+             @click="set(i)"></div>
+        {% else %}
         <!-- left-half hover zone -->
         <div class="absolute inset-y-0 left-0 w-1/2 z-10"
              @mouseenter="hover = i - 0.5"
@@ -24,6 +30,7 @@
         <div class="absolute inset-y-0 right-0 w-1/2 z-10"
              @mouseenter="hover = i"
              @click="set(i)"></div>
+        {% endif %}
         <!-- full star -->
         <template x-if="starState(i) === 'full'">
           <svg class="w-8 h-8 text-yellow-400 drop-shadow-sm" viewBox="0 0 20 20" fill="currentColor">

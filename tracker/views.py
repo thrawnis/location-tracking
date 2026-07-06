@@ -448,14 +448,14 @@ def item_add(request, pk):
             if initial_rating:
                 try:
                     from decimal import Decimal
-                    rev = ItemReview.objects.create(
-                        item=item,
-                        user=request.user,
-                        rating=Decimal(initial_rating),
-                        notes=initial_notes,
-                    )
-                    _log(request, AuditLog.ACTION_CREATE, rev,
-                         'Rated "{}" {}/5 in "{}"'.format(item.name, initial_rating, location.name))
+                    val = Decimal(initial_rating)
+                    # Dishes are rated in whole stars only (1–5).
+                    if val == val.to_integral_value() and 1 <= val <= 5:
+                        rev = ItemReview.objects.create(
+                            item=item, user=request.user, rating=val, notes=initial_notes,
+                        )
+                        _log(request, AuditLog.ACTION_CREATE, rev,
+                             'Rated "{}" {}/5 in "{}"'.format(item.name, val, location.name))
                 except Exception:
                     pass
             return _render_items_section(request, location)

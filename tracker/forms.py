@@ -138,6 +138,9 @@ class ItemReviewForm(forms.ModelForm):
         rating = self.cleaned_data.get("rating")
         if not rating:
             raise forms.ValidationError("Please select a star rating.")
+        # Dishes/items are rated in whole stars only (1–5, no halves).
+        if rating != int(rating):
+            raise forms.ValidationError("Please rate dishes in whole stars (1–5).")
         return rating
 
 

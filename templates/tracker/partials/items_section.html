@@ -157,7 +157,7 @@
             {% if my_review %}Edit your review{% else %}Rate this item{% endif %}
           </p>
           <div>
-            {% include "tracker/partials/star_input.html" with field_name="rating" current_value=review_form.rating.value %}
+            {% include "tracker/partials/star_input.html" with field_name="rating" current_value=review_form.rating.value whole=True %}
             {% if review_form.rating.errors %}
             <p class="text-red-500 text-xs mt-1">{{ review_form.rating.errors|join:", " }}</p>
             {% endif %}
@@ -240,7 +240,7 @@
 
     <div>
       <label class="block text-xs font-medium text-slate-600 mb-1">Your initial rating (optional)</label>
-      {% include "tracker/partials/star_input.html" with field_name="initial_rating" current_value="" %}
+      {% include "tracker/partials/star_input.html" with field_name="initial_rating" current_value="" whole=True %}
     </div>
 
     <div>
