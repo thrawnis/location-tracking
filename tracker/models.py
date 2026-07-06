@@ -328,6 +328,19 @@ class EmailVerification(models.Model):
         return f"{self.user.username}: {state}"
 
 
+class TOTPDevice(models.Model):
+    """A user's TOTP (authenticator-app) secret. `confirmed` becomes True once
+    the user verifies a code during setup; 2FA is active only when confirmed.
+    Optional for regular users, required for admins."""
+    user = models.OneToOneField(User, on_delete=models.CASCADE, related_name="totp")
+    secret = models.CharField(max_length=64)
+    confirmed = models.BooleanField(default=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"{self.user.username}: 2FA {'on' if self.confirmed else 'pending'}"
+
+
 class PendingRegistration(models.Model):
     """A signup awaiting email confirmation. No User account exists until the
     emailed link is clicked, so an unverified email can never register."""

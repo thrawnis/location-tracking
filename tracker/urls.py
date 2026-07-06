@@ -3,6 +3,12 @@ from django.urls import path
 from . import views
 
 urlpatterns = [
+    # Two-factor authentication (TOTP)
+    path("2fa/setup/", views.two_factor_setup, name="two_factor_setup"),
+    path("2fa/verify/", views.two_factor_verify, name="two_factor_verify"),
+    path("2fa/settings/", views.two_factor_settings, name="two_factor_settings"),
+    path("2fa/disable/", views.two_factor_disable, name="two_factor_disable"),
+
     # Registration email confirmation (verify-first)
     path("register/confirm/", views.register_confirm, name="register_confirm"),
 

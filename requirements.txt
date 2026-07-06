@@ -7,3 +7,6 @@ Pillow==11.2.1
 # Admin "Maps usage" page: Cloud Monitoring + BigQuery billing export (REST via AuthorizedSession)
 google-auth==2.38.0
 requests==2.32.3
+# TOTP two-factor auth + QR codes (qrcode uses the already-present Pillow)
+pyotp==2.9.0
+qrcode==7.4.2

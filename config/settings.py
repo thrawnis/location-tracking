@@ -30,6 +30,7 @@ MIDDLEWARE = [
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
     "tracker.middleware.EmailVerificationMiddleware",
+    "tracker.middleware.TwoFactorMiddleware",
     "tracker.middleware.TermsAcceptanceMiddleware",
 ]
 

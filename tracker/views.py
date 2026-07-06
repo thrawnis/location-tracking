@@ -29,7 +29,8 @@ from .forms import (
 )
 from .models import (
     AuditLog, Collection, EmailVerification, GlutenFreeVote, Item, ItemReview,
-    Location, LocationReview, OsmSearchCache, PendingRegistration, Photo, TermsAcceptance,
+    Location, LocationReview, OsmSearchCache, PendingRegistration, Photo,
+    TermsAcceptance, TOTPDevice,
 )
 
 
@@ -85,20 +86,134 @@ def _location_diff(old, new_data):
 
 # ── Auth ──────────────────────────────────────────────────────────────────────
 
+def _safe_next(value):
+    return value if value.startswith("/") and not value.startswith("//") else ""
+
+
 def login_view(request):
     if request.user.is_authenticated:
         return redirect("location_list")
     form = AuthenticationForm(request, data=request.POST or None)
+    nxt = _safe_next(request.POST.get("next") or request.GET.get("next") or "")
     if request.method == "POST" and form.is_valid():
         user = form.get_user()
+        device = TOTPDevice.objects.filter(user=user, confirmed=True).first()
+        if device:
+            # Password OK, but 2FA is enabled — require the code before login.
+            request.session["pre_2fa_user"] = user.pk
+            request.session["pre_2fa_next"] = nxt
+            return redirect("two_factor_verify")
+        # No 2FA yet. Admins get forced into setup by the TwoFactorMiddleware.
         login(request, user)
-        return redirect(request.GET.get("next", "location_list"))
-    return render(request, "registration/login.html", {"form": form})
+        return redirect(nxt or "location_list")
+    return render(request, "registration/login.html", {"form": form, "next": nxt})
 
 
 def logout_view(request):
     logout(request)
     return redirect("location_list")
+
+
+# ── Two-factor authentication (TOTP) ───────────────────────────────────────────
+
+def _totp_qr_data_uri(secret, user):
+    import io, base64, pyotp, qrcode
+    uri = pyotp.TOTP(secret).provisioning_uri(
+        name=user.email or user.username, issuer_name="Waypoint"
+    )
+    buf = io.BytesIO()
+    qrcode.make(uri).save(buf, format="PNG")
+    return "data:image/png;base64," + base64.b64encode(buf.getvalue()).decode()
+
+
+def _totp_valid(secret, code):
+    import pyotp
+    try:
+        return pyotp.TOTP(secret).verify((code or "").strip().replace(" ", ""), valid_window=1)
+    except Exception:
+        return False
+
+
+def two_factor_verify(request):
+    """Second login step: enter the authenticator code. Reached from login_view
+    for users who have 2FA enabled (they are not yet logged in here)."""
+    uid = request.session.get("pre_2fa_user")
+    if not uid:
+        return redirect("login")
+    device = TOTPDevice.objects.filter(user_id=uid, confirmed=True).select_related("user").first()
+    if not device:
+        request.session.pop("pre_2fa_user", None)
+        return redirect("login")
+    error = None
+    if request.method == "POST":
+        if _totp_valid(device.secret, request.POST.get("code", "")):
+            nxt = _safe_next(request.session.pop("pre_2fa_next", "") or "")
+            request.session.pop("pre_2fa_user", None)
+            login(request, device.user)
+            return redirect(nxt or "location_list")
+        error = "That code didn't match. Try again."
+    return render(request, "registration/two_factor_verify.html", {"error": error})
+
+
+def two_factor_setup(request):
+    """Show the QR code and confirm a code to enable 2FA. Works both for a
+    signed-in user enabling it optionally, and for an admin who was sent here
+    (still pending login) because 2FA is required."""
+    import pyotp
+    if request.user.is_authenticated:
+        user, pending = request.user, False
+    else:
+        uid = request.session.get("pre_2fa_user")
+        if not uid:
+            return redirect("login")
+        user, pending = get_object_or_404(User, pk=uid), True
+
+    device, _ = TOTPDevice.objects.get_or_create(
+        user=user, defaults={"secret": pyotp.random_base32()}
+    )
+    if device.confirmed:
+        return redirect("location_list" if pending else "two_factor_settings")
+
+    error = None
+    if request.method == "POST":
+        if _totp_valid(device.secret, request.POST.get("code", "")):
+            device.confirmed = True
+            device.save(update_fields=["confirmed"])
+            messages.success(request, "Two-factor authentication is now enabled.")
+            if pending:
+                nxt = _safe_next(request.session.pop("pre_2fa_next", "") or "")
+                request.session.pop("pre_2fa_user", None)
+                login(request, user)
+                return redirect(nxt or "location_list")
+            return redirect("two_factor_settings")
+        error = "That code didn't match — check your device's time and try again."
+
+    return render(request, "registration/two_factor_setup.html", {
+        "qr": _totp_qr_data_uri(device.secret, user),
+        "secret": device.secret,
+        "error": error,
+        "required": user.is_staff,
+    })
+
+
+@login_required
+def two_factor_settings(request):
+    enabled = TOTPDevice.objects.filter(user=request.user, confirmed=True).exists()
+    return render(request, "registration/two_factor_settings.html", {
+        "enabled": enabled,
+        "required": request.user.is_staff,
+    })
+
+
+@login_required
+@require_POST
+def two_factor_disable(request):
+    if request.user.is_staff:
+        messages.error(request, "Admins can't turn off two-factor authentication.")
+        return redirect("two_factor_settings")
+    TOTPDevice.objects.filter(user=request.user).delete()
+    messages.success(request, "Two-factor authentication disabled.")
+    return redirect("two_factor_settings")
 
 
 def _make_admin_if_first(user):
