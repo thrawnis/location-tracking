@@ -10,7 +10,9 @@ services:
       - ./data/postgres:/var/lib/postgresql/data
     restart: unless-stopped
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-tracker}"]
+      # -d avoids "database <user> does not exist" FATALs in the log; pg_isready
+      # was defaulting the DB name to the user name (tracker), which isn't a real DB.
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-tracker} -d ${POSTGRES_DB:-waypoint}"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -32,6 +34,15 @@ services:
       GCP_PROJECT_ID: ${GCP_PROJECT_ID:-}
       GCP_CREDENTIALS_FILE: ${GCP_CREDENTIALS_FILE:-}
       GCP_BILLING_BQ_TABLE: ${GCP_BILLING_BQ_TABLE:-}
+      REQUIRE_EMAIL_VERIFICATION: ${REQUIRE_EMAIL_VERIFICATION:-True}
+      EMAIL_BACKEND: ${EMAIL_BACKEND:-django.core.mail.backends.console.EmailBackend}
+      EMAIL_HOST: ${EMAIL_HOST:-}
+      EMAIL_PORT: ${EMAIL_PORT:-587}
+      EMAIL_HOST_USER: ${EMAIL_HOST_USER:-}
+      EMAIL_HOST_PASSWORD: ${EMAIL_HOST_PASSWORD:-}
+      EMAIL_USE_TLS: ${EMAIL_USE_TLS:-True}
+      DEFAULT_FROM_EMAIL: ${DEFAULT_FROM_EMAIL:-Waypoint <no-reply@example.com>}
+      TERMS_VERSION: ${TERMS_VERSION:-}
     depends_on:
       db:
         condition: service_healthy

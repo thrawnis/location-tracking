@@ -490,6 +490,19 @@ const CSRF_TOKEN = '{{ csrf_token }}';
   let mainInfoWindow = null;
   let markerMap      = {};   // id → { marker, popupContent }
   let savedByPlaceId = {};   // google_place_id → { rating, count } for saved waypoints
+  // In-memory cache of Google ratings we've seen (from POI search results, mostly).
+  // Popups will show a Google rating ONLY if we've already seen it here — never
+  // spending an API call just for the popup.
+  let googleRatingCache = {};   // google_place_id → { rating, count }
+  try {
+    const raw = sessionStorage.getItem('wp_google_ratings');
+    if (raw) googleRatingCache = JSON.parse(raw) || {};
+  } catch (_) {}
+  function cacheGoogleRating(pid, rating, count) {
+    if (!pid || rating == null) return;
+    googleRatingCache[pid] = { rating: Number(rating), count: Number(count || 0) };
+    try { sessionStorage.setItem('wp_google_ratings', JSON.stringify(googleRatingCache)); } catch (_) {}
+  }
   let activeId       = null;
   let nameFilter     = '';
   let catFilter      = '';
@@ -551,9 +564,16 @@ const CSRF_TOKEN = '{{ csrf_token }}';
       address: addr || '', google_place_id: placeId || '',
     };
     const saved = placeId ? savedByPlaceId[placeId] : null;
-    const googleRatingLine = gRating
-      ? `Google Rating: <strong>${gRating.toFixed(1)}/5</strong> (${numRat})`
-      : 'Google Rating: <span style="color:#94a3b8">not rated</span>';
+
+    // Google rating: prefer the value we already have (search result or cached
+    // from a previous search). Never fetch a new one just for the popup.
+    if (placeId && gRating) cacheGoogleRating(placeId, gRating, numRat);
+    const gCached = placeId ? googleRatingCache[placeId] : null;
+    const gShow = gRating != null ? { rating: gRating, count: numRat } : gCached;
+    const googleRatingLine = gShow
+      ? `Google Rating: <strong>${gShow.rating.toFixed(1)}/5</strong> (${gShow.count})`
+      : '';   // no local data → skip the line entirely per user's request
+
     const wpRatingLine = (saved && saved.rating)
       ? `Waypoint Rating: <strong>${saved.rating}/5</strong> (${saved.count})`
       : 'Waypoint Rating: <span style="color:#94a3b8">not yet rated</span>';
@@ -568,7 +588,7 @@ const CSRF_TOKEN = '{{ csrf_token }}';
         ${dist ? `<span style="font-size:11px;color:#64748b;font-weight:600">📍 ${dist}</span>` : ''}
       </div>
       ${addr ? `<p style="font-size:12px;color:#475569;margin:2px 0">${escapeHtml(addr)}</p>` : ''}
-      <p style="font-size:12px;color:#334155;margin:3px 0 0">${googleRatingLine}</p>
+      ${googleRatingLine ? `<p style="font-size:12px;color:#334155;margin:3px 0 0">${googleRatingLine}</p>` : ''}
       <p style="font-size:12px;color:#334155;margin:1px 0 0">${wpRatingLine}</p>
       ${openHtml ? `<p style="margin:4px 0 0">${openHtml}</p>` : ''}
       <div style="display:flex;gap:10px;margin-top:8px;flex-wrap:wrap;align-items:center">
