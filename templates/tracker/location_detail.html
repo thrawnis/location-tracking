@@ -2,11 +2,6 @@
 {% load tracker_tags %}
 {% block title %}{{ location.name }} – Waypoint{% endblock %}
 
-{% block extra_head %}
-<style>
-  #detail-map { height: 280px; }
-</style>
-{% endblock %}
 
 {% block content %}
 {% with cat=location.category %}
@@ -58,20 +53,14 @@
 
     <!-- Rating + meta -->
     <div class="px-6 py-4 flex flex-wrap items-center justify-between gap-4 border-t border-slate-100">
-      <div class="flex items-center gap-3 flex-wrap">
+      <div class="flex items-center gap-2 flex-wrap">
+        <!-- Waypoint community rating (matches the Google badge style) -->
         {% with avg=location.avg_user_rating %}
-        <div class="flex items-center gap-2">
-          {% stars_display avg "lg" %}
-          {% if avg %}
-          <span class="text-lg font-bold text-slate-700">{{ avg }}</span>
-          <span class="text-sm text-slate-400">/ 5</span>
-          {% with rc=location.reviews.all|length %}
-          {% if rc %}<span class="text-xs text-slate-400">({{ rc }} review{{ rc|pluralize }})</span>{% endif %}
-          {% endwith %}
-          {% else %}
-          <span class="text-sm text-slate-400">Not yet rated</span>
-          {% endif %}
-        </div>
+        <span class="inline-flex items-center gap-1 text-sm font-semibold px-2.5 py-1 rounded-full
+                     bg-violet-50 text-violet-700 border border-violet-200" title="Waypoint community rating">
+          {% if avg %}Waypoint {{ avg }} ★ ({% with rc=location.reviews.all|length %}{{ rc }}{% endwith %})
+          {% else %}Waypoint · Not yet rated{% endif %}
+        </span>
         {% endwith %}
         <!-- Google rating (filled by JS from Place Details when a place_id is known) -->
         <span id="google-rating-badge"></span>
@@ -149,26 +138,20 @@
       </div>
       {% endif %}
 
-      <!-- Map -->
+      <!-- Location line (map intentionally omitted) -->
       {% if location.has_coords %}
-      <div class="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
-        <div id="detail-map"></div>
-        <div class="px-4 py-2 border-t border-slate-100 flex items-center gap-2">
-          <svg class="w-4 h-4 text-slate-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                  d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"/>
-          </svg>
-          <p class="text-xs text-slate-500 truncate">
-            {{ location.address|default:"No address" }}
-            &nbsp;·&nbsp;
-            {{ location.latitude }}, {{ location.longitude }}
-          </p>
-          <a href="https://www.google.com/maps/search/?api=1&query={{ location.latitude }},{{ location.longitude }}"
-             target="_blank" rel="noopener"
-             class="ml-auto shrink-0 text-xs text-brand hover:underline">
-            Open in Google Maps →
-          </a>
-        </div>
+      <div class="bg-white rounded-xl border border-slate-200 shadow-sm px-4 py-3 flex items-center gap-2">
+        <svg class="w-4 h-4 text-slate-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"/>
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"/>
+        </svg>
+        <p class="text-xs text-slate-500 truncate">{{ location.address|default:"No address" }}</p>
+        <a href="https://www.google.com/maps/search/?api=1&query={{ location.latitude }},{{ location.longitude }}"
+           target="_blank" rel="noopener"
+           class="ml-auto shrink-0 text-xs text-brand hover:underline">
+          Open in Google Maps →
+        </a>
       </div>
       {% endif %}
 
@@ -234,46 +217,12 @@
   applyDishSort();
 })();
 </script>
-{% if location.has_coords %}
+{% if location.google_place_id %}
 <script>
-window.initDetailMap = function () {
-  const lat = {{ location.latitude }};
-  const lng = {{ location.longitude }};
-
-  const map = new google.maps.Map(document.getElementById('detail-map'), {
-    center:            { lat, lng },
-    zoom:              15,
-    mapId:             'DEMO_MAP_ID',
-    gestureHandling:   'cooperative',
-    mapTypeControl:    false,
-    streetViewControl: false,
-    fullscreenControl: false,
-  });
-
-  const infoWindow = new google.maps.InfoWindow({
-    content: '<strong>{{ location.name|escapejs }}</strong>',
-  });
-
-  const pinEl = document.createElement('div');
-  pinEl.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="32" viewBox="0 0 24 32"
-      style="filter:drop-shadow(0 2px 4px rgba(0,0,0,.4))">
-    <path d="M12 0C5.37 0 0 5.37 0 12c0 9 12 20 12 20s12-11 12-20C24 5.37 18.63 0 12 0z" fill="#6366f1"/>
-    <circle cx="12" cy="12" r="5" fill="white"/>
-  </svg>`;
-
-  const marker = new google.maps.marker.AdvancedMarkerElement({
-    map,
-    position: { lat, lng },
-    content:  pinEl,
-    title:    '{{ location.name|escapejs }}',
-  });
-
-  marker.addListener('click', () => infoWindow.open({ map, anchor: marker }));
-  infoWindow.open({ map, anchor: marker });
-
-  {% if location.google_place_id %}
-  // Live Google rating + open/closed status via Place Details (place_id stored)
-  const svc = new google.maps.places.PlacesService(map);
+// No map on the detail page — use a detached PlacesService just to fetch the
+// live Google rating and open/closed status via Place Details.
+window.initDetailData = function () {
+  const svc = new google.maps.places.PlacesService(document.createElement('div'));
   svc.getDetails({
     placeId: '{{ location.google_place_id|escapejs }}',
     fields: ['opening_hours', 'rating', 'user_ratings_total'],
@@ -299,9 +248,8 @@ window.initDetailMap = function () {
         : '<span class="inline-flex items-center gap-1 text-xs font-semibold px-2.5 py-1 rounded-full bg-red-100 text-red-700 border border-red-200">✗ Closed</span>';
     }
   });
-  {% endif %}
 };
 </script>
-<script src="https://maps.googleapis.com/maps/api/js?key={{ GOOGLE_MAPS_KEY }}&libraries=places,marker&v=beta&callback=initDetailMap" async defer></script>
+<script src="https://maps.googleapis.com/maps/api/js?key={{ GOOGLE_MAPS_KEY }}&libraries=places&callback=initDetailData" async defer></script>
 {% endif %}
 {% endblock %}
