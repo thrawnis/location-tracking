@@ -69,6 +69,7 @@ def _location_diff(old, new_data):
     field_labels = {
         "name": "Name",
         "category": "Category",
+        "status": "Status",
         "address": "Address",
         "city": "City",
         "state": "State",
@@ -562,11 +563,15 @@ def location_edit(request, pk):
     location = get_object_or_404(Location, pk=pk)
     unlock = is_admin(request.user)
     if request.method == "POST":
+        # Snapshot the stored values BEFORE binding — ModelForm.is_valid()
+        # mutates `location` in place, so we'd otherwise diff it against itself.
+        old = Location.objects.get(pk=location.pk)
         form = LocationForm(request.POST, instance=location, unlock_google_fields=unlock)
         if form.is_valid():
-            diff = _location_diff(location, form.cleaned_data)
+            diff = _location_diff(old, form.cleaned_data)
             form.save()
-            _log(request, AuditLog.ACTION_UPDATE, location, diff)
+            if diff != "No changes detected":   # only log real changes
+                _log(request, AuditLog.ACTION_UPDATE, location, diff)
             messages.success(request, "Waypoint updated.")
             return redirect("location_detail", pk=location.pk)
     else:
@@ -759,12 +764,11 @@ def item_edit(request, pk, item_pk):
                 parts.append('name: "{}" -> "{}"'.format(old_name, item.name))
             if old_notes != item.notes:
                 parts.append("description changed")
-            _log(
-                request, AuditLog.ACTION_UPDATE, item,
-                'Updated item in "{}": {}'.format(
-                    location.name, "; ".join(parts) or "no changes"
-                ),
-            )
+            if parts:   # only log real changes
+                _log(
+                    request, AuditLog.ACTION_UPDATE, item,
+                    'Updated item in "{}": {}'.format(location.name, "; ".join(parts)),
+                )
             return _render_items_section(request, location)
         return render(request, "tracker/partials/item_edit_form.html", {
             "location": location, "item": item, "form": form,
@@ -1324,13 +1328,16 @@ def import_locations(request):
 
 @login_required
 def activity_feed(request):
-    """Recent community activity: reviews, new waypoints, GF verifications, photos."""
+    """The current user's own recent adds/updates/deletes."""
     logs = (
         AuditLog.objects
         .select_related("user")
+        .filter(user=request.user)
         .filter(model_name__in=[
             "Location", "LocationReview", "ItemReview", "Item", "Photo",
         ])
+        # Belt-and-suspenders for any older no-op update rows.
+        .exclude(action=AuditLog.ACTION_UPDATE, detail__icontains="no changes")
         .order_by("-timestamp")[:100]
     )
     return render(request, "tracker/activity_feed.html", {"logs": logs})
