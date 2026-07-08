@@ -208,16 +208,49 @@
       </span>
     </div>
 
-    <!-- Locate: icon-only, sits next to the city/state input -->
-    <button id="locate-btn" type="button" title="Use my location"
-            class="shrink-0 flex items-center justify-center w-9 h-9 rounded-lg
-                   border border-brand/30 bg-brand/5 text-brand hover:bg-brand/10 transition-all"
-            aria-label="Use my location">
-      <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-              d="M12 8a4 4 0 100 8 4 4 0 000-8zM12 2v2m0 16v2M2 12h2m16 0h2"/>
-      </svg>
-    </button>
+    <!-- Locate + help, sitting next to the city/state input -->
+    <div class="shrink-0 flex items-center gap-1" x-data="{ helpOpen: false }">
+      <button id="locate-btn" type="button" title="Use my location"
+              class="flex items-center justify-center w-9 h-9 rounded-lg
+                     border border-brand/30 bg-brand/5 text-brand hover:bg-brand/10 transition-all"
+              aria-label="Use my location">
+        <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                d="M12 8a4 4 0 100 8 4 4 0 000-8zM12 2v2m0 16v2M2 12h2m16 0h2"/>
+        </svg>
+      </button>
+      <button type="button" @click="helpOpen = true" title="Location not precise?"
+              aria-label="Location help"
+              class="flex items-center justify-center w-6 h-6 rounded-full text-xs font-bold
+                     text-slate-400 hover:text-brand hover:bg-slate-100 transition-all">?</button>
+
+      <!-- Precise-location help modal -->
+      <div x-show="helpOpen" x-cloak
+           class="fixed inset-0 z-[2000] flex items-center justify-center p-4 bg-black/40"
+           @click="helpOpen = false">
+        <div class="bg-white rounded-2xl shadow-xl max-w-sm w-full p-5 space-y-3 text-sm text-slate-600"
+             @click.stop>
+          <div class="flex items-center justify-between">
+            <h3 class="text-base font-bold text-slate-900">Getting a precise location</h3>
+            <button @click="helpOpen = false" class="text-slate-400 hover:text-slate-700" aria-label="Close">
+              <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+            </button>
+          </div>
+          <p>Precise location comes from your phone's GPS and needs the browser's permission:</p>
+          <ul class="list-disc list-inside space-y-1 text-slate-600">
+            <li>Open the site over <strong>https</strong> and tap <strong>Locate</strong> (the ◎ button), then <strong>Allow</strong> when prompted.</li>
+            <li><strong>Brave:</strong> tap the shield/lock icon in the address bar → Site settings → <strong>Location → Allow</strong>, then reload. Brave blocks location by default.</li>
+            <li><strong>iPhone:</strong> Settings → Privacy &amp; Security → <strong>Location Services → On</strong>, and set your browser to <strong>While Using</strong>. If it still fails in Brave, try <strong>Safari</strong>.</li>
+            <li><strong>On a computer</strong> there's no GPS, so location is only city-level — that's a hardware limit, not a bug.</li>
+            <li>Any time it can't get a precise fix, just type your <strong>city, state, or zip</strong> in the box.</li>
+          </ul>
+          <button @click="helpOpen = false"
+                  class="w-full mt-1 bg-brand hover:bg-brand-dark text-white font-semibold px-4 py-2 rounded-lg transition-colors">
+            Got it
+          </button>
+        </div>
+      </div>
+    </div>
 
     <!-- Filters: collapsible popover behind a vertical-sliders (DJ fader) icon -->
     <div class="relative shrink-0" x-data="{ open: false }">
