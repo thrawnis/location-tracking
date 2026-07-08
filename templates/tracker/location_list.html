@@ -434,8 +434,14 @@
           </div>
         </div>
         {% empty %}
-        <div class="text-center py-16 text-slate-400 px-4">
+        <div class="text-center py-16 text-slate-400 px-4 space-y-2">
+          <p class="text-3xl">🗺️</p>
           <p class="text-sm font-medium text-slate-500">No waypoints yet.</p>
+          <p class="text-xs text-slate-400 leading-relaxed">
+            Search for a place in the box above (e.g. “coffee” or “tacos”),
+            tap a result on the map, and hit <strong class="text-pink-500">⭐ Rate Me!</strong>
+            to save your first waypoint.
+          </p>
         </div>
         {% endfor %}
       </div><!-- /panel-saved -->
