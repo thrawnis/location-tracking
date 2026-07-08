@@ -41,6 +41,11 @@ def is_admin(user):
     return user.is_authenticated and user.is_staff
 
 
+def can_delete(user, owner):
+    """Destructive actions are allowed for admins and the original creator."""
+    return is_admin(user) or (owner is not None and owner == user)
+
+
 # ── Audit helpers ─────────────────────────────────────────────────────────────
 
 def _get_ip(request):
@@ -264,7 +269,13 @@ def register_view(request):
             user = form.save()
             _make_admin_if_first(user)
             EmailVerification.objects.get_or_create(user=user, defaults={"verified": True})
+            # Terms were agreed via the registration checkbox.
+            TermsAcceptance.objects.get_or_create(
+                user=user, version=settings.TERMS_VERSION,
+                defaults={"ip_address": _get_ip(request)},
+            )
             login(request, user)
+            request.session["tos_accepted_version"] = settings.TERMS_VERSION
             messages.success(request, "Welcome, {}!".format(user.username))
             return redirect("location_list")
 
@@ -332,9 +343,15 @@ def register_confirm(request):
     user.save()
     _make_admin_if_first(user)
     EmailVerification.objects.create(user=user, verified=True, verified_at=timezone.now())
+    # Terms were agreed via the registration checkbox.
+    TermsAcceptance.objects.get_or_create(
+        user=user, version=settings.TERMS_VERSION,
+        defaults={"ip_address": _get_ip(request)},
+    )
     pending.delete()
     login(request, user)
     request.session["email_verified"] = True
+    request.session["tos_accepted_version"] = settings.TERMS_VERSION
     messages.success(request, "Welcome, {}! Your email is verified.".format(user.username))
     return redirect("location_list")
 
@@ -612,6 +629,8 @@ def location_edit(request, pk):
 @login_required
 def location_delete(request, pk):
     location = get_object_or_404(Location, pk=pk)
+    if not can_delete(request.user, location.created_by):
+        return HttpResponseForbidden("Only the creator or an admin can delete this waypoint.")
     if request.method == "POST":
         _log(
             request,
@@ -902,6 +921,8 @@ def photo_add(request, pk):
 def photo_delete(request, pk, photo_pk):
     location = get_object_or_404(Location, pk=pk)
     photo = get_object_or_404(Photo, pk=photo_pk, location=location)
+    if not can_delete(request.user, photo.uploaded_by):
+        return HttpResponseForbidden("Only the uploader or an admin can delete this photo.")
     detail = 'Deleted photo from "{}"'.format(location.name)
     if photo.caption:
         detail += ' (caption: "{}")'.format(photo.caption)
@@ -1165,6 +1186,8 @@ def collection_list(request):
 @require_POST
 def collection_delete(request, pk):
     coll = get_object_or_404(Collection, pk=pk)
+    if not can_delete(request.user, coll.created_by):
+        return HttpResponseForbidden("Only the creator or an admin can delete this collection.")
     _log(request, AuditLog.ACTION_DELETE, coll,
          'Deleted collection "{}"'.format(coll.name))
     coll.delete()

@@ -22,6 +22,10 @@ def normalize_case(text):
 
 class RegisterForm(UserCreationForm):
     email = forms.EmailField(required=True, help_text="You'll need to verify this address.")
+    agree_terms = forms.BooleanField(
+        required=True,
+        error_messages={"required": "You must agree to the Terms of Service to register."},
+    )
 
     class Meta:
         model = User
