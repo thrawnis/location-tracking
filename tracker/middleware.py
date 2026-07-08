@@ -1,6 +1,30 @@
 from django.conf import settings
+from django.http import HttpResponse
 from django.shortcuts import redirect
 from django.urls import reverse
+
+
+class HtmxRedirectMiddleware:
+    """Convert server redirects on HTMX requests into HX-Redirect responses.
+
+    Without this, a gate redirect (terms re-acceptance, expired session, 2FA)
+    fired during an HTMX action would swap the *full* target page into a small
+    partial container, mangling the layout. HX-Redirect makes the browser do a
+    proper full-page navigation instead."""
+
+    def __init__(self, get_response):
+        self.get_response = get_response
+
+    def __call__(self, request):
+        response = self.get_response(request)
+        if (
+            request.headers.get("HX-Request") == "true"
+            and response.status_code in (301, 302, 303, 307, 308)
+        ):
+            hx = HttpResponse(status=204)
+            hx["HX-Redirect"] = response["Location"]
+            return hx
+        return response
 
 
 # URL names that every gate must leave reachable, so one gate never blocks

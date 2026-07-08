@@ -140,6 +140,24 @@ def _totp_valid(secret, code):
         return False
 
 
+_2FA_MAX_ATTEMPTS = 6          # per window
+_2FA_WINDOW_SECONDS = 300      # 5 minutes
+
+
+def _twofa_throttled(user_pk):
+    """True if this user has burned too many wrong codes recently."""
+    return cache.get(f"twofa_fail_{user_pk}", 0) >= _2FA_MAX_ATTEMPTS
+
+
+def _twofa_record_failure(user_pk):
+    key = f"twofa_fail_{user_pk}"
+    try:
+        cache.add(key, 0, _2FA_WINDOW_SECONDS)
+        cache.incr(key)
+    except ValueError:
+        cache.set(key, 1, _2FA_WINDOW_SECONDS)
+
+
 def two_factor_verify(request):
     """Second login step: enter the authenticator code. Reached from login_view
     for users who have 2FA enabled (they are not yet logged in here)."""
@@ -152,12 +170,16 @@ def two_factor_verify(request):
         return redirect("login")
     error = None
     if request.method == "POST":
-        if _totp_valid(device.secret, request.POST.get("code", "")):
+        if _twofa_throttled(device.user_id):
+            error = "Too many attempts — wait a few minutes and try again."
+        elif _totp_valid(device.secret, request.POST.get("code", "")):
             nxt = _safe_next(request.session.pop("pre_2fa_next", "") or "")
             request.session.pop("pre_2fa_user", None)
             login(request, device.user)
             return redirect(nxt or "location_list")
-        error = "That code didn't match. Try again."
+        else:
+            _twofa_record_failure(device.user_id)
+            error = "That code didn't match. Try again."
     return render(request, "registration/two_factor_verify.html", {"error": error})
 
 
@@ -191,7 +213,9 @@ def two_factor_setup(request):
                 request.session.pop("pre_2fa_user", None)
                 login(request, user)
                 return redirect(nxt or "location_list")
-            return redirect("two_factor_settings")
+            # Continue into the app rather than dead-ending on a settings page
+            # (matters most for admins who were forced here mid-navigation).
+            return redirect("location_list")
         error = "That code didn't match — check your device's time and try again."
 
     return render(request, "registration/two_factor_setup.html", {
