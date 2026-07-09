@@ -1372,7 +1372,10 @@ const CSRF_TOKEN = '{{ csrf_token }}';
           wrapEl.appendChild(labelEl);
           wrapEl.appendChild(iconEl);
 
-          const stars = p.rating ? `★ ${p.rating}` : 'No rating';
+          const rc = p.review_count || 0;
+          const stars = p.rating
+            ? `★ ${p.rating}${rc ? ` · ${rc} review${rc === 1 ? '' : 's'}` : ''}`
+            : 'No rating';
           const [addrLine1, addrLine2] = addressLines(p.address, p.city_state);
           const gfBadge = p.gluten_free === 'dedicated'
             ? '<span style="font-size:10px;background:#d1fae5;color:#047857;padding:1px 6px;border-radius:8px;font-weight:600">🌾 GF kitchen</span>'
