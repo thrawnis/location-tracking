@@ -31,6 +31,15 @@
     .htmx-request.htmx-indicator { opacity: 1; }
     /* Instant "working" feedback on any in-flight HTMX action */
     .htmx-request { opacity: 0.55; pointer-events: none; transition: opacity 150ms; }
+    /* Static fallback for the custom brand utilities. The Tailwind CDN
+       generates these at runtime; if that ever misses (e.g. classes arriving
+       via an HTMX swap), buttons would render white-on-white and disappear.
+       These plain rules guarantee brand elements stay visible. */
+    .bg-brand { background-color: #6366f1; }
+    .bg-brand-dark, .hover\:bg-brand-dark:hover { background-color: #4f46e5; }
+    .bg-brand-light { background-color: #e0e7ff; }
+    .text-brand { color: #6366f1; }
+    .border-brand { border-color: #6366f1; }
   </style>
   {% block extra_head %}{% endblock %}
 </head>
