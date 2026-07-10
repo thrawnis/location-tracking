@@ -11,6 +11,11 @@
   .search-layout { height: calc(100vh - 130px); min-height: 540px; }
   #main-map      { height: 100%; border-radius: 0.75rem; }
 
+  /* Keep the .hidden toggle authoritative even against the mobile
+     `#content-area { display:block !important }` rule below (higher
+     specificity via the id+class selector). */
+  #content-area.hidden { display: none !important; }
+
   /* ── Cards ──────────────────────────────────────────────────── */
   .loc-card {
     display: flex; gap: 10px;
@@ -319,10 +324,76 @@
       </div>
     </div>
 
+    <!-- List / Map view toggle (list is the default) -->
+    <div id="view-toggle" class="shrink-0 flex items-center rounded-lg border border-slate-200 bg-white overflow-hidden">
+      <button id="view-list-btn" type="button" title="List view" aria-label="List view"
+              class="flex items-center gap-1 px-2.5 h-9 text-xs font-semibold text-white bg-brand transition-colors">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+          <line x1="8" y1="6" x2="20" y2="6"/><line x1="8" y1="12" x2="20" y2="12"/><line x1="8" y1="18" x2="20" y2="18"/>
+          <circle cx="4" cy="6" r="1" fill="currentColor" stroke="none"/><circle cx="4" cy="12" r="1" fill="currentColor" stroke="none"/><circle cx="4" cy="18" r="1" fill="currentColor" stroke="none"/>
+        </svg>
+        <span class="hidden sm:inline">List</span>
+      </button>
+      <button id="view-map-btn" type="button" title="Map view" aria-label="Map view"
+              class="flex items-center gap-1 px-2.5 h-9 text-xs font-semibold text-slate-500 hover:text-brand transition-colors">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+          <polygon points="9 3 3 6 3 21 9 18 15 21 21 18 21 3 15 6 9 3"/><line x1="9" y1="3" x2="9" y2="18"/><line x1="15" y1="6" x2="15" y2="21"/>
+        </svg>
+        <span class="hidden sm:inline">Map</span>
+      </button>
+    </div>
+
   </div>
 
-  <!-- ── Content: list (left/bottom) + map (right/full) ────────── -->
-  <div id="content-area" class="flex gap-3 search-layout">
+  {{ waypoints|json_script:"wp-data" }}
+
+  <!-- ── List view (default) ───────────────────────────────────── -->
+  <div id="list-view">
+
+    <!-- Sort / paging controls -->
+    <div class="flex flex-wrap items-center gap-2 mb-3">
+      <span id="wp-list-count" class="text-sm font-semibold text-slate-600 mr-auto">Loading…</span>
+
+      <label class="text-[11px] font-semibold text-slate-400 uppercase tracking-wide">Sort</label>
+      <select id="wp-sort"
+              class="text-sm border border-slate-200 rounded-lg pl-3 pr-8 py-1.5 bg-white
+                     focus:outline-none focus:ring-2 focus:ring-brand/30 focus:border-brand">
+        <option value="name">Name</option>
+        <option value="rating">Waypoint rating</option>
+        <option value="reviews">Number of reviews</option>
+        <option value="recent">Recently added</option>
+        <option value="category">Category</option>
+        <option value="distance">Distance</option>
+      </select>
+      <button id="wp-sort-dir" type="button" title="Reverse sort order"
+              aria-label="Reverse sort order"
+              class="flex items-center justify-center w-9 h-9 rounded-lg border border-slate-200
+                     bg-white text-slate-500 hover:text-brand hover:border-brand/40 transition-all">
+        <svg id="wp-sort-dir-icon" class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2"
+             stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24">
+          <path d="M3 6h11M3 12h7M3 18h5M17 5v14M17 19l3-3M17 19l-3-3"/>
+        </svg>
+      </button>
+    </div>
+
+    <div id="wp-list" class="space-y-2"></div>
+
+    <!-- Pagination -->
+    <div id="wp-pagination" class="hidden items-center justify-center gap-2 mt-5">
+      <button id="wp-prev" type="button"
+              class="px-3 py-1.5 text-sm font-semibold text-slate-600 bg-white border border-slate-200
+                     rounded-lg hover:border-brand/40 hover:text-brand disabled:opacity-40
+                     disabled:pointer-events-none transition-all">← Prev</button>
+      <span id="wp-page-info" class="text-sm text-slate-500 px-2"></span>
+      <button id="wp-next" type="button"
+              class="px-3 py-1.5 text-sm font-semibold text-slate-600 bg-white border border-slate-200
+                     rounded-lg hover:border-brand/40 hover:text-brand disabled:opacity-40
+                     disabled:pointer-events-none transition-all">Next →</button>
+    </div>
+  </div>
+
+  <!-- ── Map view (hidden until the user toggles to it) ────────── -->
+  <div id="content-area" class="hidden md:flex gap-3 search-layout">
 
     <!-- Sidebar / bottom sheet ─────────────────────────────────── -->
     <div id="side-list"
@@ -558,6 +629,24 @@ const CSRF_TOKEN = '{{ csrf_token }}';
   let distFilter     = 'all';
   let ignoreNextIdle = false;
 
+  // ── List-view state (the default home view) ───────────────────
+  let userPos        = null;      // { lat, lng } reference point for distance sort
+  let mapLoaded      = false;     // has the Google Maps library been requested?
+  let currentView    = 'list';    // 'list' | 'map'
+  let listSort       = 'name';    // sort key for the list view
+  let listSortDir    = 1;         // 1 = ascending, -1 = descending
+  let listPage       = 1;
+  const LIST_PAGE_SIZE = 10;
+  let pendingLocationQuery = null; // location typed in list view, geocoded once the map loads
+  let pendingNearbyQuery   = null; // nearby search requested from the list, run once the map loads
+  let runLocationSearch    = null; // set by initMap → runs a geocode on the map
+  const WAYPOINTS = (() => {
+    try { return JSON.parse(document.getElementById('wp-data').textContent) || []; }
+    catch (_) { return []; }
+  })();
+  WAYPOINTS.forEach(w => { w._name = (w.name || '').toLowerCase();
+                           w._loc  = [w.city, w.state, w.address].filter(Boolean).join(' ').toLowerCase(); });
+
   const MAX_RADIUS_M = 16093;   // 10 miles — the widest area the user may view/search
 
   // ── Helpers ──────────────────────────────────────────────────
@@ -776,7 +865,9 @@ const CSRF_TOKEN = '{{ csrf_token }}';
   }
 
   // ── Card helpers ─────────────────────────────────────────────
-  const allCards = () => [...document.querySelectorAll('.loc-card')];
+  // Scope to the map sidebar so the list view's own .loc-card anchors
+  // (in #wp-list) are never touched by the map's filter/highlight logic.
+  const allCards = () => [...document.querySelectorAll('#panel-saved .loc-card')];
 
   function highlightCard(id, scroll) {
     allCards().forEach(c => c.classList.toggle('active', c.dataset.id === String(id)));
@@ -1158,8 +1249,21 @@ const CSRF_TOKEN = '{{ csrf_token }}';
     if (ms !== 0) el._t = setTimeout(() => el.classList.add('hidden'), ms || 6000);
   }
 
-  // ── User location dot ─────────────────────────────────────────
+  // ── User location ─────────────────────────────────────────────
+  // A fix is useful to BOTH views: the list uses it as the distance-sort
+  // reference (free — no API call), the map drops a "you are here" dot.
+  function onLocated(lat, lng, label, zoom) {
+    userPos = { lat, lng };
+    renderList();                       // recompute distances for the list view
+    if (mainMap) {
+      placeUserDot(lat, lng, label, zoom);
+      reverseGeocodeFill(lat, lng);     // fills the location box (map-only; costs a geocode)
+    }
+  }
+
+  // ── User location dot (map only) ──────────────────────────────
   function placeUserDot(lat, lng, label, zoom) {
+    if (!mainMap) return;
     ignoreNextIdle = true;
     mainMap.setCenter({ lat, lng });
     mainMap.setZoom(zoom);
@@ -1191,7 +1295,7 @@ const CSRF_TOKEN = '{{ csrf_token }}';
       const res  = await fetch('/api/geoip/');
       const data = await res.json();
       if (data.status === 'ok') {
-        placeUserDot(data.lat, data.lng, `Approx. location: ${data.city}, ${data.region}`, 10);
+        onLocated(data.lat, data.lng, `Approx. location: ${data.city}, ${data.region}`, 10);
         const label = [data.city, data.region].filter(Boolean).join(', ');
         if (label) fillLocationSearch(label);
       } else if (data.status === 'rate_limited') {
@@ -1244,8 +1348,7 @@ const CSRF_TOKEN = '{{ csrf_token }}';
       if (!best) { showGeoError('Couldn’t get a GPS fix — using approximate (IP) location'); ipFallback(); return; }
       const acc = Math.round(best.coords.accuracy);
       const zoom = acc <= 100 ? 16 : (acc <= 800 ? 14 : 12);
-      placeUserDot(best.coords.latitude, best.coords.longitude, 'You are here', zoom);
-      reverseGeocodeFill(best.coords.latitude, best.coords.longitude);
+      onLocated(best.coords.latitude, best.coords.longitude, 'You are here', zoom);
       showGeoError(acc <= 150
         ? `📍 Located to ±${acc} m`
         : `📍 Approx. ±${acc} m — for a precise fix, allow location & go outdoors`);
@@ -1266,6 +1369,261 @@ const CSRF_TOKEN = '{{ csrf_token }}';
       { enableHighAccuracy: true, timeout: 20000, maximumAge: 0 }
     );
     timer = setTimeout(settle, 12000);   // otherwise settle on the best fix so far
+  }
+
+  // ══════════════════════════════════════════════════════════════
+  //  List view — the default home view. Renders the saved waypoints
+  //  from the embedded JSON (#wp-data): filtered, sorted and paged
+  //  entirely in the browser, with zero Google API calls.
+  // ══════════════════════════════════════════════════════════════
+
+  // Shared filters (name box + filter popover) applied to one waypoint.
+  function listFilterOk(w) {
+    const nameOk   = !nameFilter   || w._name.includes(nameFilter) || w._loc.includes(nameFilter);
+    const catOk    = !catFilter    || w.category === catFilter;
+    const statusOk = !statusFilter || w.status === statusFilter;
+    const gfOk     = !gfFilter
+                   || (gfFilter === 'dedicated' && w.gluten_free === 'dedicated')
+                   || (gfFilter === 'gf-any'    && (w.gluten_free === 'dedicated' || w.gluten_free === 'options'));
+    const mineOk   = !mineFilter || w.mine;
+    return nameOk && catOk && statusOk && gfOk && mineOk;
+  }
+
+  function waypointDistKm(w) {
+    if (!userPos || w.lat == null || w.lng == null) return Infinity;
+    return haversineKm(userPos.lat, userPos.lng, w.lat, w.lng);
+  }
+
+  // Each comparator sorts into its most useful *natural* order first (best
+  // rating first, nearest first, newest first); the reverse button flips it.
+  const LIST_COMPARATORS = {
+    name:     (a, b) => a._name.localeCompare(b._name),
+    rating:   (a, b) => (b.rating || 0) - (a.rating || 0),
+    reviews:  (a, b) => (b.review_count || 0) - (a.review_count || 0),
+    recent:   (a, b) => (b.created || 0) - (a.created || 0),
+    category: (a, b) => (a.category_display || '').localeCompare(b.category_display || '')
+                        || a._name.localeCompare(b._name),
+    distance: (a, b) => waypointDistKm(a) - waypointDistKm(b),
+  };
+
+  function sortedFilteredWaypoints() {
+    const rows = WAYPOINTS.filter(listFilterOk);
+    const cmp = LIST_COMPARATORS[listSort] || LIST_COMPARATORS.name;
+    rows.sort((a, b) => cmp(a, b) * listSortDir);
+    return rows;
+  }
+
+  const LIST_CAT_BADGE = {
+    restaurant: 'bg-indigo-100 text-indigo-700', store: 'bg-emerald-100 text-emerald-700',
+    attraction: 'bg-violet-100 text-violet-700',  other: 'bg-slate-100 text-slate-600',
+  };
+  const LIST_CAT_THUMB = {
+    restaurant: 'bg-indigo-50', store: 'bg-emerald-50',
+    attraction: 'bg-violet-50', other: 'bg-slate-100',
+  };
+
+  function listCardHtml(w) {
+    const thumb = w.photo
+      ? `<div class="w-16 h-16 shrink-0 rounded-lg overflow-hidden">
+           <img src="${w.photo}" alt="" class="w-full h-full object-cover" loading="lazy"></div>`
+      : `<div class="w-16 h-16 shrink-0 rounded-lg flex items-center justify-center text-2xl
+             ${LIST_CAT_THUMB[w.category] || LIST_CAT_THUMB.other}">${w.icon || '📍'}</div>`;
+    const loc = [w.city, w.state].filter(Boolean).join(', ') || w.address || '';
+    const dist = (userPos && w.lat != null && w.lng != null)
+      ? `<span class="text-xs font-semibold text-slate-500 whitespace-nowrap">📍 ${formatDist(waypointDistKm(w))}</span>` : '';
+    const rating = w.rating
+      ? `<span class="inline-flex items-center gap-0.5 text-amber-500 text-sm font-semibold">★ ${w.rating.toFixed(1)}</span>
+         <span class="text-xs text-slate-400">(${w.review_count})</span>`
+      : `<span class="text-xs text-slate-400">Not yet rated</span>`;
+    const badges = [
+      w.mine ? '<span class="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-violet-100 text-violet-700">✓ You reviewed</span>' : '',
+      w.status === 'want' ? '<span class="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-sky-100 text-sky-700">🌟 Want to go</span>' : '',
+      w.gluten_free === 'dedicated' ? '<span class="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-emerald-100 text-emerald-700">🌾 GF kitchen</span>'
+        : w.gluten_free === 'options' ? '<span class="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700">🌾 GF options</span>' : '',
+    ].join('');
+    return `<a href="${w.url}" class="loc-card">
+      ${thumb}
+      <div class="min-w-0 flex-1">
+        <div class="flex items-start gap-1 justify-between">
+          <p class="font-semibold text-slate-900 text-sm leading-tight truncate">${escapeHtml(w.name)}</p>
+          <span class="shrink-0 text-[10px] font-medium px-1.5 py-0.5 rounded-full ml-1
+                       ${LIST_CAT_BADGE[w.category] || LIST_CAT_BADGE.other}">${escapeHtml(w.category_display)}</span>
+        </div>
+        ${loc ? `<p class="text-xs text-slate-500 mt-0.5 truncate">${escapeHtml(loc)}</p>` : ''}
+        <div class="flex items-center gap-2 mt-1 flex-wrap">${rating}${dist}</div>
+        ${badges ? `<div class="flex items-center gap-1.5 mt-1 flex-wrap">${badges}</div>` : ''}
+      </div>
+    </a>`;
+  }
+
+  function renderList() {
+    const listEl = document.getElementById('wp-list');
+    if (!listEl) return;
+    const rows  = sortedFilteredWaypoints();
+    const total = rows.length;
+    const pages = Math.max(1, Math.ceil(total / LIST_PAGE_SIZE));
+    if (listPage > pages) listPage = pages;
+    const start = (listPage - 1) * LIST_PAGE_SIZE;
+    const slice = rows.slice(start, start + LIST_PAGE_SIZE);
+
+    const countEl = document.getElementById('wp-list-count');
+    if (countEl) countEl.textContent = total ? `${total} waypoint${total !== 1 ? 's' : ''}` : 'No waypoints';
+
+    if (!total) {
+      listEl.innerHTML = `<div class="text-center py-16 text-slate-400 px-4 space-y-2">
+        <p class="text-3xl">🗺️</p>
+        <p class="text-sm font-medium text-slate-500">${WAYPOINTS.length ? 'No waypoints match your filters.' : 'No waypoints yet.'}</p>
+        <p class="text-xs text-slate-400 leading-relaxed">${WAYPOINTS.length
+          ? 'Try clearing a filter or the search box.'
+          : 'Switch to Map view, search for a place, tap a result and hit ⭐ Rate Me! to save your first waypoint.'}</p>
+      </div>`;
+    } else {
+      listEl.innerHTML = slice.map(listCardHtml).join('');
+    }
+
+    const pag  = document.getElementById('wp-pagination');
+    const info = document.getElementById('wp-page-info');
+    const prev = document.getElementById('wp-prev');
+    const next = document.getElementById('wp-next');
+    if (pag)  { pag.classList.toggle('hidden', pages <= 1); pag.classList.toggle('flex', pages > 1); }
+    if (info) info.textContent = `Page ${listPage} of ${pages}`;
+    if (prev) prev.disabled = listPage <= 1;
+    if (next) next.disabled = listPage >= pages;
+  }
+
+  function setSortDirIcon() {
+    const icon = document.getElementById('wp-sort-dir-icon');
+    if (icon) icon.style.transform = listSortDir === 1 ? '' : 'scaleY(-1)';
+  }
+
+  // ── View toggle + lazy map loading ────────────────────────────
+  function showView(view) {
+    currentView = view;
+    document.getElementById('list-view').classList.toggle('hidden', view !== 'list');
+    document.getElementById('content-area').classList.toggle('hidden', view !== 'map');
+
+    const lb = document.getElementById('view-list-btn');
+    const mb = document.getElementById('view-map-btn');
+    lb.classList.toggle('bg-brand',      view === 'list');
+    lb.classList.toggle('text-white',    view === 'list');
+    lb.classList.toggle('text-slate-500', view !== 'list');
+    mb.classList.toggle('bg-brand',      view === 'map');
+    mb.classList.toggle('text-white',    view === 'map');
+    mb.classList.toggle('text-slate-500', view !== 'map');
+
+    if (view === 'map') {
+      if (!mapLoaded) loadMapsScript();
+      else if (mainMap) setTimeout(() => google.maps.event.trigger(mainMap, 'resize'), 60);
+    }
+  }
+
+  // Load the Google Maps JS library only when the map is first opened, so the
+  // default list view never instantiates a (billable) map or spends a call.
+  function loadMapsScript() {
+    if (mapLoaded) return;
+    mapLoaded = true;
+    const s = document.createElement('script');
+    s.src = 'https://maps.googleapis.com/maps/api/js?key={{ GOOGLE_MAPS_KEY }}&libraries=places,marker&v=beta&callback=initMap';
+    s.async = true; s.defer = true;
+    document.head.appendChild(s);
+  }
+
+  function onFiltersChanged() {
+    listPage = 1;
+    renderList();
+    updateFilterBadge();
+    if (mainMap) applyFilters();
+  }
+
+  // ── Wire up the always-on UI (works before the map ever loads) ─
+  function initCommonUI() {
+    document.getElementById('view-list-btn').addEventListener('click', () => showView('list'));
+    document.getElementById('view-map-btn').addEventListener('click',  () => showView('map'));
+
+    const sortSel = document.getElementById('wp-sort');
+    sortSel.addEventListener('change', () => {
+      listSort = sortSel.value;
+      listSortDir = 1;                                  // reset to the sort's natural order
+      listPage = 1;
+      setSortDirIcon();
+      if (listSort === 'distance' && !userPos) locateUser();   // need a fix to sort by distance
+      renderList();
+    });
+    document.getElementById('wp-sort-dir').addEventListener('click', () => {
+      listSortDir = -listSortDir;
+      setSortDirIcon();
+      renderList();
+    });
+
+    document.getElementById('wp-prev').addEventListener('click', () => {
+      if (listPage > 1) { listPage--; renderList(); window.scrollTo({ top: 0, behavior: 'smooth' }); }
+    });
+    document.getElementById('wp-next').addEventListener('click', () => {
+      listPage++; renderList(); window.scrollTo({ top: 0, behavior: 'smooth' });
+    });
+
+    // Name box — live, free filter for both views.
+    const nameInput = document.getElementById('name-search');
+    nameInput.addEventListener('input', e => {
+      nameFilter = e.target.value.trim().toLowerCase();
+      listPage = 1;
+      renderList();
+      if (mainMap) { applyFilters(); if (!nameFilter) clearNearbyResults(); }
+    });
+    nameInput.addEventListener('keydown', e => {
+      if (e.key !== 'Enter') return;
+      e.preventDefault();
+      if (!nameFilter) return;
+      // A "nearby" Google search is a map feature; run it there (switching if needed).
+      if (currentView !== 'map') showView('map');
+      if (mainMap) { showSearchAreaBtn(false); searchGooglePlaces(nameFilter); }
+      else pendingNearbyQuery = nameFilter;
+    });
+
+    // Location box — geocodes to centre the map (a map feature).
+    const locInput = document.getElementById('location-search');
+    locInput.addEventListener('keydown', e => {
+      if (e.key !== 'Enter') return;
+      e.preventDefault();
+      const q = locInput.value.trim();
+      if (!q) return;
+      if (runLocationSearch) runLocationSearch();
+      else { pendingLocationQuery = q; showView('map'); }
+    });
+    locInput.addEventListener('input', () => {
+      if (!locInput.value.trim()) { try { localStorage.removeItem(LOC_KEY); } catch (_) {} }
+    });
+
+    // Filter popover — both views.
+    document.getElementById('category-filter')?.addEventListener('change', e => { catFilter = e.target.value; onFiltersChanged(); });
+    document.getElementById('status-filter')?.addEventListener('change',  e => { statusFilter = e.target.value; onFiltersChanged(); });
+    document.getElementById('gf-filter')?.addEventListener('change',      e => { gfFilter = e.target.value; onFiltersChanged(); });
+    document.getElementById('mine-filter')?.addEventListener('change',    e => { mineFilter = e.target.checked; onFiltersChanged(); });
+    document.getElementById('clear-filters')?.addEventListener('click', () => {
+      catFilter = statusFilter = gfFilter = ''; mineFilter = false;
+      ['category-filter', 'status-filter', 'gf-filter'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
+      const mineEl = document.getElementById('mine-filter'); if (mineEl) mineEl.checked = false;
+      onFiltersChanged();
+    });
+
+    document.getElementById('locate-btn')?.addEventListener('click', locateUser);
+
+    setSortDirIcon();
+    renderList();
+
+    // Deep links from the dropdown: ?panel=mine pre-filters to your places;
+    // ?view=map opens straight into the map.
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('panel') === 'mine') {
+      mineFilter = true;
+      const mineEl = document.getElementById('mine-filter'); if (mineEl) mineEl.checked = true;
+      updateFilterBadge(); renderList();
+    }
+    if (params.get('view') === 'map') showView('map');
+
+    // Auto-locate on load so distance sorting is ready. This is free: a browser
+    // GPS fix, or our own /api/geoip endpoint — never a Google API call.
+    locateUser();
   }
 
   // ── Map initialisation (Google Maps callback) ─────────────────
@@ -1322,16 +1680,10 @@ const CSRF_TOKEN = '{{ csrf_token }}';
       });
     }
 
-    locInput.addEventListener('keydown', e => {
-      if (e.key === 'Enter') { e.preventDefault(); submitLocationSearch(); }
-    });
-
-    // Forget the saved location when the input is cleared (view stays put)
-    locInput.addEventListener('input', () => {
-      if (!locInput.value.trim()) {
-        try { localStorage.removeItem(LOC_KEY); } catch(_) {}
-      }
-    });
+    // Expose the geocode-and-centre action so the always-on location box
+    // handler (wired in initCommonUI) can run it once the map exists. The
+    // keydown/input listeners themselves live in initCommonUI.
+    runLocationSearch = submitLocationSearch;
 
     // ── Clicking Google's built-in POI icons → show the Waypoint popup ──
     mainMap.addListener('click', (e) => {
@@ -1439,73 +1791,21 @@ const CSRF_TOKEN = '{{ csrf_token }}';
         applyFilters();
       });
 
-    // ── Center on the user's current location on startup ────────
-    // Always geolocate so the map opens at your precise position (GPS on a
-    // secure origin), rather than a remembered city. locateUser() falls back
-    // to IP-based location if GPS is denied or unavailable.
-    locateUser();
+    // Drop the "you are here" dot if we already have a fix from the list view's
+    // auto-locate; otherwise locate now. Either way, no new Google API call.
+    if (userPos) placeUserDot(userPos.lat, userPos.lng, 'You are here', 13);
+    else locateUser();
 
-    // ── Wire up UI events ───────────────────────────────────────
+    // ── Wire up MAP-ONLY UI events ──────────────────────────────
+    // (The search box, filter popover, locate button, sort and view toggle
+    //  are wired once in initCommonUI so they work before the map loads.)
     document.getElementById('sidebar-close')?.addEventListener('click', () => setSidebarClosed());
     document.getElementById('sheet-handle')?.addEventListener('click', toggleSidebar);
-    document.getElementById('locate-btn')?.addEventListener('click', locateUser);
     document.getElementById('tab-saved')?.addEventListener('click',  () => switchTab('saved'));
     document.getElementById('tab-nearby')?.addEventListener('click', () => switchTab('nearby'));
 
-    document.getElementById('name-search').addEventListener('input', e => {
-      // Filters the already-loaded saved waypoints locally only — no API call.
-      nameFilter = e.target.value.trim().toLowerCase();
-      applyFilters();
-      if (!nameFilter) clearNearbyResults();
-    });
-    document.getElementById('name-search').addEventListener('keydown', e => {
-      // Nearby (Google Places) search only fires on explicit Enter, never
-      // automatically while typing.
-      if (e.key === 'Enter') {
-        e.preventDefault();
-        if (nameFilter) { showSearchAreaBtn(false); searchGooglePlaces(nameFilter); }
-      }
-    });
-
     document.getElementById('search-area-btn')?.addEventListener('click', () => {
       if (nameFilter) { showSearchAreaBtn(false); searchGooglePlaces(nameFilter); }
-    });
-
-    document.getElementById('category-filter')?.addEventListener('change', e => {
-      catFilter = e.target.value;
-      applyFilters();
-      updateFilterBadge();
-    });
-
-    document.getElementById('status-filter')?.addEventListener('change', e => {
-      statusFilter = e.target.value;
-      applyFilters();
-      updateFilterBadge();
-    });
-
-    document.getElementById('gf-filter')?.addEventListener('change', e => {
-      gfFilter = e.target.value;
-      applyFilters();
-      updateFilterBadge();
-    });
-
-    document.getElementById('mine-filter')?.addEventListener('change', e => {
-      mineFilter = e.target.checked;
-      applyFilters();
-      updateFilterBadge();
-    });
-
-    document.getElementById('clear-filters')?.addEventListener('click', () => {
-      catFilter = statusFilter = gfFilter = '';
-      mineFilter = false;
-      ['category-filter', 'status-filter', 'gf-filter'].forEach(id => {
-        const el = document.getElementById(id);
-        if (el) el.value = '';
-      });
-      const mineEl = document.getElementById('mine-filter');
-      if (mineEl) mineEl.checked = false;
-      applyFilters();
-      updateFilterBadge();
     });
 
     document.querySelectorAll('.filter-chip').forEach(chip => {
@@ -1526,22 +1826,35 @@ const CSRF_TOKEN = '{{ csrf_token }}';
       });
     });
 
-    // "My Waypoints" (dropdown) links here with ?panel=mine → the places the
-    // current user has rated/noted. ?panel=saved just opens the list.
+    // Open the sidebar list when arriving via a ?panel= deep link (the mine
+    // filter itself is already applied by initCommonUI).
     const panel = new URLSearchParams(window.location.search).get('panel');
-    if (panel === 'mine') {
-      mineFilter = true;
-      const mineEl = document.getElementById('mine-filter');
-      if (mineEl) mineEl.checked = true;
-    }
-    updateFilterBadge();
     if (panel === 'mine' || panel === 'saved') {
       switchTab('saved');
       openSidebar();
       applyFilters();
     }
+
+    // Run anything the user asked for from the list view before the map existed.
+    if (pendingLocationQuery) {
+      const locEl = document.getElementById('location-search');
+      if (locEl) locEl.value = pendingLocationQuery;
+      pendingLocationQuery = null;
+      submitLocationSearch();
+    }
+    if (pendingNearbyQuery) {
+      showSearchAreaBtn(false);
+      searchGooglePlaces(pendingNearbyQuery);
+      pendingNearbyQuery = null;
+    }
   };
+
+  // ── Kick off the always-on list view UI ───────────────────────
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initCommonUI);
+  } else {
+    initCommonUI();
+  }
 })();
 </script>
-<script src="https://maps.googleapis.com/maps/api/js?key={{ GOOGLE_MAPS_KEY }}&libraries=places,marker&v=beta&callback=initMap" async defer></script>
 {% endblock %}

@@ -498,8 +498,40 @@ def location_list(request):
         )
         .all()
     )
+
+    # A compact, JSON-serialisable snapshot of every waypoint. The default
+    # (list) view renders entirely from this payload client-side — sorting,
+    # filtering and paging happen in the browser with no extra requests, so
+    # loading the home page costs zero Google API calls.
+    category_icons = {"restaurant": "🍽️", "store": "🛍️", "attraction": "🎯", "other": "📍"}
+    waypoints = []
+    for loc in locations:
+        rating = loc.user_avg_rating if loc.user_avg_rating is not None else loc.overall_rating
+        first_photo = next(iter(loc.photos.all()), None)
+        waypoints.append({
+            "id": loc.pk,
+            "name": loc.name,
+            "category": loc.category,
+            "category_display": loc.get_category_display(),
+            "icon": category_icons.get(loc.category, "📍"),
+            "status": loc.status,
+            "gluten_free": loc.gluten_free,
+            "mine": bool(loc.mine),
+            "rating": round(float(rating), 1) if rating else None,
+            "review_count": loc.user_review_count,
+            "lat": float(loc.latitude) if loc.latitude is not None else None,
+            "lng": float(loc.longitude) if loc.longitude is not None else None,
+            "city": loc.city,
+            "state": loc.state,
+            "address": loc.address,
+            "photo": first_photo.image.url if first_photo else None,
+            "created": int(loc.created_at.timestamp()),
+            "url": "/locations/{}/".format(loc.pk),
+        })
+
     return render(request, "tracker/location_list.html", {
         "locations": locations,
+        "waypoints": waypoints,
         "category_choices": Location.CATEGORY_CHOICES,
         "status_choices": Location.STATUS_CHOICES,
         "gf_choices": Location.GF_CHOICES,
