@@ -106,7 +106,7 @@
 
         <div>
           <label class="block text-sm font-medium text-slate-700 mb-1">Overall Rating</label>
-          {% include "tracker/partials/star_input.html" with field_name="overall_rating" current_value=form.overall_rating.value whole=True %}
+          {% include "tracker/partials/star_input.html" with field_name="overall_rating" current_value=form.overall_rating.value %}
           {% if form.overall_rating.errors %}
           <p class="text-red-500 text-xs mt-1">{{ form.overall_rating.errors|join:", " }}</p>
           {% endif %}

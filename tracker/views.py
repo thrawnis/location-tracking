@@ -776,8 +776,7 @@ def item_add(request, pk):
                 try:
                     from decimal import Decimal
                     val = Decimal(initial_rating)
-                    # Dishes are rated in whole stars only (1–5).
-                    if val == val.to_integral_value() and 1 <= val <= 5:
+                    if Decimal("0.5") <= val <= 5:
                         rev = ItemReview.objects.create(
                             item=item, user=request.user, rating=val, notes=initial_notes,
                         )
