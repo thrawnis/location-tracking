@@ -775,13 +775,15 @@ def item_add(request, pk):
             # Optionally create the submitter's initial review
             initial_rating = request.POST.get("initial_rating", "").strip()
             initial_notes  = request.POST.get("initial_notes", "").strip()
+            initial_private_notes = request.POST.get("initial_private_notes", "").strip()
             if initial_rating:
                 try:
                     from decimal import Decimal
                     val = Decimal(initial_rating)
                     if Decimal("0.5") <= val <= 5:
                         rev = ItemReview.objects.create(
-                            item=item, user=request.user, rating=val, notes=initial_notes,
+                            item=item, user=request.user, rating=val,
+                            notes=initial_notes, private_notes=initial_private_notes,
                         )
                         _log(request, AuditLog.ACTION_CREATE, rev,
                              'Rated "{}" {}/5 in "{}"'.format(item.name, val, location.name))

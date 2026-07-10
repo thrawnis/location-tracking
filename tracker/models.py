@@ -196,6 +196,9 @@ class ItemReview(models.Model):
         validators=RATING_VALIDATORS,
     )
     notes = models.TextField(blank=True, help_text="Your personal review or tasting notes")
+    private_notes = models.TextField(
+        blank=True, help_text="Only visible to you — never shown to other users"
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

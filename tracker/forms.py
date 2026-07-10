@@ -181,11 +181,14 @@ class ItemReviewForm(forms.ModelForm):
 
     class Meta:
         model = ItemReview
-        fields = ["rating", "notes"]
+        fields = ["rating", "notes", "private_notes"]
         widgets = {
             "rating": forms.HiddenInput(),
             "notes": forms.Textarea(
-                attrs={"rows": 2, "placeholder": "Your review (optional)"}
+                attrs={"rows": 2, "placeholder": "Your review (optional, visible to everyone)"}
+            ),
+            "private_notes": forms.Textarea(
+                attrs={"rows": 2, "placeholder": "Private note (optional, only you can see this)"}
             ),
         }
 
