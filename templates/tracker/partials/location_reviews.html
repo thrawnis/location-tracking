@@ -3,6 +3,19 @@
   Per-user overall reviews for a location.
   Swapped via HTMX: id="location-reviews"
 {% endcomment %}
+{% if oob %}
+<!-- Out-of-band swap: keeps the header's rating pill live without a page
+     reload. Only rendered when this partial is the direct HTMX response
+     (see _render_location_reviews); never on the initial full-page include,
+     which already has its own copy of this badge in the header. -->
+{% with avg=location.avg_user_rating %}
+<span id="waypoint-rating-badge" hx-swap-oob="true" class="inline-flex items-center gap-1 text-sm font-semibold px-2.5 py-1 rounded-full
+             bg-violet-50 text-violet-700 border border-violet-200" title="Waypoint community rating">
+  {% if avg %}Waypoint {{ avg }} ★ ({% with rc=location.reviews.all|length %}{{ rc }}{% endwith %})
+  {% else %}Waypoint · Not yet rated{% endif %}
+</span>
+{% endwith %}
+{% endif %}
 <div id="location-reviews">
   <div class="flex items-center justify-between mb-3">
     <h2 class="text-sm font-semibold text-slate-500 uppercase tracking-wide">

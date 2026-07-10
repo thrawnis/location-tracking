@@ -54,9 +54,11 @@
     <!-- Rating + meta -->
     <div class="px-6 py-4 flex flex-wrap items-center justify-between gap-4 border-t border-slate-100">
       <div class="flex items-center gap-2 flex-wrap">
-        <!-- Waypoint community rating (matches the Google badge style) -->
+        <!-- Waypoint community rating (matches the Google badge style).
+             Kept fresh in real time via an HTMX out-of-band swap whenever a
+             review is added/updated/deleted — see partials/location_reviews.html -->
         {% with avg=location.avg_user_rating %}
-        <span class="inline-flex items-center gap-1 text-sm font-semibold px-2.5 py-1 rounded-full
+        <span id="waypoint-rating-badge" class="inline-flex items-center gap-1 text-sm font-semibold px-2.5 py-1 rounded-full
                      bg-violet-50 text-violet-700 border border-violet-200" title="Waypoint community rating">
           {% if avg %}Waypoint {{ avg }} ★ ({% with rc=location.reviews.all|length %}{{ rc }}{% endwith %})
           {% else %}Waypoint · Not yet rated{% endif %}

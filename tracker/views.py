@@ -1118,6 +1118,9 @@ def _render_location_reviews(request, location, review_form=None, show_form=Fals
         "my_review": my_review,
         "review_form": review_form or LocationReviewForm(instance=my_review),
         "show_form": show_form,
+        # This view is only ever hit via HTMX, so it's safe to always include
+        # the out-of-band header-badge swap (see template comment).
+        "oob": True,
     })
 
 
@@ -1457,6 +1460,50 @@ def admin_dashboard(request):
         "user_count": User.objects.count(),
         "admin_count": User.objects.filter(is_staff=True).count(),
     })
+
+
+@user_passes_test(is_admin)
+def admin_users(request):
+    """Staff-only user list. Admins can promote/demote other users here."""
+    q = request.GET.get("q", "").strip()
+    users = User.objects.order_by("-is_staff", "username")
+    if q:
+        users = users.filter(Q(username__icontains=q) | Q(email__icontains=q))
+    return render(request, "tracker/admin_users.html", {
+        "users": users,
+        "q": q,
+    })
+
+
+@user_passes_test(is_admin)
+@require_POST
+def admin_user_toggle_admin(request, pk):
+    target = get_object_or_404(User, pk=pk)
+
+    if target.pk == request.user.pk:
+        messages.error(request, "You can't change your own admin status.")
+        return redirect("admin_users")
+
+    if target.is_staff:
+        # Guard against locking everyone out of the admin area.
+        if User.objects.filter(is_staff=True).exclude(pk=target.pk).count() == 0:
+            messages.error(request, "Can't remove the last remaining admin.")
+            return redirect("admin_users")
+        target.is_staff = False
+        target.is_superuser = False
+        target.save(update_fields=["is_staff", "is_superuser"])
+        _log(request, AuditLog.ACTION_UPDATE, target,
+             'Removed admin status from "{}"'.format(target.username))
+        messages.success(request, "{} is no longer an admin.".format(target.username))
+    else:
+        target.is_staff = True
+        target.is_superuser = True
+        target.save(update_fields=["is_staff", "is_superuser"])
+        _log(request, AuditLog.ACTION_UPDATE, target,
+             'Made "{}" an admin'.format(target.username))
+        messages.success(request, "{} is now an admin.".format(target.username))
+
+    return redirect("admin_users")
 
 
 # ── Admin: Google Maps usage & cost ───────────────────────────────────────────

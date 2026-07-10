@@ -20,6 +20,48 @@ def normalize_case(text):
     return s
 
 
+# Small connector words that stay lowercase in title case, unless they're the
+# first or last word (standard title-casing convention).
+_TITLE_CASE_SMALL_WORDS = {
+    "a", "an", "and", "as", "at", "but", "by", "en", "for", "if", "in",
+    "nor", "of", "on", "or", "per", "the", "to", "v", "vs", "via",
+}
+
+
+def to_title_case(text):
+    """Always apply proper title case, regardless of how it was typed —
+    unlike normalize_case, which only fixes SHOUTING or all-lowercase.
+    Small connector words (and, of, the, ...) stay lowercase unless first
+    or last. Apostrophes are handled so "mcdonald's" -> "Mcdonald's"."""
+    if not text:
+        return text
+    s = text.strip()
+    if not any(c.isalpha() for c in s):
+        return s
+
+    tokens = re.split(r'(\s+)', s)
+    word_positions = [i for i, t in enumerate(tokens) if t.strip()]
+    if not word_positions:
+        return s
+
+    def cap(match):
+        word = match.group(0)
+        return word[0].upper() + word[1:].lower()
+
+    out = []
+    for i, tok in enumerate(tokens):
+        if not tok.strip():
+            out.append(tok)
+            continue
+        capped = re.sub(r"[A-Za-z']+", cap, tok)
+        bare = re.sub(r"[^A-Za-z]", "", tok).lower()
+        is_edge = i == word_positions[0] or i == word_positions[-1]
+        if not is_edge and bare in _TITLE_CASE_SMALL_WORDS:
+            capped = capped.lower()
+        out.append(capped)
+    return "".join(out)
+
+
 class RegisterForm(UserCreationForm):
     email = forms.EmailField(required=True, help_text="You'll need to verify this address.")
     agree_terms = forms.BooleanField(
@@ -128,7 +170,10 @@ class ItemForm(forms.ModelForm):
         }
 
     def clean_name(self):
-        return normalize_case(self.cleaned_data.get("name", ""))
+        # Dishes are always recorded in proper (title) case, regardless of
+        # how the user typed it — unlike location names, which are only
+        # fixed when SHOUTING or all-lowercase.
+        return to_title_case(self.cleaned_data.get("name", ""))
 
 
 class ItemReviewForm(forms.ModelForm):

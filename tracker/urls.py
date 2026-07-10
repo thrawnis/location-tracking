@@ -63,6 +63,8 @@ urlpatterns = [
 
     # Admin (staff-only management)
     path("manage/", views.admin_dashboard, name="admin_dashboard"),
+    path("manage/users/", views.admin_users, name="admin_users"),
+    path("manage/users/<int:pk>/toggle-admin/", views.admin_user_toggle_admin, name="admin_user_toggle_admin"),
     path("manage/maps-usage/", views.maps_usage, name="maps_usage"),
     path("admin-log/", views.audit_log_view, name="audit_log"),
 
