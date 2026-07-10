@@ -738,6 +738,7 @@ def _render_items_section(
     request, location,
     item_form=None, show_form=False,
     review_item_pk=None, review_form=None,
+    edit_item_pk=None, edit_form=None,
 ):
     # Determine the logged-in user's existing reviews (item_pk → review)
     my_reviews = {}
@@ -755,6 +756,8 @@ def _render_items_section(
         "review_item_pk": review_item_pk,
         "review_form": review_form or ItemReviewForm(),
         "my_reviews": my_reviews,
+        "edit_item_pk": edit_item_pk,
+        "edit_form": edit_form,
     })
 
 
@@ -812,12 +815,15 @@ def item_edit(request, pk, item_pk):
                     'Updated item in "{}": {}'.format(location.name, "; ".join(parts)),
                 )
             return _render_items_section(request, location)
-        return render(request, "tracker/partials/item_edit_form.html", {
-            "location": location, "item": item, "form": form,
-        })
-    return render(request, "tracker/partials/item_edit_form.html", {
-        "location": location, "item": item, "form": ItemForm(instance=item),
-    })
+        return _render_items_section(
+            request, location, edit_item_pk=item.pk, edit_form=form,
+        )
+
+    if request.GET.get("cancel"):
+        return _render_items_section(request, location)
+    return _render_items_section(
+        request, location, edit_item_pk=item.pk, edit_form=ItemForm(instance=item),
+    )
 
 
 @login_required

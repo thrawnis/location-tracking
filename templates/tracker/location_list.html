@@ -182,12 +182,12 @@
           <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/>
         </svg>
       </span>
-      <input type="search" id="name-search" placeholder="Search nearby: restaurant, coffee, park…"
+      <input type="search" id="name-search" placeholder="Search nearby: restaurant, coffee, park… (press Enter)"
              class="w-full pl-9 pr-4 py-2 text-sm border border-slate-200 rounded-lg
                     focus:outline-none focus:ring-2 focus:ring-brand/30 focus:border-brand bg-white">
     </div>
 
-    <!-- Location search — Google Places Autocomplete attaches here -->
+    <!-- Location search — explicit only (press Enter); no live autocomplete -->
     <div class="relative flex-1 min-w-[150px]">
       <svg class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none"
            fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -196,7 +196,7 @@
         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
               d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"/>
       </svg>
-      <input type="search" id="location-search" placeholder="City, state, or zip…"
+      <input type="search" id="location-search" placeholder="City, state, or zip… (press Enter)"
              autocomplete="off" spellcheck="true"
              class="w-full pl-9 pr-9 py-2 text-sm border border-slate-200 rounded-lg
                     focus:outline-none focus:ring-2 focus:ring-brand/30 focus:border-brand bg-white">
@@ -553,7 +553,6 @@ const CSRF_TOKEN = '{{ csrf_token }}';
   let gfFilter       = '';   // '' | 'dedicated' | 'gf-any'
   let mineFilter     = false; // true → only places the current user has reviewed
   let osmEntries     = [];   // { marker, cat, distKm, element }
-  let osmDebounce    = null;
   let sidebarOpen    = false;
   let osmCatFilters  = { food: true, shop: true, fuel: true, poi: true };
   let distFilter     = 'all';
@@ -1131,21 +1130,18 @@ const CSRF_TOKEN = '{{ csrf_token }}';
     });
   }
 
-  function triggerSearch() {
-    clearTimeout(osmDebounce);
-    if (nameFilter) {
-      osmDebounce = setTimeout(() => searchGooglePlaces(nameFilter), 700);
-    } else {
-      osmEntries.forEach(e => { if (e.marker) e.marker.map = null; });
-      osmEntries = [];
-      showSearchAreaBtn(false);
-      const list = document.getElementById('osm-list');
-      if (list) list.innerHTML = '<p class="text-xs text-slate-400 text-center py-6">Search for a place above to see nearby results</p>';
-      const cnt = document.getElementById('osm-result-count');
-      if (cnt) cnt.textContent = '0';
-      const fc = document.getElementById('osm-filter-count');
-      if (fc) fc.textContent = '';
-    }
+  // Nearby search is explicit-only (Enter key) — no auto-search-as-you-type,
+  // so a Google Places Text Search only fires when the user asks for it.
+  function clearNearbyResults() {
+    osmEntries.forEach(e => { if (e.marker) e.marker.map = null; });
+    osmEntries = [];
+    showSearchAreaBtn(false);
+    const list = document.getElementById('osm-list');
+    if (list) list.innerHTML = '<p class="text-xs text-slate-400 text-center py-6">Type a place above and press Enter to search nearby</p>';
+    const cnt = document.getElementById('osm-result-count');
+    if (cnt) cnt.textContent = '0';
+    const fc = document.getElementById('osm-filter-count');
+    if (fc) fc.textContent = '';
   }
 
   // ── localStorage (remembers the last location label for the search box) ──
@@ -1293,24 +1289,41 @@ const CSRF_TOKEN = '{{ csrf_token }}';
     // country-wide zoom up to the cap); the idle handler keeps it current on pan.
     updateMinZoom();
 
-    // ── Location search autocomplete ────────────────────────────
+    // ── Location search — explicit only, no live autocomplete dropdown ──
+    // Typing here never calls the Places Autocomplete API; the typed text is
+    // geocoded only when the user presses Enter.
     const locInput = document.getElementById('location-search');
-    const autocomplete = new google.maps.places.Autocomplete(locInput, {
-      types: ['geocode'],
-    });
-    autocomplete.addListener('place_changed', () => {
-      const place = autocomplete.getPlace();
-      if (!place.geometry?.location) return;
-      ignoreNextIdle = true;
-      if (place.geometry.viewport) {
-        mainMap.fitBounds(place.geometry.viewport);
-      } else {
-        mainMap.setCenter(place.geometry.location);
-        mainMap.setZoom(12);
-      }
-      saveLocation(place.name || locInput.value);
-      applyFilters();
-      if (nameFilter) { showSearchAreaBtn(false); searchGooglePlaces(nameFilter); }
+
+    function geoSpinner(on) {
+      document.getElementById('geo-spinner')?.classList.toggle('hidden', !on);
+    }
+
+    function submitLocationSearch() {
+      const q = locInput.value.trim();
+      if (!q) return;
+      geoSpinner(true);
+      geocoder.geocode({ address: q }, (results, status) => {
+        geoSpinner(false);
+        if (status !== 'OK' || !results[0]) {
+          showGeoError(`Couldn't find "${q}"`);
+          return;
+        }
+        const place = results[0];
+        ignoreNextIdle = true;
+        if (place.geometry.viewport) {
+          mainMap.fitBounds(place.geometry.viewport);
+        } else {
+          mainMap.setCenter(place.geometry.location);
+          mainMap.setZoom(12);
+        }
+        saveLocation(place.formatted_address || q);
+        applyFilters();
+        if (nameFilter) { showSearchAreaBtn(false); searchGooglePlaces(nameFilter); }
+      });
+    }
+
+    locInput.addEventListener('keydown', e => {
+      if (e.key === 'Enter') { e.preventDefault(); submitLocationSearch(); }
     });
 
     // Forget the saved location when the input is cleared (view stays put)
@@ -1440,9 +1453,18 @@ const CSRF_TOKEN = '{{ csrf_token }}';
     document.getElementById('tab-nearby')?.addEventListener('click', () => switchTab('nearby'));
 
     document.getElementById('name-search').addEventListener('input', e => {
+      // Filters the already-loaded saved waypoints locally only — no API call.
       nameFilter = e.target.value.trim().toLowerCase();
       applyFilters();
-      triggerSearch();
+      if (!nameFilter) clearNearbyResults();
+    });
+    document.getElementById('name-search').addEventListener('keydown', e => {
+      // Nearby (Google Places) search only fires on explicit Enter, never
+      // automatically while typing.
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        if (nameFilter) { showSearchAreaBtn(false); searchGooglePlaces(nameFilter); }
+      }
     });
 
     document.getElementById('search-area-btn')?.addEventListener('click', () => {
