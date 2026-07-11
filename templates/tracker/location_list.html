@@ -740,6 +740,8 @@ const CSRF_TOKEN = '{{ csrf_token }}';
     const wpRatingLine = (saved && saved.rating)
       ? `Waypoint Rating: <strong>${saved.rating}/5</strong> (${saved.count})`
       : 'Waypoint Rating: <span style="color:#94a3b8">not yet rated</span>';
+    const groupRatingLine = (saved && saved.groupSummary)
+      ? `<p style="font-size:12px;color:#6d28d9;margin:1px 0 0;font-weight:600">${escapeHtml(saved.groupSummary)}</p>` : '';
     const openHtml = openNow !== undefined
       ? `<span style="font-size:11px;font-weight:600;color:${openNow ? '#059669' : '#dc2626'}">${openNow ? '✓ Open' : '✗ Closed'}</span>`
       : '';
@@ -753,6 +755,7 @@ const CSRF_TOKEN = '{{ csrf_token }}';
       ${addr ? `<p style="font-size:12px;color:#475569;margin:2px 0">${escapeHtml(addr)}</p>` : ''}
       ${googleRatingLine ? `<p style="font-size:12px;color:#334155;margin:3px 0 0">${googleRatingLine}</p>` : ''}
       <p style="font-size:12px;color:#334155;margin:1px 0 0">${wpRatingLine}</p>
+      ${groupRatingLine}
       ${openHtml ? `<p style="margin:4px 0 0">${openHtml}</p>` : ''}
       <div style="display:flex;gap:10px;margin-top:8px;flex-wrap:wrap;align-items:center">
         <a href="${gmapsUrl}" target="_blank" rel="noopener"
@@ -1529,6 +1532,8 @@ const CSRF_TOKEN = '{{ csrf_token }}';
       ? `<span class="inline-flex items-center gap-0.5 text-amber-500 text-sm font-semibold">★ ${w.rating.toFixed(1)}</span>
          <span class="text-xs text-slate-400">(${w.review_count})</span>`
       : `<span class="text-xs text-slate-400">Not yet rated</span>`;
+    const groupLine = w.group_rating_summary
+      ? `<p class="text-xs font-semibold text-violet-600 mt-0.5">${escapeHtml(w.group_rating_summary)}</p>` : '';
     const badges = [
       w.mine ? '<span class="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-violet-100 text-violet-700">✓ You reviewed</span>' : '',
       w.status === 'want' ? '<span class="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-sky-100 text-sky-700">🌟 Want to go</span>' : '',
@@ -1545,6 +1550,7 @@ const CSRF_TOKEN = '{{ csrf_token }}';
         </div>
         ${loc ? `<p class="text-xs text-slate-500 mt-0.5 truncate">${escapeHtml(loc)}</p>` : ''}
         <div class="flex items-center gap-2 mt-1 flex-wrap">${rating}${dist}</div>
+        ${groupLine}
         ${badges ? `<div class="flex items-center gap-1.5 mt-1 flex-wrap">${badges}</div>` : ''}
       </div>
     </a>`;
@@ -1868,9 +1874,14 @@ const CSRF_TOKEN = '{{ csrf_token }}';
           const p = feature.properties;
 
           // Index saved waypoints by Google Place ID so POI popups can show
-          // the Waypoint rating alongside the Google rating.
+          // the Waypoint rating (and a compact group-rating summary, if any
+          // of the current user's own groups have rated it) alongside the
+          // Google rating.
           if (p.google_place_id) {
-            savedByPlaceId[p.google_place_id] = { rating: p.rating, count: p.review_count || 0 };
+            savedByPlaceId[p.google_place_id] = {
+              rating: p.rating, count: p.review_count || 0,
+              groupSummary: p.group_rating_summary || null,
+            };
           }
 
           const wrapEl = document.createElement('div');
@@ -1890,6 +1901,8 @@ const CSRF_TOKEN = '{{ csrf_token }}';
           const stars = p.rating
             ? `★ ${p.rating}${rc ? ` · ${rc} review${rc === 1 ? '' : 's'}` : ''}`
             : 'No rating';
+          const groupLine = p.group_rating_summary
+            ? `<p style="font-size:12px;color:#6d28d9;margin:0 0 5px;font-weight:600">${escapeHtml(p.group_rating_summary)}</p>` : '';
           const [addrLine1, addrLine2] = addressLines(p.address, p.city_state);
           const gfBadge = p.gluten_free === 'dedicated'
             ? '<span style="font-size:10px;background:#d1fae5;color:#047857;padding:1px 6px;border-radius:8px;font-weight:600">🌾 GF kitchen</span>'
@@ -1911,7 +1924,8 @@ const CSRF_TOKEN = '{{ csrf_token }}';
             ${addrLine1 ? `<p style="font-size:12px;color:#475569;margin:0">📍 ${escapeHtml(addrLine1)}</p>` : ''}
             ${addrLine2 ? `<p style="font-size:12px;color:#475569;margin:0;padding-left:15px">${escapeHtml(addrLine2)}</p>` : ''}
             ${gfBadge ? `<p style="margin:4px 0 0;display:flex;gap:4px;flex-wrap:wrap">${gfBadge}</p>` : ''}
-            <p style="font-size:12px;color:#ec4899;margin:5px 0 8px">${stars}</p>
+            <p style="font-size:12px;color:#ec4899;margin:5px 0 3px">${stars}</p>
+            ${groupLine}
             <a href="${p.url}" style="font-size:12px;color:#6366f1;font-weight:600">View details →</a>
           </div>`;
 

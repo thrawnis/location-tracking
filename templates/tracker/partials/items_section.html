@@ -241,7 +241,7 @@
                   class="text-[11px] font-medium text-brand hover:text-brand-dark transition-colors">
             Edit review →
           </button>
-          {% else %}
+          {% elif location_rated %}
           <span class="text-[11px] text-slate-400">Have you tried this?</span>
           <button hx-get="{% url 'item_review_upsert' location.pk item.pk %}"
                   hx-target="#items-section" hx-swap="outerHTML"
@@ -252,6 +252,12 @@
             </svg>
             Rate this
           </button>
+          {% else %}
+          <span class="text-[11px] text-slate-400">Rate the waypoint overall to review its dishes</span>
+          <a href="#location-reviews"
+             class="text-[11px] font-semibold text-slate-500 hover:text-brand transition-colors">
+            Rate waypoint →
+          </a>
           {% endif %}
         </div>
         {% endif %}
@@ -281,6 +287,7 @@
       {% endif %}
     </div>
 
+    {% if location_rated %}
     <div>
       <label class="block text-xs font-medium text-slate-600 mb-1">Your initial rating (optional)</label>
       {% include "tracker/partials/star_input.html" with field_name="initial_rating" current_value="" %}
@@ -305,6 +312,13 @@
                        focus:border-brand focus:ring-2 focus:ring-brand/20 resize-none"></textarea>
       <p class="text-[10px] text-slate-400 mt-1">Requires a rating above to be saved.</p>
     </div>
+    {% else %}
+    <p class="text-xs text-slate-500 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2">
+      You can add the item now, but you'll need to
+      <a href="#location-reviews" class="text-brand hover:underline font-medium">rate the waypoint overall</a>
+      before rating or reviewing it.
+    </p>
+    {% endif %}
 
     <div class="flex gap-2 pt-1">
       <button type="submit"

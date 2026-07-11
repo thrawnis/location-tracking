@@ -382,3 +382,73 @@ class PendingRegistration(models.Model):
 
     def __str__(self):
         return f"pending {self.username} <{self.email}>"
+
+
+def _invite_token():
+    import secrets
+    return secrets.token_urlsafe(24)
+
+
+class FriendGroup(models.Model):
+    """A private friend group. Not publicly listed or searchable — the only
+    way in is a member sharing the group's invite link, and even then a
+    requester sees just the name and member count until an existing member
+    approves their join request."""
+    name = models.CharField(max_length=120)
+    created_by = models.ForeignKey(
+        User, on_delete=models.SET_NULL, null=True, blank=True, related_name="+"
+    )
+    # The invite link's random ID — deliberately not derived from the group
+    # name so the URL alone reveals nothing. Any member can rotate it
+    # (invalidating the old link) via group_invite_regenerate.
+    invite_token = models.CharField(max_length=64, unique=True, default=_invite_token)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["name"]
+
+    def __str__(self):
+        return self.name
+
+    @property
+    def member_count(self):
+        return self.memberships.count()
+
+
+class FriendGroupMembership(models.Model):
+    group = models.ForeignKey(FriendGroup, on_delete=models.CASCADE, related_name="memberships")
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="friend_group_memberships")
+    joined_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        unique_together = [("group", "user")]
+
+    def __str__(self):
+        return f"{self.user.username} in {self.group.name}"
+
+
+class FriendGroupJoinRequest(models.Model):
+    STATUS_PENDING  = "pending"
+    STATUS_APPROVED = "approved"
+    STATUS_DENIED   = "denied"
+    STATUS_CHOICES = [
+        (STATUS_PENDING,  "Pending"),
+        (STATUS_APPROVED, "Approved"),
+        (STATUS_DENIED,   "Denied"),
+    ]
+
+    group = models.ForeignKey(FriendGroup, on_delete=models.CASCADE, related_name="join_requests")
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="friend_group_join_requests")
+    status = models.CharField(max_length=10, choices=STATUS_CHOICES, default=STATUS_PENDING)
+    requested_at = models.DateTimeField(auto_now_add=True)
+    decided_at = models.DateTimeField(null=True, blank=True)
+    decided_by = models.ForeignKey(
+        User, on_delete=models.SET_NULL, null=True, blank=True, related_name="+"
+    )
+
+    class Meta:
+        unique_together = [("group", "user")]
+        ordering = ["-requested_at"]
+
+    def __str__(self):
+        return f"{self.user.username} -> {self.group.name} ({self.status})"

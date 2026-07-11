@@ -45,6 +45,15 @@ urlpatterns = [
     # Public user profiles
     path("u/<str:username>/", views.user_profile, name="user_profile"),
 
+    # Friend groups (private — no public directory)
+    path("groups/", views.group_list, name="group_list"),
+    path("groups/<int:pk>/", views.group_detail, name="group_detail"),
+    path("groups/<int:pk>/leave/", views.group_leave, name="group_leave"),
+    path("groups/<int:pk>/invite/regenerate/", views.group_invite_regenerate, name="group_invite_regenerate"),
+    path("groups/<int:pk>/requests/<int:request_pk>/approve/", views.group_request_approve, name="group_request_approve"),
+    path("groups/<int:pk>/requests/<int:request_pk>/deny/", views.group_request_deny, name="group_request_deny"),
+    path("groups/invite/<str:token>/", views.group_invite_preview, name="group_invite_preview"),
+
     # Import / Export
     path("export/", views.export_locations, name="export_locations"),
     path("import/", views.import_locations, name="import_locations"),

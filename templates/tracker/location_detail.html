@@ -119,6 +119,22 @@
         {% include "tracker/partials/location_reviews.html" with location=location my_review=my_review show_form=open_review review_form=location_review_form %}
       </div>
 
+      <!-- Group ratings — only ever a breakdown of YOUR OWN groups; never
+           shown in map popups/list cards (see the compact summary there) -->
+      {% if group_rating_breakdown %}
+      <div class="bg-violet-50 border border-violet-200 rounded-xl shadow-sm p-5">
+        <h2 class="text-sm font-semibold text-violet-700 uppercase tracking-wide mb-2">Group Ratings</h2>
+        <ul class="space-y-1">
+          {% for b in group_rating_breakdown %}
+          <li class="text-sm text-violet-900">
+            <a href="{% url 'group_detail' b.group.pk %}" class="font-semibold hover:underline">{{ b.group.name }}</a>:
+            ★ {{ b.avg }} <span class="text-violet-500">({{ b.count }} rating{{ b.count|pluralize }})</span>
+          </li>
+          {% endfor %}
+        </ul>
+      </div>
+      {% endif %}
+
       <!-- Public notes -->
       {% if location.public_notes %}
       <div class="bg-white rounded-xl border border-slate-200 shadow-sm p-5">
@@ -173,7 +189,7 @@
         {% include "tracker/partials/collections_widget.html" with location=location all_collections=all_collections %}
       </div>
       <div class="bg-white rounded-xl border border-slate-200 shadow-sm p-5">
-        {% include "tracker/partials/items_section.html" with location=location item_form=item_form %}
+        {% include "tracker/partials/items_section.html" with location=location item_form=item_form location_rated=my_review %}
       </div>
 
       <!-- Chain linking: share items/dishes with other branches of the same chain -->

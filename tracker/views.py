@@ -28,7 +28,8 @@ from .forms import (
     PhotoForm, RegisterForm, TakeoutImportForm,
 )
 from .models import (
-    AuditLog, ChainGroup, Collection, EmailVerification, GlutenFreeVote, Item, ItemReview,
+    AuditLog, ChainGroup, Collection, EmailVerification, FriendGroup, FriendGroupJoinRequest,
+    FriendGroupMembership, GlutenFreeVote, Item, ItemReview,
     Location, LocationReview, OsmSearchCache, PendingRegistration, Photo,
     TermsAcceptance, TOTPDevice,
 )
@@ -491,6 +492,64 @@ def terms_decline(request):
     return redirect("login")
 
 
+# ── Friend group ratings ────────────────────────────────────────────────────
+# Groups are private (see FriendGroup below); a waypoint's per-group rating
+# breakdown is only ever computed relative to the CURRENT user's own group
+# memberships, so it can never leak another user's group membership or another
+# group's data — only groups the viewer is themselves a member of.
+
+def _my_groups_with_members(user):
+    """[(FriendGroup, {member user_id, ...}), ...] for every group `user` belongs to."""
+    if not user.is_authenticated:
+        return []
+    group_ids = FriendGroupMembership.objects.filter(user=user).values_list("group_id", flat=True)
+    groups = FriendGroup.objects.filter(pk__in=group_ids).order_by("name")
+    return [
+        (g, set(FriendGroupMembership.objects.filter(group=g).values_list("user_id", flat=True)))
+        for g in groups
+    ]
+
+
+def _bulk_group_rating_breakdown(user, location_ids):
+    """{location_id: [{'group': FriendGroup, 'avg': float, 'count': int}, ...]}
+    — one query regardless of how many locations, restricted to the given ids."""
+    my_groups = _my_groups_with_members(user)
+    if not my_groups or not location_ids:
+        return {}
+    all_member_ids = set().union(*(ids for _, ids in my_groups))
+    reviews = LocationReview.objects.filter(
+        location_id__in=location_ids, user_id__in=all_member_ids
+    ).values("location_id", "user_id", "rating")
+    by_location = {}
+    for r in reviews:
+        by_location.setdefault(r["location_id"], []).append(r)
+    result = {}
+    for loc_id, revs in by_location.items():
+        breakdown = []
+        for group, member_ids in my_groups:
+            ratings = [r["rating"] for r in revs if r["user_id"] in member_ids]
+            if ratings:
+                breakdown.append({
+                    "group": group,
+                    "avg": round(float(sum(ratings) / len(ratings)), 1),
+                    "count": len(ratings),
+                })
+        if breakdown:
+            result[loc_id] = breakdown
+    return result
+
+
+def _group_rating_summary_text(breakdown):
+    """Compact one-liner for map popups/list cards/search results, where a
+    full per-group breakdown would take up too much space."""
+    if not breakdown:
+        return None
+    avgs = [b["avg"] for b in breakdown]
+    if len(avgs) == 1:
+        return "Group rating: {:.1f}".format(avgs[0])
+    return "Group ratings range: {:.1f}–{:.1f}".format(min(avgs), max(avgs))
+
+
 # ── Locations ─────────────────────────────────────────────────────────────────
 
 @login_required
@@ -512,8 +571,10 @@ def location_list(request):
     # filtering and paging happen in the browser with no extra requests, so
     # loading the home page costs zero Google API calls.
     category_icons = {"restaurant": "🍽️", "store": "🛍️", "attraction": "🎯", "other": "📍"}
+    loc_list = list(locations)
+    group_breakdowns = _bulk_group_rating_breakdown(request.user, [loc.pk for loc in loc_list])
     waypoints = []
-    for loc in locations:
+    for loc in loc_list:
         rating = loc.user_avg_rating if loc.user_avg_rating is not None else loc.overall_rating
         first_photo = next(iter(loc.photos.all()), None)
         waypoints.append({
@@ -527,6 +588,7 @@ def location_list(request):
             "mine": bool(loc.mine),
             "rating": round(float(rating), 1) if rating else None,
             "review_count": loc.user_review_count,
+            "group_rating_summary": _group_rating_summary_text(group_breakdowns.get(loc.pk)),
             "lat": float(loc.latitude) if loc.latitude is not None else None,
             "lng": float(loc.longitude) if loc.longitude is not None else None,
             "city": loc.city,
@@ -578,6 +640,8 @@ def location_detail(request, pk):
         if location.chain_group_id else []
     )
 
+    group_rating_breakdown = _bulk_group_rating_breakdown(request.user, [location.pk]).get(location.pk, [])
+
     return render(request, "tracker/location_detail.html", {
         "location": location,
         "item_form": ItemForm(),
@@ -593,6 +657,7 @@ def location_detail(request, pk):
         "location_review_form": LocationReviewForm(instance=my_review) if open_review else None,
         "chain_candidates": chain_candidates,
         "chain_linked": chain_linked,
+        "group_rating_breakdown": group_rating_breakdown,
     })
 
 
@@ -835,8 +900,10 @@ def locations_geojson(request):
         )
         .prefetch_related("photos")
     )
+    loc_list = list(qs)
+    group_breakdowns = _bulk_group_rating_breakdown(request.user, [loc.pk for loc in loc_list])
     features = []
-    for loc in qs:
+    for loc in loc_list:
         rating = loc.user_avg_rating if loc.user_avg_rating is not None else loc.overall_rating
         first_photo = next(iter(loc.photos.all()), None)
         features.append({
@@ -852,6 +919,7 @@ def locations_geojson(request):
                 "category_display": loc.get_category_display(),
                 "rating": str(round(rating, 1)) if rating else None,
                 "review_count": loc.num_reviews,
+                "group_rating_summary": _group_rating_summary_text(group_breakdowns.get(loc.pk)),
                 "google_place_id": loc.google_place_id,
                 "status": loc.status,
                 "gluten_free": loc.gluten_free,
@@ -916,6 +984,10 @@ def _render_items_section(
         "my_reviews": my_reviews,
         "edit_item_pk": edit_item_pk,
         "edit_form": edit_form,
+        # Reviewing an item/dish requires having rated the waypoint overall first.
+        "location_rated": (
+            request.user.is_authenticated and location.reviews.filter(user=request.user).exists()
+        ),
     })
 
 
@@ -936,10 +1008,18 @@ def item_add(request, pk):
                 item.save()
                 _log(request, AuditLog.ACTION_CREATE, item,
                      'Added item "{}" to "{}"'.format(item.name, location.name))
-            # Optionally create/update the submitter's initial review
+            # Optionally create/update the submitter's initial review — same
+            # rule as item_review_upsert: requires having rated the waypoint
+            # overall first (the item itself is still added either way).
             initial_rating = request.POST.get("initial_rating", "").strip()
             initial_notes  = request.POST.get("initial_notes", "").strip()
             initial_private_notes = request.POST.get("initial_private_notes", "").strip()
+            if initial_rating and not location.reviews.filter(user=request.user).exists():
+                messages.error(
+                    request,
+                    'Item added. Rate "{}" overall before your dish rating can be saved.'.format(location.name),
+                )
+                initial_rating = ""
             if initial_rating:
                 try:
                     from decimal import Decimal
@@ -994,6 +1074,14 @@ def item_review_upsert(request, pk, item_pk):
     location = get_object_or_404(Location, pk=pk)
     item = get_object_or_404(_item_queryset_for_location(location), pk=item_pk)
     existing = ItemReview.objects.filter(item=item, user=request.user).first()
+
+    # Reviewing an item/dish requires having rated the waypoint overall first
+    # (editing an existing item review is still always allowed).
+    if not existing and not location.reviews.filter(user=request.user).exists():
+        messages.error(
+            request, 'Rate "{}" overall before reviewing its items/dishes.'.format(location.name),
+        )
+        return _render_items_section(request, location)
 
     if request.method == "POST":
         form = ItemReviewForm(request.POST, instance=existing)
@@ -1432,6 +1520,175 @@ def user_profile(request, username):
         "profile_user": profile_user,
         "collections": collections,
     })
+
+
+# ── Friend groups ────────────────────────────────────────────────────────────
+# Private, invite-only groups. There is no public directory or search — the
+# only way in is a member sharing the group's invite link (a random token,
+# not the group name), and even then a requester sees only the group's name
+# and member count until an existing member approves their join request.
+
+def _is_group_member(user, group):
+    return group.memberships.filter(user=user).exists()
+
+
+@login_required
+def group_list(request):
+    """The current user's own groups only."""
+    groups = FriendGroup.objects.filter(memberships__user=request.user).order_by("name")
+    if request.method == "POST":
+        name = (request.POST.get("name") or "").strip()
+        if not name:
+            messages.error(request, "Please enter a group name.")
+        else:
+            group = FriendGroup.objects.create(name=name, created_by=request.user)
+            FriendGroupMembership.objects.create(group=group, user=request.user)
+            _log(request, AuditLog.ACTION_CREATE, group, 'Created group "{}"'.format(group.name))
+            messages.success(request, 'Group "{}" created.'.format(group.name))
+            return redirect("group_detail", pk=group.pk)
+    return render(request, "tracker/group_list.html", {"groups": groups})
+
+
+@login_required
+def group_detail(request, pk):
+    group = get_object_or_404(FriendGroup, pk=pk)
+    if not _is_group_member(request.user, group):
+        return HttpResponseForbidden("You're not a member of this group.")
+
+    members = User.objects.filter(friend_group_memberships__group=group).order_by("username")
+    pending_requests = list(
+        group.join_requests.filter(status=FriendGroupJoinRequest.STATUS_PENDING).select_related("user")
+    )
+
+    member_ids = set(members.values_list("pk", flat=True))
+    rated_location_ids = list(
+        LocationReview.objects.filter(user_id__in=member_ids).values_list("location_id", flat=True).distinct()
+    )
+    locations = (
+        Location.objects.filter(pk__in=rated_location_ids)
+        .annotate(user_avg_rating=Avg("reviews__rating"))
+        .order_by("name")
+    )
+    # Breakdown is always relative to the VIEWER's own group memberships (not
+    # just this group), so it's consistent with what shows on the waypoint
+    # detail page and never depends on which group's page you're looking at.
+    group_breakdowns = _bulk_group_rating_breakdown(request.user, rated_location_ids)
+    waypoints = [
+        {
+            "location": loc,
+            "system_rating": round(float(loc.user_avg_rating if loc.user_avg_rating is not None else loc.overall_rating), 1)
+                if (loc.user_avg_rating is not None or loc.overall_rating) else None,
+            "breakdown": group_breakdowns.get(loc.pk, []),
+        }
+        for loc in locations
+    ]
+
+    invite_url = request.build_absolute_uri(reverse("group_invite_preview", args=[group.invite_token]))
+
+    return render(request, "tracker/group_detail.html", {
+        "group": group,
+        "members": members,
+        "pending_requests": pending_requests,
+        "waypoints": waypoints,
+        "invite_url": invite_url,
+    })
+
+
+@login_required
+def group_invite_preview(request, token):
+    """What a non-member sees from an invite link: name + member count only."""
+    group = get_object_or_404(FriendGroup, invite_token=token)
+    if _is_group_member(request.user, group):
+        return redirect("group_detail", pk=group.pk)
+    existing = FriendGroupJoinRequest.objects.filter(group=group, user=request.user).first()
+
+    if request.method == "POST":
+        if existing and existing.status == FriendGroupJoinRequest.STATUS_PENDING:
+            pass  # already pending — no-op
+        elif existing:
+            existing.status = FriendGroupJoinRequest.STATUS_PENDING
+            existing.decided_at = None
+            existing.decided_by = None
+            existing.save(update_fields=["status", "decided_at", "decided_by"])
+        else:
+            existing = FriendGroupJoinRequest.objects.create(group=group, user=request.user)
+        _log(request, AuditLog.ACTION_CREATE, existing,
+             'Requested to join group "{}"'.format(group.name))
+        messages.success(request, "Request sent — a member of the group needs to approve it.")
+        return redirect("group_invite_preview", token=token)
+
+    return render(request, "tracker/group_invite_preview.html", {
+        "group": group,
+        "existing_request": existing,
+    })
+
+
+def _group_request_decide(request, pk, request_pk, approve):
+    group = get_object_or_404(FriendGroup, pk=pk)
+    if not _is_group_member(request.user, group):
+        return HttpResponseForbidden("Only group members can decide on join requests.")
+    join_req = get_object_or_404(
+        FriendGroupJoinRequest, pk=request_pk, group=group,
+        status=FriendGroupJoinRequest.STATUS_PENDING,
+    )
+    join_req.status = FriendGroupJoinRequest.STATUS_APPROVED if approve else FriendGroupJoinRequest.STATUS_DENIED
+    join_req.decided_at = timezone.now()
+    join_req.decided_by = request.user
+    join_req.save(update_fields=["status", "decided_at", "decided_by"])
+    if approve:
+        FriendGroupMembership.objects.get_or_create(group=group, user=join_req.user)
+        _log(request, AuditLog.ACTION_UPDATE, group,
+             'Approved "{}" to join group "{}"'.format(join_req.user.username, group.name))
+        messages.success(request, "{} added to the group.".format(join_req.user.username))
+    else:
+        _log(request, AuditLog.ACTION_UPDATE, group,
+             'Denied "{}" for group "{}"'.format(join_req.user.username, group.name))
+        messages.success(request, "Request denied.")
+    return redirect("group_detail", pk=group.pk)
+
+
+@login_required
+@require_POST
+def group_request_approve(request, pk, request_pk):
+    return _group_request_decide(request, pk, request_pk, approve=True)
+
+
+@login_required
+@require_POST
+def group_request_deny(request, pk, request_pk):
+    return _group_request_decide(request, pk, request_pk, approve=False)
+
+
+@login_required
+@require_POST
+def group_invite_regenerate(request, pk):
+    group = get_object_or_404(FriendGroup, pk=pk)
+    if not _is_group_member(request.user, group):
+        return HttpResponseForbidden("Only group members can do that.")
+    from .models import _invite_token
+    group.invite_token = _invite_token()
+    group.save(update_fields=["invite_token"])
+    _log(request, AuditLog.ACTION_UPDATE, group,
+         'Regenerated invite link for group "{}"'.format(group.name))
+    messages.success(request, "Invite link regenerated — the old link no longer works.")
+    return redirect("group_detail", pk=group.pk)
+
+
+@login_required
+@require_POST
+def group_leave(request, pk):
+    group = get_object_or_404(FriendGroup, pk=pk)
+    membership = FriendGroupMembership.objects.filter(group=group, user=request.user).first()
+    if not membership:
+        return redirect("group_list")
+    membership.delete()
+    _log(request, AuditLog.ACTION_DELETE, group, 'Left group "{}"'.format(group.name))
+    if not group.memberships.exists():
+        group.delete()
+        messages.success(request, "You left the group. It had no other members, so it was removed.")
+    else:
+        messages.success(request, "You left the group.")
+    return redirect("group_list")
 
 
 # ── Export ────────────────────────────────────────────────────────────────────

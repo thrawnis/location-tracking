@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+{% block title %}Join {{ group.name }} – Waypoint{% endblock %}
+
+{% block content %}
+<div class="max-w-md mx-auto">
+  <div class="bg-white rounded-2xl border border-slate-200 shadow-sm p-8 text-center">
+    <div class="w-16 h-16 bg-brand/10 rounded-full flex items-center justify-center mx-auto mb-4">
+      <svg class="w-8 h-8 text-brand" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+              d="M17 20h5v-2a4 4 0 00-3-3.87M9 20H4v-2a4 4 0 013-3.87m6-1.13a4 4 0 10-4-4 4 4 0 004 4zm6 0a4 4 0 10-3.24-6.32"/>
+      </svg>
+    </div>
+    <h1 class="text-xl font-bold text-slate-900 mb-1">{{ group.name }}</h1>
+    <p class="text-sm text-slate-500 mb-6">{{ group.member_count }} member{{ group.member_count|pluralize }}</p>
+
+    {% if existing_request.status == "pending" %}
+    <p class="text-sm text-slate-600 bg-slate-50 border border-slate-200 rounded-lg px-4 py-3">
+      Your request to join is waiting on a member to approve it.
+    </p>
+    {% elif existing_request.status == "denied" %}
+    <p class="text-sm text-slate-500 mb-3">Your last request to join wasn't approved.</p>
+    <form method="post">
+      {% csrf_token %}
+      <button type="submit"
+              class="bg-brand hover:bg-brand-dark text-white font-semibold px-6 py-2.5 rounded-lg transition-colors">
+        Request again
+      </button>
+    </form>
+    {% else %}
+    <p class="text-sm text-slate-500 mb-4">
+      You'll need an existing member to approve your request before you can see this group's
+      members or shared waypoints.
+    </p>
+    <form method="post">
+      {% csrf_token %}
+      <button type="submit"
+              class="bg-brand hover:bg-brand-dark text-white font-semibold px-6 py-2.5 rounded-lg transition-colors">
+        Request to join
+      </button>
+    </form>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}
