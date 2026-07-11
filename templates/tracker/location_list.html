@@ -73,6 +73,26 @@
   }
   .filter-chip.chip-off { opacity: 0.35; background: #f1f5f9; }
 
+  /* ── Quick nearby-search chips (Restaurants, Retail, …) ───────
+     Only whole chips that fit on one line are shown — extras are
+     hidden by JS (fitQuickChips), not clipped by CSS overflow. */
+  #quick-search-chips { display: flex; gap: 6px; overflow: hidden; }
+  .qs-chip {
+    display: inline-flex; align-items: center; gap: 4px; flex-shrink: 0;
+    font-size: 11px; font-weight: 600; color: #475569;
+    padding: 3px 9px; border-radius: 20px; border: 1.5px solid #e2e8f0;
+    background: #f8fafc; cursor: pointer; white-space: nowrap;
+    transition: background 120ms, border-color 120ms, color 120ms;
+  }
+  .qs-chip:hover { background: #eef2ff; border-color: #a5b4fc; color: #4338ca; }
+
+  /* ── "Set a location first" feedback (no Tailwind dependency, so it
+     always renders even if the CDN's runtime JIT hasn't caught up) ── */
+  .loc-required-flash {
+    border-color: #f43f5e !important;
+    box-shadow: 0 0 0 3px rgba(244,63,94,.25) !important;
+  }
+
   /* ── Distance filter chips ───────────────────────────────────── */
   .dist-chip {
     display: inline-flex; align-items: center;
@@ -190,6 +210,19 @@
       <input type="search" id="name-search" placeholder="Search nearby: restaurant, coffee, park… (press Enter)"
              class="w-full pl-9 pr-4 py-2 text-sm border border-slate-200 rounded-lg
                     focus:outline-none focus:ring-2 focus:ring-brand/30 focus:border-brand bg-white">
+
+      <!-- Quick nearby-search touch targets — click fills the box above and
+           searches immediately. Only as many as fit on one line are shown. -->
+      <div id="quick-search-chips" class="mt-1.5">
+        <button type="button" class="qs-chip" data-q="restaurant">🍽️ Restaurants</button>
+        <button type="button" class="qs-chip" data-q="retail store">🛍️ Retail</button>
+        <button type="button" class="qs-chip" data-q="lodging">🏨 Lodging</button>
+        <button type="button" class="qs-chip" data-q="coffee">☕ Coffee</button>
+        <button type="button" class="qs-chip" data-q="bar">🍸 Bars</button>
+        <button type="button" class="qs-chip" data-q="grocery store">🛒 Groceries</button>
+        <button type="button" class="qs-chip" data-q="gas station">⛽ Gas</button>
+        <button type="button" class="qs-chip" data-q="park">🌳 Parks</button>
+      </div>
     </div>
 
     <!-- Location search — explicit only (press Enter); no live autocomplete -->
@@ -1252,13 +1285,13 @@ const CSRF_TOKEN = '{{ csrf_token }}';
   // ── User location ─────────────────────────────────────────────
   // A fix is useful to BOTH views: the list uses it as the distance-sort
   // reference (free — no API call), the map drops a "you are here" dot.
-  function onLocated(lat, lng, label, zoom) {
+  // boxText: 'Current Location' for a precise fix, an approximate "City, ST"
+  // label for a coarse one, or falsy to leave the location box untouched.
+  function onLocated(lat, lng, label, zoom, boxText) {
     userPos = { lat, lng };
     renderList();                       // recompute distances for the list view
-    if (mainMap) {
-      placeUserDot(lat, lng, label, zoom);
-      reverseGeocodeFill(lat, lng);     // fills the location box (map-only; costs a geocode)
-    }
+    if (boxText) fillLocationSearch(boxText);
+    if (mainMap) placeUserDot(lat, lng, label, zoom);
   }
 
   // ── User location dot (map only) ──────────────────────────────
@@ -1290,37 +1323,42 @@ const CSRF_TOKEN = '{{ csrf_token }}';
     }
   }
 
-  async function ipFallback() {
+  // Free (non-Google) location lookup by IP, used both as the last-resort
+  // position source and to label the location box for approximate fixes.
+  async function fetchGeoIp() {
     try {
-      const res  = await fetch('/api/geoip/');
-      const data = await res.json();
-      if (data.status === 'ok') {
-        onLocated(data.lat, data.lng, `Approx. location: ${data.city}, ${data.region}`, 10);
-        const label = [data.city, data.region].filter(Boolean).join(', ');
-        if (label) fillLocationSearch(label);
-      } else if (data.status === 'rate_limited') {
-        showGeoError('Location lookup rate-limited — try again in a minute');
-      } else if (data.status === 'private') {
-        showGeoError('Private network — enter a location manually');
-      } else {
-        showGeoError('Could not determine location automatically');
-      }
+      const res = await fetch('/api/geoip/');
+      return await res.json();
     } catch (_) {
-      showGeoError('Location service unavailable');
+      return { status: 'network_error' };
     }
   }
 
-  function reverseGeocodeFill(lat, lng) {
-    geocoder.geocode({ location: { lat, lng } }, (results, status) => {
-      if (status === 'OK' && results[0]) {
-        const comps = results[0].address_components;
-        const city  = comps.find(c => c.types.includes('locality'))?.long_name ||
-                      comps.find(c => c.types.includes('administrative_area_level_2'))?.long_name || '';
-        const state = comps.find(c => c.types.includes('administrative_area_level_1'))?.short_name || '';
-        const label = [city, state].filter(Boolean).join(', ');
-        if (label) fillLocationSearch(label);
-      }
-    });
+  async function ipFallback() {
+    const data = await fetchGeoIp();
+    if (data.status === 'ok') {
+      const label = [data.city, data.region].filter(Boolean).join(', ');
+      onLocated(data.lat, data.lng, `Approx. location: ${data.city}, ${data.region}`, 10, label || null);
+    } else if (data.status === 'rate_limited') {
+      showGeoError('Location lookup rate-limited — try again in a minute');
+    } else if (data.status === 'private') {
+      showGeoError('Private network — enter a location manually');
+    } else if (data.status === 'network_error') {
+      showGeoError('Location service unavailable');
+    } else {
+      showGeoError('Could not determine location automatically');
+    }
+  }
+
+  // A coarse GPS fix already gives us a good enough position (better than
+  // IP), so it's used as-is for placement/distance — this just labels the
+  // location box for the user, via the free IP lookup rather than a
+  // (billable) Google reverse-geocode.
+  async function fillApproxLocationLabel() {
+    const data = await fetchGeoIp();
+    if (data.status !== 'ok') return;   // leave the box empty — search stays disabled
+    const label = [data.city, data.region].filter(Boolean).join(', ');
+    if (label) fillLocationSearch(label);
   }
 
   function locateUser() {
@@ -1348,8 +1386,13 @@ const CSRF_TOKEN = '{{ csrf_token }}';
       if (!best) { showGeoError('Couldn’t get a GPS fix — using approximate (IP) location'); ipFallback(); return; }
       const acc = Math.round(best.coords.accuracy);
       const zoom = acc <= 100 ? 16 : (acc <= 800 ? 14 : 12);
-      onLocated(best.coords.latitude, best.coords.longitude, 'You are here', zoom);
-      showGeoError(acc <= 150
+      const precise = acc <= 150;
+      // Precise fix → "Current Location" (no API call needed). Coarse fix →
+      // labelled via the free IP lookup rather than a billable reverse-geocode.
+      onLocated(best.coords.latitude, best.coords.longitude, 'You are here', zoom,
+                precise ? 'Current Location' : null);
+      if (!precise) fillApproxLocationLabel();
+      showGeoError(precise
         ? `📍 Located to ±${acc} m`
         : `📍 Approx. ±${acc} m — for a precise fix, allow location & go outdoors`);
     };
@@ -1527,6 +1570,53 @@ const CSRF_TOKEN = '{{ csrf_token }}';
     if (mainMap) applyFilters();
   }
 
+  // ── "Location required" gate ────────────────────────────────────
+  // A nearby search needs a location as its centre. Rather than silently
+  // searching around whatever the map happens to be centred on, require the
+  // location box to have text (typed, "Current Location", or an approximate
+  // label) before any search — Google or otherwise — is allowed to run.
+  function hasLocationText() {
+    const el = document.getElementById('location-search');
+    return !!(el && el.value.trim());
+  }
+
+  function flashLocationRequired() {
+    const el = document.getElementById('location-search');
+    if (!el) return;
+    el.classList.add('loc-required-flash');
+    el.focus();
+    clearTimeout(el._flashT);
+    el._flashT = setTimeout(() => el.classList.remove('loc-required-flash'), 1200);
+  }
+
+  function triggerNearbySearch(query) {
+    if (!query) return;
+    if (!hasLocationText()) { flashLocationRequired(); return; }
+    // A "nearby" Google search is a map feature; run it there (switching if needed).
+    if (currentView !== 'map') showView('map');
+    if (mainMap) { showSearchAreaBtn(false); searchGooglePlaces(query); }
+    else pendingNearbyQuery = query;
+  }
+
+  // ── Quick nearby-search chips (Restaurants, Retail, …) ────────
+  // Populate the name box and search immediately; only show as many chips
+  // as fit on one line under it (no wrapping to a second line).
+  function fitQuickChips() {
+    const container = document.getElementById('quick-search-chips');
+    if (!container) return;
+    const chips = [...container.children];
+    const max = container.clientWidth;
+    const gapPx = 6;
+    let used = 0;
+    chips.forEach((chip, i) => {
+      chip.style.display = '';               // show to measure its natural width
+      const w = chip.offsetWidth;
+      const need = used + w + (i > 0 ? gapPx : 0);
+      if (need <= max) { used = need; }
+      else { chip.style.display = 'none'; }
+    });
+  }
+
   // ── Wire up the always-on UI (works before the map ever loads) ─
   function initCommonUI() {
     document.getElementById('view-list-btn').addEventListener('click', () => showView('list'));
@@ -1565,12 +1655,24 @@ const CSRF_TOKEN = '{{ csrf_token }}';
     nameInput.addEventListener('keydown', e => {
       if (e.key !== 'Enter') return;
       e.preventDefault();
-      if (!nameFilter) return;
-      // A "nearby" Google search is a map feature; run it there (switching if needed).
-      if (currentView !== 'map') showView('map');
-      if (mainMap) { showSearchAreaBtn(false); searchGooglePlaces(nameFilter); }
-      else pendingNearbyQuery = nameFilter;
+      triggerNearbySearch(nameFilter);
     });
+
+    // Quick-search chips (Restaurants, Retail, …) — fill the box and search now.
+    document.getElementById('quick-search-chips')?.addEventListener('click', e => {
+      const chip = e.target.closest('.qs-chip');
+      if (!chip) return;
+      const q = chip.dataset.q;
+      nameInput.value = q;
+      nameFilter = q.trim().toLowerCase();
+      listPage = 1;
+      renderList();
+      if (mainMap) applyFilters();
+      triggerNearbySearch(nameFilter);
+    });
+    fitQuickChips();
+    let chipResizeT;
+    window.addEventListener('resize', () => { clearTimeout(chipResizeT); chipResizeT = setTimeout(fitQuickChips, 120); });
 
     // Location box — geocodes to centre the map (a map feature).
     const locInput = document.getElementById('location-search');
@@ -1793,7 +1895,10 @@ const CSRF_TOKEN = '{{ csrf_token }}';
     document.getElementById('tab-nearby')?.addEventListener('click', () => switchTab('nearby'));
 
     document.getElementById('search-area-btn')?.addEventListener('click', () => {
-      if (nameFilter) { showSearchAreaBtn(false); searchGooglePlaces(nameFilter); }
+      if (!nameFilter) return;
+      if (!hasLocationText()) { flashLocationRequired(); return; }
+      showSearchAreaBtn(false);
+      searchGooglePlaces(nameFilter);
     });
 
     document.querySelectorAll('.filter-chip').forEach(chip => {

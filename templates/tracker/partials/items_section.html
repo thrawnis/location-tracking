@@ -44,15 +44,12 @@
       <!-- Header row (tap to expand) -->
       <div class="flex items-start gap-2 px-3 py-2.5 cursor-pointer select-none" @click="open = !open">
         <div class="min-w-0 flex-1">
-          <div class="flex items-center gap-2 flex-wrap">
-            <p class="font-semibold text-sm text-slate-800">{{ item.name }}</p>
-            {% if my_review %}
+          <p class="font-semibold text-sm text-slate-800">{{ item.name }}</p>
+          {% if my_review %}
+          <p class="mt-0.5">
             <span class="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-violet-100 text-violet-700"
                   title="You reviewed this">✓ Reviewed</span>
-            {% endif %}
-          </div>
-          {% if item.notes %}
-          <p class="text-xs text-slate-500 mt-0.5 leading-snug">{{ item.notes }}</p>
+          </p>
           {% endif %}
           <!-- Aggregate rating — always visible -->
           <div class="flex items-center gap-1.5 mt-1">
@@ -110,10 +107,6 @@
             {% if edit_form.name.errors %}
             <p class="text-red-500 text-xs mt-1">{{ edit_form.name.errors|join:", " }}</p>
             {% endif %}
-          </div>
-          <div>
-            <label class="block text-[11px] font-medium text-slate-600 mb-1">Description</label>
-            {{ edit_form.notes }}
           </div>
           <div class="flex gap-2">
             <button type="submit"
@@ -286,11 +279,6 @@
       {% if item_form.name.errors %}
       <p class="text-red-500 text-xs mt-1">{{ item_form.name.errors|join:", " }}</p>
       {% endif %}
-    </div>
-
-    <div>
-      <label class="block text-xs font-medium text-slate-600 mb-1">Description</label>
-      {{ item_form.notes }}
     </div>
 
     <div>

@@ -834,19 +834,14 @@ def item_edit(request, pk, item_pk):
     location = get_object_or_404(Location, pk=pk)
     item = get_object_or_404(Item, pk=item_pk, location=location)
     if request.method == "POST":
-        old_name, old_notes = item.name, item.notes
+        old_name = item.name
         form = ItemForm(request.POST, instance=item)
         if form.is_valid():
             form.save()
-            parts = []
             if old_name != item.name:
-                parts.append('name: "{}" -> "{}"'.format(old_name, item.name))
-            if old_notes != item.notes:
-                parts.append("description changed")
-            if parts:   # only log real changes
                 _log(
                     request, AuditLog.ACTION_UPDATE, item,
-                    'Updated item in "{}": {}'.format(location.name, "; ".join(parts)),
+                    'Updated item in "{}": name: "{}" -> "{}"'.format(location.name, old_name, item.name),
                 )
             return _render_items_section(request, location)
         return _render_items_section(

@@ -7,6 +7,12 @@ from django.contrib.auth.models import User
 from .models import Collection, Item, ItemReview, Location, LocationReview, Photo
 
 
+# A run of letters (Unicode-aware, so accented letters like "ñ" stay part of
+# the same word instead of starting a new one) with embedded apostrophes
+# glued on, e.g. "mcdonald's" or "jalapeño" each match as a single run.
+_WORD_RUN_RE = re.compile(r"(?:[^\W\d_]|')+")
+
+
 def normalize_case(text):
     """Title-case a value only if the user typed it in ALL CAPS or all lowercase
     (i.e. not intentional casing). Mixed-case values are returned untouched."""
@@ -16,7 +22,7 @@ def normalize_case(text):
     if not any(c.isalpha() for c in s):
         return s
     if s == s.upper() or s == s.lower():
-        return re.sub(r"[A-Za-z']+", lambda m: m.group(0).capitalize(), s)
+        return _WORD_RUN_RE.sub(lambda m: m.group(0).capitalize(), s)
     return s
 
 
@@ -53,7 +59,7 @@ def to_title_case(text):
         if not tok.strip():
             out.append(tok)
             continue
-        capped = re.sub(r"[A-Za-z']+", cap, tok)
+        capped = _WORD_RUN_RE.sub(cap, tok)
         bare = re.sub(r"[^A-Za-z]", "", tok).lower()
         is_edge = i == word_positions[0] or i == word_positions[-1]
         if not is_edge and bare in _TITLE_CASE_SMALL_WORDS:
@@ -163,10 +169,9 @@ class ItemForm(forms.ModelForm):
 
     class Meta:
         model = Item
-        fields = ["name", "notes"]
+        fields = ["name"]
         widgets = {
             "name": forms.TextInput(attrs={"placeholder": "Item or dish name"}),
-            "notes": forms.Textarea(attrs={"rows": 2, "placeholder": "Description (optional)"}),
         }
 
     def clean_name(self):
