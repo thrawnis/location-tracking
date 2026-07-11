@@ -73,6 +73,13 @@
         </span>
         {% endif %}
         <span id="open-now-badge"></span>
+        {% if location.has_coords %}
+        <a href="https://www.google.com/maps/search/?api=1&query={{ location.latitude }},{{ location.longitude }}"
+           target="_blank" rel="noopener"
+           class="text-sm text-brand hover:underline">
+          Open in Google Maps →
+        </a>
+        {% endif %}
       </div>
       {% if user|is_superuser_role or location.created_by == user %}
       <div class="flex items-center gap-2">
@@ -119,7 +126,7 @@
            shown in map popups/list cards (see the compact summary there) -->
       {% if group_rating_breakdown %}
       <div class="bg-violet-50 border border-violet-200 rounded-xl shadow-sm p-5">
-        <h2 class="text-sm font-semibold text-violet-700 uppercase tracking-wide mb-2">Group Ratings</h2>
+        <h2 class="text-sm font-semibold text-violet-700 uppercase tracking-wide mb-2">My Group Ratings</h2>
         <ul class="space-y-1">
           {% for b in group_rating_breakdown %}
           <li class="text-sm text-violet-900">
@@ -154,23 +161,6 @@
       </div>
       {% endif %}
 
-      <!-- Location line (map intentionally omitted) -->
-      {% if location.has_coords %}
-      <div class="bg-white rounded-xl border border-slate-200 shadow-sm px-4 py-3 flex items-center gap-2">
-        <svg class="w-4 h-4 text-slate-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"/>
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"/>
-        </svg>
-        <p class="text-xs text-slate-500 truncate">{{ location.address|default:"No address" }}</p>
-        <a href="https://www.google.com/maps/search/?api=1&query={{ location.latitude }},{{ location.longitude }}"
-           target="_blank" rel="noopener"
-           class="ml-auto shrink-0 text-xs text-brand hover:underline">
-          Open in Google Maps →
-        </a>
-      </div>
-      {% endif %}
-
       <!-- Photos section -->
       <div class="bg-white rounded-xl border border-slate-200 shadow-sm p-5">
         {% include "tracker/partials/photos_section.html" with location=location photo_form=photo_form %}
@@ -178,14 +168,14 @@
 
     </div>
 
-    <!-- Right sidebar: collections + items -->
+    <!-- Right sidebar: items + collections -->
     <div class="space-y-5">
+      <div class="bg-white rounded-xl border border-slate-200 shadow-sm p-5">
+        {% include "tracker/partials/items_section.html" with location=location item_form=item_form location_rated=my_review %}
+      </div>
       <!-- Collections (HTMX-swappable) -->
       <div class="bg-white rounded-xl border border-slate-200 shadow-sm p-5">
         {% include "tracker/partials/collections_widget.html" with location=location all_collections=all_collections %}
-      </div>
-      <div class="bg-white rounded-xl border border-slate-200 shadow-sm p-5">
-        {% include "tracker/partials/items_section.html" with location=location item_form=item_form location_rated=my_review %}
       </div>
 
       <!-- Chain linking: share items/dishes with other branches of the same chain -->
