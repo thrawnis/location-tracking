@@ -27,6 +27,7 @@
         {% if location.address %}
         <p class="text-sm text-white/80 mt-1">{{ location.address }}</p>
         {% endif %}
+        {% include "tracker/partials/google_maps_link.html" with location=location link_class="text-sm text-white hover:underline inline-block mt-1" %}
       </div>
     </div>
     {% endif %}
@@ -48,6 +49,7 @@
       {% if location.address %}
       <p class="text-sm text-slate-500 mt-1">{{ location.address }}</p>
       {% endif %}
+      {% include "tracker/partials/google_maps_link.html" with location=location link_class="text-sm text-brand hover:underline inline-block mt-1" %}
     </div>
     {% endif %}
 
@@ -73,22 +75,6 @@
         </span>
         {% endif %}
         <span id="open-now-badge"></span>
-        {% if location.google_place_id %}
-        <!-- Deep-links to the actual Google Business listing rather than a
-             bare coordinate pin, using Google's documented Place ID query
-             format: https://developers.google.com/maps/documentation/urls -->
-        <a href="https://www.google.com/maps/search/?api=1&query={{ location.name|urlencode }}&query_place_id={{ location.google_place_id|urlencode }}"
-           target="_blank" rel="noopener"
-           class="text-sm text-brand hover:underline">
-          Open in Google Maps →
-        </a>
-        {% elif location.has_coords %}
-        <a href="https://www.google.com/maps/search/?api=1&query={{ location.latitude }},{{ location.longitude }}"
-           target="_blank" rel="noopener"
-           class="text-sm text-brand hover:underline">
-          Open in Google Maps →
-        </a>
-        {% endif %}
       </div>
       {% if user|is_superuser_role or location.created_by == user %}
       <div class="flex items-center gap-2">
