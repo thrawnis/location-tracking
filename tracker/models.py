@@ -81,6 +81,11 @@ class Location(models.Model):
     created_by = models.ForeignKey(
         User, on_delete=models.SET_NULL, null=True, blank=True, related_name="locations"
     )
+    chain_group = models.ForeignKey(
+        "ChainGroup", on_delete=models.SET_NULL, null=True, blank=True, related_name="locations",
+        help_text="Links this waypoint with other branches of the same chain "
+                   "(e.g. every Burger King), sharing their items/dishes and item reviews.",
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -112,6 +117,20 @@ class Location(models.Model):
     @property
     def review_count(self):
         return self.reviews.count()
+
+
+class ChainGroup(models.Model):
+    """Links multiple physical Locations that are branches of the same
+    chain/franchise — e.g. every Burger King — so their items/dishes and
+    item reviews are shared across branches. Each location keeps its own
+    address, hours, and location-level rating/reviews separate; only items
+    (and their reviews) are pooled across the group."""
+
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        names = ", ".join(self.locations.order_by("name").values_list("name", flat=True)[:3])
+        return "Chain: {}".format(names)
 
 
 class Collection(models.Model):

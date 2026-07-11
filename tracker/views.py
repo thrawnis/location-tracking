@@ -28,7 +28,7 @@ from .forms import (
     PhotoForm, RegisterForm, TakeoutImportForm,
 )
 from .models import (
-    AuditLog, Collection, EmailVerification, GlutenFreeVote, Item, ItemReview,
+    AuditLog, ChainGroup, Collection, EmailVerification, GlutenFreeVote, Item, ItemReview,
     Location, LocationReview, OsmSearchCache, PendingRegistration, Photo,
     TermsAcceptance, TOTPDevice,
 )
@@ -559,12 +559,25 @@ def location_detail(request, pk):
     my_item_reviews = {
         rev.item_id: rev
         for rev in ItemReview.objects.filter(
-            item__location=location, user=request.user
+            item__in=_item_queryset_for_location(location), user=request.user
         ).select_related("item")
     }
     # "Rate Me!" from the map lands here with ?rate=1 to open the review form
     open_review = request.GET.get("rate") == "1"
     gf_my_vote = location.gf_votes.filter(user=request.user).first()
+
+    # Chain-linking: other waypoints with the same name (case-insensitive) not
+    # already in this one's chain group — candidates to link as branches of
+    # the same chain. And the branches already linked, if any.
+    chain_candidates = Location.objects.filter(name__iexact=location.name).exclude(pk=location.pk)
+    if location.chain_group_id:
+        chain_candidates = chain_candidates.exclude(chain_group_id=location.chain_group_id)
+    chain_candidates = list(chain_candidates.order_by("city", "address")[:20])
+    chain_linked = (
+        list(location.chain_group.locations.exclude(pk=location.pk).order_by("city", "address"))
+        if location.chain_group_id else []
+    )
+
     return render(request, "tracker/location_detail.html", {
         "location": location,
         "item_form": ItemForm(),
@@ -578,6 +591,8 @@ def location_detail(request, pk):
         # Auto-open the location review form when arriving via "Rate Me!"
         "open_review": open_review,
         "location_review_form": LocationReviewForm(instance=my_review) if open_review else None,
+        "chain_candidates": chain_candidates,
+        "chain_linked": chain_linked,
     })
 
 
@@ -682,6 +697,13 @@ def location_delete(request, pk):
         if not reason:
             messages.error(request, "Please provide a reason for deleting this waypoint.")
             return render(request, "tracker/location_confirm_delete.html", {"location": location})
+        # If this location is chain-linked, items it happens to "own" (Item.
+        # location) are still shared with the rest of the group — reassign
+        # them to a surviving branch instead of letting CASCADE delete them.
+        if location.chain_group_id:
+            sibling = location.chain_group.locations.exclude(pk=location.pk).first()
+            if sibling:
+                Item.objects.filter(location=location).update(location=sibling)
         _log(
             request,
             AuditLog.ACTION_DELETE,
@@ -692,6 +714,83 @@ def location_delete(request, pk):
         messages.success(request, "Waypoint deleted.")
         return redirect("location_list")
     return render(request, "tracker/location_confirm_delete.html", {"location": location})
+
+
+def _merge_chain_group_items(group):
+    """After grouping, collapse same-named (case-insensitive) items across
+    the group's locations into one shared Item, moving reviews over (a user
+    who'd already reviewed both copies keeps only the one on the survivor)."""
+    items = Item.objects.filter(location__chain_group_id=group.pk).order_by("pk")
+    kept_by_name = {}
+    for item in items:
+        key = item.name.strip().lower()
+        keeper = kept_by_name.get(key)
+        if keeper is None:
+            kept_by_name[key] = item
+            continue
+        for review in item.reviews.all():
+            if ItemReview.objects.filter(item=keeper, user_id=review.user_id).exists():
+                review.delete()   # user already reviewed the surviving item — drop the dupe
+            else:
+                review.item = keeper
+                review.save(update_fields=["item"])
+        item.delete()
+
+
+@login_required
+@require_POST
+def location_link(request, pk, target_pk):
+    """Link two same-named waypoints (e.g. two Burger King branches) into a
+    shared chain group, so their items/dishes and item reviews are pooled.
+    Location-level info (address, hours, its own rating/reviews) stays put."""
+    location = get_object_or_404(Location, pk=pk)
+    target = get_object_or_404(Location, pk=target_pk)
+    if location.name.strip().lower() != target.name.strip().lower():
+        return HttpResponseForbidden(
+            "Chain-linking is only for waypoints with the same name (different branches)."
+        )
+
+    if location.chain_group_id and target.chain_group_id:
+        if location.chain_group_id != target.chain_group_id:
+            old_group_id = target.chain_group_id
+            Location.objects.filter(chain_group_id=old_group_id).update(chain_group_id=location.chain_group_id)
+            ChainGroup.objects.filter(pk=old_group_id).delete()
+    elif location.chain_group_id:
+        target.chain_group_id = location.chain_group_id
+        target.save(update_fields=["chain_group_id"])
+    elif target.chain_group_id:
+        location.chain_group_id = target.chain_group_id
+        location.save(update_fields=["chain_group_id"])
+    else:
+        group = ChainGroup.objects.create()
+        Location.objects.filter(pk__in=[location.pk, target.pk]).update(chain_group_id=group.pk)
+
+    location.refresh_from_db()
+    _merge_chain_group_items(location.chain_group)
+    _log(request, AuditLog.ACTION_UPDATE, location,
+         'Linked "{}" with "{}" as the same chain'.format(location.name, target.name))
+    messages.success(request, 'Linked with "{}" — their items/dishes are now shared.'.format(target.name))
+    return redirect("location_detail", pk=location.pk)
+
+
+@login_required
+@require_POST
+def location_unlink(request, pk):
+    """Remove this waypoint from its chain group. Items it originally added
+    stay with it; items only visible via other branches stop showing here."""
+    location = get_object_or_404(Location, pk=pk)
+    group = location.chain_group
+    if not group:
+        return redirect("location_detail", pk=location.pk)
+    location.chain_group = None
+    location.save(update_fields=["chain_group"])
+    if group.locations.count() < 2:
+        Location.objects.filter(chain_group_id=group.pk).update(chain_group_id=None)
+        group.delete()
+    _log(request, AuditLog.ACTION_UPDATE, location,
+         'Unlinked "{}" from its chain group'.format(location.name))
+    messages.success(request, "Unlinked from the chain group.")
+    return redirect("location_detail", pk=location.pk)
 
 
 @login_required
@@ -770,10 +869,18 @@ def locations_geojson(request):
 
 # ── Items (HTMX) ──────────────────────────────────────────────────────────────
 
+def _item_queryset_for_location(location):
+    """Items visible for this location — its own, or (if chain-linked, see
+    ChainGroup) every item shared across the whole chain group."""
+    if location.chain_group_id:
+        return Item.objects.filter(location__chain_group_id=location.chain_group_id)
+    return Item.objects.filter(location=location)
+
+
 def _annotated_items(location):
     """Items with avg_rating and review_count annotations, reviews prefetched."""
     return (
-        location.items
+        _item_queryset_for_location(location)
         .annotate(
             avg_rating=Avg("reviews__rating"),
             review_count=Count("reviews", distinct=True),
@@ -781,6 +888,7 @@ def _annotated_items(location):
         )
         .prefetch_related("reviews__user")
         .order_by("name")
+        .distinct()
     )
 
 
@@ -794,7 +902,7 @@ def _render_items_section(
     my_reviews = {}
     if request.user.is_authenticated:
         for rev in ItemReview.objects.filter(
-            item__location=location, user=request.user
+            item__in=_item_queryset_for_location(location), user=request.user
         ).select_related("item"):
             my_reviews[rev.item_id] = rev
 
@@ -817,12 +925,18 @@ def item_add(request, pk):
     if request.method == "POST":
         form = ItemForm(request.POST)
         if form.is_valid():
-            item = form.save(commit=False)
-            item.location = location
-            item.save()
-            _log(request, AuditLog.ACTION_CREATE, item,
-                 'Added item "{}" to "{}"'.format(item.name, location.name))
-            # Optionally create the submitter's initial review
+            name = form.cleaned_data["name"]
+            # Chain-linked locations share one item list — reuse a same-named
+            # (case-insensitive) item from anywhere in the group instead of
+            # creating a duplicate.
+            item = _item_queryset_for_location(location).filter(name__iexact=name).first()
+            if not item:
+                item = form.save(commit=False)
+                item.location = location
+                item.save()
+                _log(request, AuditLog.ACTION_CREATE, item,
+                     'Added item "{}" to "{}"'.format(item.name, location.name))
+            # Optionally create/update the submitter's initial review
             initial_rating = request.POST.get("initial_rating", "").strip()
             initial_notes  = request.POST.get("initial_notes", "").strip()
             initial_private_notes = request.POST.get("initial_private_notes", "").strip()
@@ -831,9 +945,10 @@ def item_add(request, pk):
                     from decimal import Decimal
                     val = Decimal(initial_rating)
                     if Decimal("0.5") <= val <= 5:
-                        rev = ItemReview.objects.create(
-                            item=item, user=request.user, rating=val,
-                            notes=initial_notes, private_notes=initial_private_notes,
+                        rev, _created = ItemReview.objects.update_or_create(
+                            item=item, user=request.user,
+                            defaults={"rating": val, "notes": initial_notes,
+                                      "private_notes": initial_private_notes},
                         )
                         _log(request, AuditLog.ACTION_CREATE, rev,
                              'Rated "{}" {}/5 in "{}"'.format(item.name, val, location.name))
@@ -850,7 +965,7 @@ def item_edit(request, pk, item_pk):
     if not is_superuser_role(request.user):
         return HttpResponseForbidden("Only superusers/admins can edit items.")
     location = get_object_or_404(Location, pk=pk)
-    item = get_object_or_404(Item, pk=item_pk, location=location)
+    item = get_object_or_404(_item_queryset_for_location(location), pk=item_pk)
     if request.method == "POST":
         old_name = item.name
         form = ItemForm(request.POST, instance=item)
@@ -877,7 +992,7 @@ def item_edit(request, pk, item_pk):
 def item_review_upsert(request, pk, item_pk):
     """Create or update the logged-in user's review for one item."""
     location = get_object_or_404(Location, pk=pk)
-    item = get_object_or_404(Item, pk=item_pk, location=location)
+    item = get_object_or_404(_item_queryset_for_location(location), pk=item_pk)
     existing = ItemReview.objects.filter(item=item, user=request.user).first()
 
     if request.method == "POST":
@@ -913,7 +1028,7 @@ def item_review_upsert(request, pk, item_pk):
 def item_review_delete(request, pk, item_pk):
     """Delete the logged-in user's own review."""
     location = get_object_or_404(Location, pk=pk)
-    item = get_object_or_404(Item, pk=item_pk, location=location)
+    item = get_object_or_404(_item_queryset_for_location(location), pk=item_pk)
     review = get_object_or_404(ItemReview, item=item, user=request.user)
     reason = _require_reason(request)
     if not reason:
@@ -930,7 +1045,7 @@ def item_delete(request, pk, item_pk):
     if not is_superuser_role(request.user):
         return HttpResponseForbidden("Only superusers/admins can delete items.")
     location = get_object_or_404(Location, pk=pk)
-    item = get_object_or_404(Item, pk=item_pk, location=location)
+    item = get_object_or_404(_item_queryset_for_location(location), pk=item_pk)
     reason = _require_reason(request)
     if not reason:
         return HttpResponseBadRequest("A reason is required to delete an item.")

@@ -175,6 +175,67 @@
       <div class="bg-white rounded-xl border border-slate-200 shadow-sm p-5">
         {% include "tracker/partials/items_section.html" with location=location item_form=item_form %}
       </div>
+
+      <!-- Chain linking: share items/dishes with other branches of the same chain -->
+      {% if chain_linked or chain_candidates %}
+      <div class="bg-white rounded-xl border border-slate-200 shadow-sm p-5 space-y-3">
+        <h2 class="text-sm font-semibold text-slate-500 uppercase tracking-wide">Chain / Branches</h2>
+
+        {% if chain_linked %}
+        <div class="space-y-2">
+          <p class="text-xs text-slate-400">
+            Linked as the same chain — items/dishes and their reviews are shared across these branches.
+          </p>
+          <ul class="space-y-1.5">
+            {% for other in chain_linked %}
+            <li class="text-sm">
+              <a href="{% url 'location_detail' other.pk %}" class="text-brand hover:underline">
+                {{ other.name }}{% if other.city %} — {{ other.city }}{% if other.state %}, {{ other.state }}{% endif %}{% endif %}
+              </a>
+            </li>
+            {% endfor %}
+          </ul>
+          <form method="post" action="{% url 'location_unlink' location.pk %}"
+                onsubmit="return confirm('Unlink this waypoint from its chain group? Items added at other branches will no longer show here.')">
+            {% csrf_token %}
+            <button type="submit"
+                    class="text-xs font-semibold text-red-400 hover:text-red-600 border border-red-200
+                           hover:border-red-400 px-2.5 py-1 rounded-lg transition-all">
+              Unlink from chain
+            </button>
+          </form>
+        </div>
+        {% endif %}
+
+        {% if chain_candidates %}
+        <div class="space-y-2 {% if chain_linked %}pt-3 border-t border-slate-100{% endif %}">
+          <p class="text-xs text-slate-400">
+            Other waypoints share this name. Linking is solely for <strong>chain stores/restaurants</strong>
+            (e.g. Burger King, Kohl's) — it shares items/dishes and their reviews across branches, but keeps
+            each location's own address, hours, and rating separate.
+          </p>
+          <ul class="space-y-1.5">
+            {% for cand in chain_candidates %}
+            <li class="flex items-center justify-between gap-2 text-sm">
+              <span class="truncate text-slate-600">
+                {{ cand.name }}{% if cand.city %} — {{ cand.city }}{% if cand.state %}, {{ cand.state }}{% endif %}{% endif %}
+              </span>
+              <form method="post" action="{% url 'location_link' location.pk cand.pk %}" class="shrink-0">
+                {% csrf_token %}
+                <button type="submit"
+                        class="text-xs font-semibold text-brand hover:text-brand-dark border border-brand/30
+                               hover:border-brand px-2.5 py-1 rounded-lg transition-all">
+                  Link
+                </button>
+              </form>
+            </li>
+            {% endfor %}
+          </ul>
+        </div>
+        {% endif %}
+      </div>
+      {% endif %}
+
       <div class="bg-white rounded-xl border border-slate-100 shadow-sm p-4 text-xs text-slate-400 space-y-1">
         <p>Added {{ location.created_at|date:"N j, Y" }}{% if location.created_by %} by {{ location.created_by.username }}{% endif %}</p>
         <p>Updated {{ location.updated_at|date:"N j, Y" }}</p>
