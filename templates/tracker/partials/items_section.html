@@ -3,7 +3,9 @@
 
   <!-- Section header -->
   <div class="flex items-center justify-between mb-3">
-    <h3 class="text-base font-semibold text-slate-800">Items &amp; Dishes</h3>
+    <h3 class="text-base font-semibold text-slate-800">
+      Items &amp; Dishes{% if items %} ({{ items|length }}){% endif %}
+    </h3>
     {% if user.is_authenticated and not show_form %}
     <button hx-get="{% url 'item_add' location.pk %}"
             hx-target="#items-section"

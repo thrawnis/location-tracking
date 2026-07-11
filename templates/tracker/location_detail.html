@@ -73,10 +73,6 @@
         </span>
         {% endif %}
         <span id="open-now-badge"></span>
-        <span class="text-slate-300">·</span>
-        <span class="text-sm text-slate-500">
-          {% with ic=location.items.all|length %}{{ ic }} item{{ ic|pluralize }}{% endwith %}
-        </span>
       </div>
       {% if user|is_superuser_role or location.created_by == user %}
       <div class="flex items-center gap-2">
@@ -316,7 +312,7 @@ window.initDetailData = function () {
     const gBadge = document.getElementById('google-rating-badge');
     if (gBadge && place.rating) {
       gBadge.innerHTML =
-        '<span class="inline-flex items-center gap-1 text-xs font-semibold px-2.5 py-1 rounded-full '
+        '<span class="inline-flex items-center gap-1 text-sm font-semibold px-2.5 py-1 rounded-full '
         + 'bg-amber-50 text-amber-700 border border-amber-200" title="Google rating">'
         + 'Google ' + place.rating.toFixed(1) + ' ★ (' + (place.user_ratings_total || 0) + ')</span>';
     }
