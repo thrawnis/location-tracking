@@ -73,7 +73,16 @@
         </span>
         {% endif %}
         <span id="open-now-badge"></span>
-        {% if location.has_coords %}
+        {% if location.google_place_id %}
+        <!-- Deep-links to the actual Google Business listing rather than a
+             bare coordinate pin, using Google's documented Place ID query
+             format: https://developers.google.com/maps/documentation/urls -->
+        <a href="https://www.google.com/maps/search/?api=1&query={{ location.name|urlencode }}&query_place_id={{ location.google_place_id|urlencode }}"
+           target="_blank" rel="noopener"
+           class="text-sm text-brand hover:underline">
+          Open in Google Maps →
+        </a>
+        {% elif location.has_coords %}
         <a href="https://www.google.com/maps/search/?api=1&query={{ location.latitude }},{{ location.longitude }}"
            target="_blank" rel="noopener"
            class="text-sm text-brand hover:underline">
