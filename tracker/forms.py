@@ -4,7 +4,10 @@ from django import forms
 from django.contrib.auth.forms import UserCreationForm
 from django.contrib.auth.models import User
 
-from .models import Collection, Item, ItemReview, Location, LocationReview, Photo
+from .models import (
+    Collection, Item, ItemReview, Location, LocationReview, Photo,
+    MAX_IMAGE_PIXELS_CAP, MAX_PHOTO_UPLOAD_BYTES,
+)
 
 
 # A run of letters (Unicode-aware, so accented letters like "ñ" stay part of
@@ -266,3 +269,28 @@ class PhotoForm(forms.ModelForm):
         widgets = {
             "caption": forms.TextInput(attrs={"placeholder": "Caption (optional)"}),
         }
+
+    def clean_image(self):
+        image = self.cleaned_data.get("image")
+        if not image:
+            return image
+        # Hard byte cap so a giant file can't exhaust memory/disk.
+        if getattr(image, "size", 0) > MAX_PHOTO_UPLOAD_BYTES:
+            raise forms.ValidationError("Image is too large (max 15 MB).")
+        # Reject decompression bombs before anything gets stored: fully decode
+        # under a lowered pixel cap so a small file declaring huge dimensions
+        # raises here instead of blowing up RAM later on resize/rotate.
+        try:
+            from PIL import Image
+            Image.MAX_IMAGE_PIXELS = MAX_IMAGE_PIXELS_CAP
+            image.seek(0)
+            with Image.open(image) as img:
+                img.load()
+        except Exception:
+            raise forms.ValidationError("That image couldn't be processed (it may be corrupt or too large).")
+        finally:
+            try:
+                image.seek(0)
+            except Exception:
+                pass
+        return image

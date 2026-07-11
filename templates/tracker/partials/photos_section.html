@@ -27,8 +27,9 @@
         <p class="text-xs text-white truncate">{{ photo.caption }}</p>
       </div>
       {% endif %}
-      {% if user.is_authenticated %}
-      <!-- Always-visible controls bar at the top of each photo -->
+      {% if user|is_superuser_role or photo.uploaded_by == user %}
+      <!-- Controls bar (uploader / superuser / admin only — rotate rewrites
+           the file and delete removes it) -->
       <div class="absolute top-0 inset-x-0 flex items-center justify-between p-1.5 bg-gradient-to-b from-black/50 to-transparent">
         <!-- Rotate buttons -->
         <div class="flex gap-1">

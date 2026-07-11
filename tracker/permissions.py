@@ -23,3 +23,13 @@ def is_superuser_role(user):
     if not user or not user.is_authenticated:
         return False
     return user.is_staff or user.groups.filter(name=SUPERUSER_GROUP_NAME).exists()
+
+
+def can_edit_location(user, location):
+    """Editing an existing waypoint's content (and structural actions like
+    chain link/unlink) is limited to its creator or an elevated role —
+    mirroring can_delete, so arbitrary users can't overwrite/merge others'
+    waypoints."""
+    if not user or not user.is_authenticated:
+        return False
+    return is_superuser_role(user) or (location.created_by_id == user.pk)

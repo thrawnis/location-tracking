@@ -12,7 +12,9 @@ RATING_VALIDATORS = [
     MaxValueValidator(Decimal("5.0")),
 ]
 
-MAX_PHOTO_PIXELS = 2_000_000  # 2 megapixels
+MAX_PHOTO_PIXELS = 2_000_000  # 2 megapixels (downscale target)
+MAX_IMAGE_PIXELS_CAP = 50_000_000  # reject-above cap (decompression-bomb guard)
+MAX_PHOTO_UPLOAD_BYTES = 15 * 1024 * 1024  # 15 MB hard cap on the upload itself
 
 
 class Location(models.Model):
@@ -263,20 +265,24 @@ class Photo(models.Model):
 
     def _resize_to_2mp(self):
         from PIL import Image, UnidentifiedImageError
+        # Bombs/oversize files are rejected up front in PhotoForm.clean_image,
+        # so this is best-effort; keep the cap set as defence in depth and skip
+        # (leaving the original) on anything we can't process.
+        Image.MAX_IMAGE_PIXELS = MAX_IMAGE_PIXELS_CAP
         try:
             img = Image.open(self.image.path)
-        except (FileNotFoundError, UnidentifiedImageError):
+            w, h = img.size
+            if w * h > MAX_PHOTO_PIXELS:
+                ratio = (MAX_PHOTO_PIXELS / (w * h)) ** 0.5
+                new_size = (max(1, int(w * ratio)), max(1, int(h * ratio)))
+                fmt = img.format or "JPEG"
+                img = img.resize(new_size, Image.LANCZOS)
+                if fmt == "JPEG":
+                    img.save(self.image.path, format=fmt, optimize=True, quality=85)
+                else:
+                    img.save(self.image.path, format=fmt, optimize=True)
+        except (FileNotFoundError, UnidentifiedImageError, Image.DecompressionBombError, OSError):
             return
-        w, h = img.size
-        if w * h > MAX_PHOTO_PIXELS:
-            ratio = (MAX_PHOTO_PIXELS / (w * h)) ** 0.5
-            new_size = (max(1, int(w * ratio)), max(1, int(h * ratio)))
-            img = img.resize(new_size, Image.LANCZOS)
-            fmt = img.format or "JPEG"
-            if fmt == "JPEG":
-                img.save(self.image.path, format=fmt, optimize=True, quality=85)
-            else:
-                img.save(self.image.path, format=fmt, optimize=True)
 
 
 class OsmSearchCache(models.Model):

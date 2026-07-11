@@ -78,7 +78,7 @@
           {% with ic=location.items.all|length %}{{ ic }} item{{ ic|pluralize }}{% endwith %}
         </span>
       </div>
-      {% if user.is_authenticated %}
+      {% if user|is_superuser_role or location.created_by == user %}
       <div class="flex items-center gap-2">
         <a href="{% url 'location_edit' location.pk %}"
            class="flex items-center gap-1.5 text-sm font-medium text-slate-600 hover:text-brand
@@ -193,7 +193,7 @@
       </div>
 
       <!-- Chain linking: share items/dishes with other branches of the same chain -->
-      {% if chain_linked or chain_candidates %}
+      {% if chain_linked or chain_candidates and can_edit %}
       <div class="bg-white rounded-xl border border-slate-200 shadow-sm p-5 space-y-3">
         <h2 class="text-sm font-semibold text-slate-500 uppercase tracking-wide">Chain / Branches</h2>
 
@@ -211,6 +211,7 @@
             </li>
             {% endfor %}
           </ul>
+          {% if can_edit %}
           <form method="post" action="{% url 'location_unlink' location.pk %}"
                 onsubmit="return confirm('Unlink this waypoint from its chain group? Items added at other branches will no longer show here.')">
             {% csrf_token %}
@@ -220,10 +221,11 @@
               Unlink from chain
             </button>
           </form>
+          {% endif %}
         </div>
         {% endif %}
 
-        {% if chain_candidates %}
+        {% if chain_candidates and can_edit %}
         <div class="space-y-2 {% if chain_linked %}pt-3 border-t border-slate-100{% endif %}">
           <p class="text-xs text-slate-400">
             Other waypoints share this name. Linking is solely for <strong>chain stores/restaurants</strong>

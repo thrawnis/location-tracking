@@ -33,7 +33,7 @@ from .models import (
     Location, LocationReview, OsmSearchCache, PendingRegistration, Photo,
     TermsAcceptance, TOTPDevice,
 )
-from .permissions import SUPERUSER_GROUP_NAME, is_admin, is_superuser_role
+from .permissions import SUPERUSER_GROUP_NAME, can_edit_location, is_admin, is_superuser_role
 
 
 # ── Roles ─────────────────────────────────────────────────────────────────────
@@ -107,7 +107,40 @@ def _location_diff(old, new_data):
 # ── Auth ──────────────────────────────────────────────────────────────────────
 
 def _safe_next(value):
-    return value if value.startswith("/") and not value.startswith("//") else ""
+    # url_has_allowed_host_and_scheme also rejects the backslash/`/\evil.com`
+    # trick that a naive startswith("//") check misses.
+    from django.utils.http import url_has_allowed_host_and_scheme
+    if value and url_has_allowed_host_and_scheme(value, allowed_hosts=None):
+        return value
+    return ""
+
+
+# Brute-force throttle for password login (mirrors the 2FA throttle). Keyed on
+# username + client IP so one attacker can't lock out a victim globally, while
+# still slowing credential-stuffing. Uses the cache backend (see the CACHES
+# note in settings for multi-worker deployments).
+_LOGIN_MAX_ATTEMPTS = 8
+_LOGIN_WINDOW_SECONDS = 300   # 5 minutes
+
+
+def _login_throttle_key(username, ip):
+    return "login_fail_{}_{}".format((username or "").lower()[:150], ip or "")
+
+
+def _login_throttled(username, ip):
+    return cache.get(_login_throttle_key(username, ip), 0) >= _LOGIN_MAX_ATTEMPTS
+
+
+def _login_record_failure(username, ip):
+    key = _login_throttle_key(username, ip)
+    try:
+        cache.incr(key)
+    except ValueError:
+        cache.add(key, 1, _LOGIN_WINDOW_SECONDS)
+
+
+def _login_clear(username, ip):
+    cache.delete(_login_throttle_key(username, ip))
 
 
 def login_view(request):
@@ -115,17 +148,26 @@ def login_view(request):
         return redirect("location_list")
     form = AuthenticationForm(request, data=request.POST or None)
     nxt = _safe_next(request.POST.get("next") or request.GET.get("next") or "")
-    if request.method == "POST" and form.is_valid():
-        user = form.get_user()
-        device = TOTPDevice.objects.filter(user=user, confirmed=True).first()
-        if device:
-            # Password OK, but 2FA is enabled — require the code before login.
-            request.session["pre_2fa_user"] = user.pk
-            request.session["pre_2fa_next"] = nxt
-            return redirect("two_factor_verify")
-        # No 2FA yet. Admins get forced into setup by the TwoFactorMiddleware.
-        login(request, user)
-        return redirect(nxt or "location_list")
+    if request.method == "POST":
+        username = request.POST.get("username", "")
+        ip = _get_ip(request)
+        if _login_throttled(username, ip):
+            messages.error(request, "Too many failed attempts. Please wait a few minutes and try again.")
+            return render(request, "registration/login.html", {"form": form, "next": nxt})
+        if form.is_valid():
+            _login_clear(username, ip)
+            user = form.get_user()
+            device = TOTPDevice.objects.filter(user=user, confirmed=True).first()
+            if device:
+                # Password OK, but 2FA is enabled — require the code before login.
+                request.session["pre_2fa_user"] = user.pk
+                request.session["pre_2fa_next"] = nxt
+                return redirect("two_factor_verify")
+            # No 2FA yet. Admins get forced into setup by the TwoFactorMiddleware.
+            login(request, user)
+            return redirect(nxt or "location_list")
+        # Invalid credentials — count it toward the throttle.
+        _login_record_failure(username, ip)
     return render(request, "registration/login.html", {"form": form, "next": nxt})
 
 
@@ -478,8 +520,8 @@ def terms_accept(request):
     )
     request.session["tos_accepted_version"] = settings.TERMS_VERSION
     messages.success(request, "Thanks — you're all set.")
-    nxt = request.POST.get("next", "")
-    if nxt.startswith("/") and not nxt.startswith("//"):  # same-site paths only
+    nxt = _safe_next(request.POST.get("next", ""))
+    if nxt:
         return redirect(nxt)
     return redirect("location_list")
 
@@ -658,6 +700,7 @@ def location_detail(request, pk):
         "chain_candidates": chain_candidates,
         "chain_linked": chain_linked,
         "group_rating_breakdown": group_rating_breakdown,
+        "can_edit": can_edit_location(request.user, location),
     })
 
 
@@ -728,6 +771,8 @@ def rate_poi(request):
 @login_required
 def location_edit(request, pk):
     location = get_object_or_404(Location, pk=pk)
+    if not can_edit_location(request.user, location):
+        return HttpResponseForbidden("Only the creator, a superuser, or an admin can edit this waypoint.")
     unlock = is_superuser_role(request.user)
     if request.method == "POST":
         # Snapshot the stored values BEFORE binding — ModelForm.is_valid()
@@ -784,9 +829,13 @@ def location_delete(request, pk):
 def _merge_chain_group_items(group):
     """After grouping, collapse same-named (case-insensitive) items across
     the group's locations into one shared Item, moving reviews over (a user
-    who'd already reviewed both copies keeps only the one on the survivor)."""
+    who'd already reviewed both copies keeps only the one on the survivor).
+    Returns (merged_items, dropped_reviews) so the caller can audit-log the
+    destructive part."""
     items = Item.objects.filter(location__chain_group_id=group.pk).order_by("pk")
     kept_by_name = {}
+    merged_items = 0
+    dropped_reviews = 0
     for item in items:
         key = item.name.strip().lower()
         keeper = kept_by_name.get(key)
@@ -796,10 +845,13 @@ def _merge_chain_group_items(group):
         for review in item.reviews.all():
             if ItemReview.objects.filter(item=keeper, user_id=review.user_id).exists():
                 review.delete()   # user already reviewed the surviving item — drop the dupe
+                dropped_reviews += 1
             else:
                 review.item = keeper
                 review.save(update_fields=["item"])
         item.delete()
+        merged_items += 1
+    return merged_items, dropped_reviews
 
 
 @login_required
@@ -810,6 +862,12 @@ def location_link(request, pk, target_pk):
     Location-level info (address, hours, its own rating/reviews) stays put."""
     location = get_object_or_404(Location, pk=pk)
     target = get_object_or_404(Location, pk=target_pk)
+    # Linking is destructive (merges/deletes shared items + reviews globally),
+    # so require edit rights on the waypoint being acted from.
+    if not can_edit_location(request.user, location):
+        return HttpResponseForbidden(
+            "Only the creator, a superuser, or an admin can chain-link this waypoint."
+        )
     if location.name.strip().lower() != target.name.strip().lower():
         return HttpResponseForbidden(
             "Chain-linking is only for waypoints with the same name (different branches)."
@@ -831,9 +889,12 @@ def location_link(request, pk, target_pk):
         Location.objects.filter(pk__in=[location.pk, target.pk]).update(chain_group_id=group.pk)
 
     location.refresh_from_db()
-    _merge_chain_group_items(location.chain_group)
-    _log(request, AuditLog.ACTION_UPDATE, location,
-         'Linked "{}" with "{}" as the same chain'.format(location.name, target.name))
+    merged_items, dropped_reviews = _merge_chain_group_items(location.chain_group)
+    detail = 'Linked "{}" with "{}" as the same chain'.format(location.name, target.name)
+    if merged_items or dropped_reviews:
+        detail += " (merged {} duplicate item(s), dropped {} duplicate review(s))".format(
+            merged_items, dropped_reviews)
+    _log(request, AuditLog.ACTION_UPDATE, location, detail)
     messages.success(request, 'Linked with "{}" — their items/dishes are now shared.'.format(target.name))
     return redirect("location_detail", pk=location.pk)
 
@@ -844,6 +905,10 @@ def location_unlink(request, pk):
     """Remove this waypoint from its chain group. Items it originally added
     stay with it; items only visible via other branches stop showing here."""
     location = get_object_or_404(Location, pk=pk)
+    if not can_edit_location(request.user, location):
+        return HttpResponseForbidden(
+            "Only the creator, a superuser, or an admin can unlink this waypoint."
+        )
     group = location.chain_group
     if not group:
         return redirect("location_detail", pk=location.pk)
@@ -1204,10 +1269,15 @@ def photo_rotate(request, pk, photo_pk):
     from PIL import Image, UnidentifiedImageError
     location = get_object_or_404(Location, pk=pk)
     photo = get_object_or_404(Photo, pk=photo_pk, location=location)
+    # Rotating rewrites the stored file in place — treat it like editing the
+    # asset: only the uploader or an elevated role may do it.
+    if not can_delete(request.user, photo.uploaded_by):
+        return HttpResponseForbidden("Only the uploader, a superuser, or an admin can rotate this photo.")
     direction = request.POST.get("direction", "cw")
     angle = -90 if direction == "cw" else 90  # PIL rotates CCW by default
     try:
         img = Image.open(photo.image.path)
+        img.load()   # forces the decode now, inside our DecompressionBomb guard
         # expand=True ensures the canvas grows for portrait/landscape swaps
         rotated = img.rotate(angle, expand=True)
         fmt = img.format or "JPEG"
@@ -1217,7 +1287,7 @@ def photo_rotate(request, pk, photo_pk):
             rotated.save(photo.image.path, format=fmt)
         _log(request, AuditLog.ACTION_UPDATE, photo,
              'Rotated photo {} {}° in "{}"'.format(photo.pk, abs(angle), location.name))
-    except (FileNotFoundError, UnidentifiedImageError, Exception):
+    except (FileNotFoundError, UnidentifiedImageError, Image.DecompressionBombError, OSError):
         pass
     return _render_photos_section(request, location)
 
@@ -1273,6 +1343,7 @@ def _round2(value):
     return Decimal(str(value)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
 
 
+@login_required
 def osm_search(request):
     """
     Proxy for Overpass API with a 24-hour server-side cache.
@@ -1754,6 +1825,14 @@ def export_locations(request):
         return resp
 
     # Default: CSV
+    def _csv_safe(value):
+        # Neutralise spreadsheet formula injection: a cell that a user made
+        # start with =, +, -, @ (or tab/CR) can execute in Excel/Sheets.
+        s = "" if value is None else str(value)
+        if s and s[0] in ("=", "+", "-", "@", "\t", "\r"):
+            return "'" + s
+        return s
+
     resp = HttpResponse(content_type="text/csv")
     resp["Content-Disposition"] = 'attachment; filename="waypoints.csv"'
     writer = csv.writer(resp)
@@ -1763,12 +1842,12 @@ def export_locations(request):
         "gluten_free", "dietary_notes", "rating", "public_notes",
     ])
     for loc in qs:
-        writer.writerow([
+        writer.writerow([_csv_safe(v) for v in [
             loc.name, loc.category, loc.status, loc.address, loc.city, loc.state,
             loc.latitude or "", loc.longitude or "",
             loc.gluten_free, loc.dietary_notes,
             loc.user_avg_rating or loc.overall_rating or "", loc.public_notes,
-        ])
+        ]])
     return resp
 
 
@@ -1812,11 +1891,21 @@ def import_locations(request):
     form = TakeoutImportForm(request.POST or None, request.FILES or None)
     result = None
     if request.method == "POST" and form.is_valid():
-        try:
-            data = json.loads(form.cleaned_data["file"].read().decode("utf-8"))
-        except (ValueError, UnicodeDecodeError):
-            form.add_error("file", "Not a valid JSON file.")
-            data = None
+        upload = form.cleaned_data["file"]
+        data = None
+        # Cap the upload so a huge file can't exhaust memory, and catch the
+        # RecursionError/MemoryError a deeply-nested payload can raise (neither
+        # is a ValueError, so they'd otherwise 500 the worker).
+        MAX_IMPORT_BYTES = 10 * 1024 * 1024   # 10 MB
+        if upload.size and upload.size > MAX_IMPORT_BYTES:
+            form.add_error("file", "File is too large (max 10 MB).")
+        else:
+            try:
+                data = json.loads(upload.read().decode("utf-8"))
+            except (ValueError, UnicodeDecodeError):
+                form.add_error("file", "Not a valid JSON file.")
+            except (RecursionError, MemoryError):
+                form.add_error("file", "That file is too large or too deeply nested to import.")
 
         if data is not None:
             status = form.cleaned_data["default_status"]

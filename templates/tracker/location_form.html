@@ -324,8 +324,13 @@ window.initFormMap = function () {
       const res  = await fetch(`/api/locations/check-duplicate/?${params}`);
       const data = await res.json();
       if (data.matches && data.matches.length) {
+        const esc = s => String(s == null ? '' : s)
+          .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+          .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+        // Waypoint names are user-controlled free text — escape before
+        // injecting via innerHTML to avoid stored XSS on this form.
         const links = data.matches.map(m =>
-          `<a href="${m.url}" target="_blank" class="font-semibold underline">${m.name}</a> (${m.distance_m} m away)`
+          `<a href="${esc(m.url)}" target="_blank" class="font-semibold underline">${esc(m.name)}</a> (${esc(m.distance_m)} m away)`
         ).join(', ');
         dupDiv.innerHTML = `⚠️ Possible duplicate — there ${data.matches.length === 1 ? 'is' : 'are'} already
           ${data.matches.length === 1 ? 'a waypoint' : 'waypoints'} here: ${links}.

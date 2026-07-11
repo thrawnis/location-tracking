@@ -5,8 +5,18 @@ import dj_database_url
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
-SECRET_KEY = os.environ.get("SECRET_KEY", "dev-insecure-key-change-in-production")
+_DEFAULT_SECRET_KEY = "dev-insecure-key-change-in-production"
+SECRET_KEY = os.environ.get("SECRET_KEY", _DEFAULT_SECRET_KEY)
 DEBUG = os.environ.get("DEBUG", "False").lower() == "true"
+
+# Refuse to run in production on the public default key — it signs session
+# cookies AND email-verification tokens, so a known key is forgeable.
+if not DEBUG and SECRET_KEY == _DEFAULT_SECRET_KEY:
+    raise RuntimeError(
+        "SECRET_KEY is unset — set the SECRET_KEY environment variable "
+        "(the built-in default is public and insecure) or run with DEBUG=True."
+    )
+
 ALLOWED_HOSTS = [h.strip() for h in os.environ.get("ALLOWED_HOSTS", "*").split(",")]
 
 INSTALLED_APPS = [
