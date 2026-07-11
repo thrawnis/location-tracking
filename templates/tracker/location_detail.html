@@ -234,11 +234,6 @@
         {% endif %}
       </div>
       {% endif %}
-
-      <div class="bg-white rounded-xl border border-slate-100 shadow-sm p-4 text-xs text-slate-400 space-y-1">
-        <p>Added {{ location.created_at|date:"N j, Y" }}{% if location.created_by %} by {{ location.created_by.username }}{% endif %}</p>
-        <p>Updated {{ location.updated_at|date:"N j, Y" }}</p>
-      </div>
     </div>
 
   </div>
