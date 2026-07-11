@@ -312,7 +312,7 @@
           </select>
         </div>
         <label class="flex items-center gap-2 cursor-pointer select-none pt-1 border-t border-slate-100">
-          <input type="checkbox" id="mine-filter"
+          <input type="checkbox" id="mine-filter" checked
                  class="w-4 h-4 rounded border-slate-300 text-brand focus:ring-brand/30">
           <span class="text-sm text-slate-700">Only places I've rated or noted</span>
         </label>
@@ -622,7 +622,7 @@ const CSRF_TOKEN = '{{ csrf_token }}';
   let catFilter      = '';
   let statusFilter   = '';
   let gfFilter       = '';   // '' | 'dedicated' | 'gf-any'
-  let mineFilter     = false; // true → only places the current user has reviewed
+  let mineFilter     = true; // true → only places the current user has reviewed ("My Waypoints" is the default home view)
   let osmEntries     = [];   // { marker, cat, distKm, element }
   let sidebarOpen    = false;
   let osmCatFilters  = { food: true, shop: true, fuel: true, poi: true };
@@ -1466,20 +1466,12 @@ const CSRF_TOKEN = '{{ csrf_token }}';
     const start = (listPage - 1) * LIST_PAGE_SIZE;
     const slice = rows.slice(start, start + LIST_PAGE_SIZE);
 
+    const label = mineFilter ? 'My Waypoints' : 'Waypoints';
     const countEl = document.getElementById('wp-list-count');
-    if (countEl) countEl.textContent = total ? `${total} waypoint${total !== 1 ? 's' : ''}` : 'No waypoints';
+    if (countEl) countEl.textContent = total ? `${label} — ${total}` : (total === 0 && WAYPOINTS.length ? label : 'No waypoints');
 
-    if (!total) {
-      listEl.innerHTML = `<div class="text-center py-16 text-slate-400 px-4 space-y-2">
-        <p class="text-3xl">🗺️</p>
-        <p class="text-sm font-medium text-slate-500">${WAYPOINTS.length ? 'No waypoints match your filters.' : 'No waypoints yet.'}</p>
-        <p class="text-xs text-slate-400 leading-relaxed">${WAYPOINTS.length
-          ? 'Try clearing a filter or the search box.'
-          : 'Switch to Map view, search for a place, tap a result and hit ⭐ Rate Me! to save your first waypoint.'}</p>
-      </div>`;
-    } else {
-      listEl.innerHTML = slice.map(listCardHtml).join('');
-    }
+    // No results → just leave the list area empty (no placeholder message).
+    listEl.innerHTML = total ? slice.map(listCardHtml).join('') : '';
 
     const pag  = document.getElementById('wp-pagination');
     const info = document.getElementById('wp-page-info');
@@ -1611,14 +1603,10 @@ const CSRF_TOKEN = '{{ csrf_token }}';
     setSortDirIcon();
     renderList();
 
-    // Deep links from the dropdown: ?panel=mine pre-filters to your places;
-    // ?view=map opens straight into the map.
+    // "My Waypoints" is already the default view, so ?panel=mine (linked from
+    // the dropdown) needs no extra handling here. ?view=map opens straight
+    // into the map view.
     const params = new URLSearchParams(window.location.search);
-    if (params.get('panel') === 'mine') {
-      mineFilter = true;
-      const mineEl = document.getElementById('mine-filter'); if (mineEl) mineEl.checked = true;
-      updateFilterBadge(); renderList();
-    }
     if (params.get('view') === 'map') showView('map');
 
     // Auto-locate on load so distance sorting is ready. This is free: a browser
