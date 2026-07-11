@@ -140,7 +140,16 @@
   /* ── Mobile: full-screen map + bottom sheet ──────────────────── */
   @media (max-width: 767px) {
     main { padding: 0 !important; max-width: none !important; }
-    #outer-layout {
+    /* Only pin #outer-layout to a fixed, non-scrolling app-shell box while
+       the map view is active (the map + draggable bottom sheet need to fill
+       the exact remaining viewport). In list view (the default) it stays in
+       normal document flow so the page scrolls like every other page —
+       applying this unconditionally used to trap the waypoint list inside a
+       fixed, overflow:hidden box with no scroll container of its own
+       (#list-view had no overflow-y set), so it silently clipped instead of
+       scrolling, and the resulting rubber-band bounce also made the sticky
+       header appear to drift instead of staying pinned. */
+    #outer-layout.map-mode {
       position: fixed;
       top: 56px; left: 0; right: 0; bottom: 0;
       display: flex; flex-direction: column;
@@ -1593,6 +1602,10 @@ const CSRF_TOKEN = '{{ csrf_token }}';
     currentView = view;
     document.getElementById('list-view').classList.toggle('hidden', view !== 'list');
     document.getElementById('content-area').classList.toggle('hidden', view !== 'map');
+    // Only trap the page in the fixed, non-scrolling full-screen "app shell"
+    // (see the #outer-layout.map-mode mobile CSS) while the map is actually
+    // shown — the list view needs normal document scrolling instead.
+    document.getElementById('outer-layout').classList.toggle('map-mode', view === 'map');
 
     const lb = document.getElementById('view-list-btn');
     const mb = document.getElementById('view-map-btn');
