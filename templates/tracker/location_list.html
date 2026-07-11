@@ -210,19 +210,6 @@
       <input type="search" id="name-search" placeholder="Search nearby: restaurant, coffee, park… (press Enter)"
              class="w-full pl-9 pr-4 py-2 text-sm border border-slate-200 rounded-lg
                     focus:outline-none focus:ring-2 focus:ring-brand/30 focus:border-brand bg-white">
-
-      <!-- Quick nearby-search touch targets — click fills the box above and
-           searches immediately. Only as many as fit on one line are shown. -->
-      <div id="quick-search-chips" class="mt-1.5">
-        <button type="button" class="qs-chip" data-q="restaurant">🍽️ Restaurants</button>
-        <button type="button" class="qs-chip" data-q="retail store">🛍️ Retail</button>
-        <button type="button" class="qs-chip" data-q="lodging">🏨 Lodging</button>
-        <button type="button" class="qs-chip" data-q="coffee">☕ Coffee</button>
-        <button type="button" class="qs-chip" data-q="bar">🍸 Bars</button>
-        <button type="button" class="qs-chip" data-q="grocery store">🛒 Groceries</button>
-        <button type="button" class="qs-chip" data-q="gas station">⛽ Gas</button>
-        <button type="button" class="qs-chip" data-q="park">🌳 Parks</button>
-      </div>
     </div>
 
     <!-- Location search — explicit only (press Enter); no live autocomplete -->
@@ -246,8 +233,10 @@
       </span>
     </div>
 
-    <!-- Locate + help, sitting next to the city/state input -->
-    <div class="shrink-0 flex items-center gap-1" x-data="{ helpOpen: false }">
+    <!-- Locate, sitting next to the city/state input. The help modal is no
+         longer a manual "?" button — it opens itself when an explicit locate
+         click fails to get a precise (GPS) fix. -->
+    <div class="shrink-0 flex items-center gap-1">
       <button id="locate-btn" type="button" title="Use my location"
               class="flex items-center justify-center w-9 h-9 rounded-lg
                      border border-brand/30 bg-brand/5 text-brand hover:bg-brand/10 transition-all"
@@ -257,36 +246,32 @@
                 d="M12 8a4 4 0 100 8 4 4 0 000-8zM12 2v2m0 16v2M2 12h2m16 0h2"/>
         </svg>
       </button>
-      <button type="button" @click="helpOpen = true" title="Location not precise?"
-              aria-label="Location help"
-              class="flex items-center justify-center w-6 h-6 rounded-full text-xs font-bold
-                     text-slate-400 hover:text-brand hover:bg-slate-100 transition-all">?</button>
+    </div>
 
-      <!-- Precise-location help modal -->
-      <div x-show="helpOpen" x-cloak
-           class="fixed inset-0 z-[2000] flex items-center justify-center p-4 bg-black/40"
-           @click="helpOpen = false">
-        <div class="bg-white rounded-2xl shadow-xl max-w-sm w-full p-5 space-y-3 text-sm text-slate-600"
-             @click.stop>
-          <div class="flex items-center justify-between">
-            <h3 class="text-base font-bold text-slate-900">Getting a precise location</h3>
-            <button @click="helpOpen = false" class="text-slate-400 hover:text-slate-700" aria-label="Close">
-              <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
-            </button>
-          </div>
-          <p>Precise location comes from your phone's GPS and needs the browser's permission:</p>
-          <ul class="list-disc list-inside space-y-1 text-slate-600">
-            <li>Open the site over <strong>https</strong> and tap <strong>Locate</strong> (the ◎ button), then <strong>Allow</strong> when prompted.</li>
-            <li><strong>Brave:</strong> tap the shield/lock icon in the address bar → Site settings → <strong>Location → Allow</strong>, then reload. Brave blocks location by default.</li>
-            <li><strong>iPhone:</strong> Settings → Privacy &amp; Security → <strong>Location Services → On</strong>, and set your browser to <strong>While Using</strong>. If it still fails in Brave, try <strong>Safari</strong>.</li>
-            <li><strong>On a computer</strong> there's no GPS, so location is only city-level — that's a hardware limit, not a bug.</li>
-            <li>Any time it can't get a precise fix, just type your <strong>city, state, or zip</strong> in the box.</li>
-          </ul>
-          <button @click="helpOpen = false"
-                  class="w-full mt-1 bg-brand hover:bg-brand-dark text-white font-semibold px-4 py-2 rounded-lg transition-colors">
-            Got it
+    <!-- Precise-location help modal — opened by locateUser() (see extra_js)
+         when an explicit "Locate me" click doesn't land a precise GPS fix. -->
+    <div id="precise-help-modal" class="fixed inset-0 z-[2000] items-center justify-center p-4 bg-black/40"
+         style="display:none" onclick="if (event.target === this) window.closePreciseHelp()">
+      <div class="bg-white rounded-2xl shadow-xl max-w-sm w-full p-5 space-y-3 text-sm text-slate-600"
+           onclick="event.stopPropagation()">
+        <div class="flex items-center justify-between">
+          <h3 class="text-base font-bold text-slate-900">Getting a precise location</h3>
+          <button onclick="window.closePreciseHelp()" class="text-slate-400 hover:text-slate-700" aria-label="Close">
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
           </button>
         </div>
+        <p>Precise location comes from your phone's GPS and needs the browser's permission:</p>
+        <ul class="list-disc list-inside space-y-1 text-slate-600">
+          <li>Tap <strong>Locate</strong> (the ◎ button), then <strong>Allow</strong> when prompted.</li>
+          <li><strong>iPhone:</strong> Settings → Privacy &amp; Security → <strong>Location Services → On</strong>, and set your browser to <strong>While Using</strong>.</li>
+          <li><strong>Brave:</strong> tap the shield/lock icon in the address bar → Site settings → <strong>Location → Allow</strong>, then reload. Brave blocks location by default. If it still fails in Brave, try <strong>Safari</strong>.</li>
+          <li><strong>On a computer</strong> there's no GPS, so location is only city-level — that's a hardware limit, not a bug.</li>
+          <li>Any time it can't get a precise fix, just type your <strong>city, state, or zip</strong> in the box.</li>
+        </ul>
+        <button onclick="window.closePreciseHelp()"
+                class="w-full mt-1 bg-brand hover:bg-brand-dark text-white font-semibold px-4 py-2 rounded-lg transition-colors">
+          Got it
+        </button>
       </div>
     </div>
 
@@ -376,6 +361,19 @@
       </button>
     </div>
 
+  </div>
+
+  <!-- Quick nearby-search touch targets — click fills the name box above and
+       searches immediately. Only as many as fit on one line are shown. -->
+  <div id="quick-search-chips" class="mt-2">
+    <button type="button" class="qs-chip" data-q="restaurant">🍽️ Restaurants</button>
+    <button type="button" class="qs-chip" data-q="retail store">🛍️ Retail</button>
+    <button type="button" class="qs-chip" data-q="lodging">🏨 Lodging</button>
+    <button type="button" class="qs-chip" data-q="coffee">☕ Coffee</button>
+    <button type="button" class="qs-chip" data-q="bar">🍸 Bars</button>
+    <button type="button" class="qs-chip" data-q="grocery store">🛒 Groceries</button>
+    <button type="button" class="qs-chip" data-q="gas station">⛽ Gas</button>
+    <button type="button" class="qs-chip" data-q="park">🌳 Parks</button>
   </div>
 
   {{ waypoints|json_script:"wp-data" }}
@@ -1272,6 +1270,19 @@ const CSRF_TOKEN = '{{ csrf_token }}';
   const LOC_KEY = 'wp_last_location';
   function saveLocation(val) { try { localStorage.setItem(LOC_KEY, val); } catch(_){} }
 
+  // ── Precise-location help modal ─────────────────────────────────
+  // Opened automatically by an explicit "Locate me" click that doesn't land
+  // a precise GPS fix (see locateUser/ipFallback below) — there's no more
+  // manual "?" trigger.
+  window.openPreciseHelp = function () {
+    const el = document.getElementById('precise-help-modal');
+    if (el) el.style.display = 'flex';
+  };
+  window.closePreciseHelp = function () {
+    const el = document.getElementById('precise-help-modal');
+    if (el) el.style.display = 'none';
+  };
+
   // ── Geo status toast ──────────────────────────────────────────
   function showGeoError(msg, ms) {
     const el = document.getElementById('geo-error');
@@ -1315,12 +1326,14 @@ const CSRF_TOKEN = '{{ csrf_token }}';
     });
   }
 
+  // Always overwrites — this is only ever called right after a successful
+  // locate, so the box should reflect the fresh result, not whatever (if
+  // anything) was in it before.
   function fillLocationSearch(value) {
     const input = document.getElementById('location-search');
-    if (input && !input.value) {
-      input.value = value;
-      saveLocation(value);
-    }
+    if (!input) return;
+    input.value = value;
+    saveLocation(value);
   }
 
   // Free (non-Google) location lookup by IP, used both as the last-resort
@@ -1334,7 +1347,7 @@ const CSRF_TOKEN = '{{ csrf_token }}';
     }
   }
 
-  async function ipFallback() {
+  async function ipFallback(explicit) {
     const data = await fetchGeoIp();
     if (data.status === 'ok') {
       const label = [data.city, data.region].filter(Boolean).join(', ');
@@ -1348,6 +1361,8 @@ const CSRF_TOKEN = '{{ csrf_token }}';
     } else {
       showGeoError('Could not determine location automatically');
     }
+    // ipFallback only ever runs because a precise GPS fix wasn't available.
+    if (explicit) openPreciseHelp();
   }
 
   // A coarse GPS fix already gives us a good enough position (better than
@@ -1361,16 +1376,20 @@ const CSRF_TOKEN = '{{ csrf_token }}';
     if (label) fillLocationSearch(label);
   }
 
-  function locateUser() {
+  // explicit: true when the user clicked "Locate me" — only then do we pop
+  // open the precise-location help on a non-precise result. Silent/automatic
+  // locates (page load, distance sort) never interrupt the user with it.
+  function locateUser(explicit) {
+    // Leave the box's current text alone until we actually have a fresh
+    // result — clearing it up front meant a failed/slow lookup left the box
+    // empty (and searches blocked) even if it already had a valid location.
     try { localStorage.removeItem(LOC_KEY); } catch(_) {}
-    const input = document.getElementById('location-search');
-    if (input) input.value = '';
-    if (!navigator.geolocation) { ipFallback(); return; }
+    if (!navigator.geolocation) { ipFallback(explicit); return; }
     // Precise geolocation requires a secure context (HTTPS). Over plain HTTP
     // the browser blocks it, so we fall back to coarse IP location.
     if (!window.isSecureContext) {
       showGeoError('Precise location needs HTTPS — using approximate (IP) location');
-      ipFallback();
+      ipFallback(explicit);
       return;
     }
 
@@ -1383,7 +1402,7 @@ const CSRF_TOKEN = '{{ csrf_token }}';
     const settle = () => {
       if (settled) return;
       settled = true; stop();
-      if (!best) { showGeoError('Couldn’t get a GPS fix — using approximate (IP) location'); ipFallback(); return; }
+      if (!best) { showGeoError('Couldn’t get a GPS fix — using approximate (IP) location'); ipFallback(explicit); return; }
       const acc = Math.round(best.coords.accuracy);
       const zoom = acc <= 100 ? 16 : (acc <= 800 ? 14 : 12);
       const precise = acc <= 150;
@@ -1392,6 +1411,7 @@ const CSRF_TOKEN = '{{ csrf_token }}';
       onLocated(best.coords.latitude, best.coords.longitude, 'You are here', zoom,
                 precise ? 'Current Location' : null);
       if (!precise) fillApproxLocationLabel();
+      if (explicit && !precise) openPreciseHelp();
       showGeoError(precise
         ? `📍 Located to ±${acc} m`
         : `📍 Approx. ±${acc} m — for a precise fix, allow location & go outdoors`);
@@ -1407,7 +1427,7 @@ const CSRF_TOKEN = '{{ csrf_token }}';
         showGeoError(err.code === 1
           ? 'Location blocked by your browser — allow it for this site (Brave/iOS: tap the shield or lock icon), or type your location above.'
           : 'GPS unavailable — showing approximate location. You can type your location above.', 9000);
-        ipFallback();
+        ipFallback(explicit);
       },
       { enableHighAccuracy: true, timeout: 20000, maximumAge: 0 }
     );
@@ -1700,7 +1720,7 @@ const CSRF_TOKEN = '{{ csrf_token }}';
       onFiltersChanged();
     });
 
-    document.getElementById('locate-btn')?.addEventListener('click', locateUser);
+    document.getElementById('locate-btn')?.addEventListener('click', () => locateUser(true));
 
     setSortDirIcon();
     renderList();

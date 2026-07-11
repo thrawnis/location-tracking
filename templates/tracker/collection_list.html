@@ -45,9 +45,9 @@
           {% if coll.created_by %} · created by {{ coll.created_by.username }}{% endif %}
         </p>
       </div>
-      {% if user.is_staff or coll.created_by == user %}
+      {% if user|is_superuser_role or coll.created_by == user %}
       <form method="post" action="{% url 'collection_delete' coll.pk %}"
-            onsubmit="return confirm('Delete collection “{{ coll.name|escapejs }}”? Waypoints themselves are kept.')">
+            onsubmit="return confirmWithReason('Delete collection “{{ coll.name|escapejs }}”? Waypoints themselves are kept.', this)">
         {% csrf_token %}
         <button type="submit"
                 class="text-xs text-red-400 hover:text-red-600 border border-red-200 hover:border-red-400

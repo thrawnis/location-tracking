@@ -1,3 +1,4 @@
+{% load tracker_tags %}
 <div id="photos-section">
   <div class="flex items-center justify-between mb-3">
     <h3 class="text-base font-semibold text-slate-800">Photos</h3>
@@ -56,12 +57,12 @@
             </svg>
           </button>
         </div>
-        <!-- Delete button (uploader or admin only) -->
-        {% if user.is_staff or photo.uploaded_by == user %}
+        <!-- Delete button (uploader, superuser, or admin only) -->
+        {% if user|is_superuser_role or photo.uploaded_by == user %}
         <button hx-post="{% url 'photo_delete' location.pk photo.pk %}"
                 hx-target="#photos-section"
                 hx-swap="outerHTML"
-                hx-confirm="Delete this photo?"
+                data-reason-prompt="Delete this photo?"
                 class="bg-red-500/80 hover:bg-red-600 text-white rounded p-1 transition-all"
                 title="Delete photo">
           <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">

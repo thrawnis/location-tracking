@@ -235,6 +235,43 @@
     document.body.addEventListener("htmx:configRequest", (e) => {
       e.detail.headers["X-CSRFToken"] = "{{ csrf_token }}";
     });
+
+    // ── Deletions require a reason (recorded in the audit log) ─────────
+    // Plain <form onsubmit="return confirmWithReason('...', this)">: prompts
+    // for a reason, stuffs it into a hidden "reason" input, and only lets
+    // the (real) submit through once one is given.
+    window.confirmWithReason = function (message, formEl) {
+      const reason = window.prompt(
+        (message || 'Please confirm this action') +
+        '\n\nPlease provide a reason (required — recorded in the audit log):'
+      );
+      if (reason === null || !reason.trim()) return false;
+      let hidden = formEl.querySelector('input[name="reason"]');
+      if (!hidden) {
+        hidden = document.createElement('input');
+        hidden.type = 'hidden';
+        hidden.name = 'reason';
+        formEl.appendChild(hidden);
+      }
+      hidden.value = reason.trim();
+      return true;
+    };
+
+    // HTMX-triggered deletes: put the confirmation message in
+    // data-reason-prompt instead of hx-confirm. htmx's own confirm dialog is
+    // replaced by our prompt(), and the answer is sent along as "reason".
+    document.body.addEventListener('htmx:confirm', (e) => {
+      const el = e.detail.elt;
+      const msg = el.getAttribute('data-reason-prompt');
+      if (!msg) return;   // not one of ours — let htmx's normal hx-confirm run
+      e.preventDefault();
+      const reason = window.prompt(
+        msg + '\n\nPlease provide a reason (required — recorded in the audit log):'
+      );
+      if (reason === null || !reason.trim()) return;   // cancelled/empty → no request
+      el.setAttribute('hx-vals', JSON.stringify({ reason: reason.trim() }));
+      e.detail.issueRequest(true);
+    });
     // PWA: register service worker so Waypoint can be installed to home screen
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.register("{% static 'sw.js' %}").catch(() => {});

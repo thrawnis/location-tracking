@@ -1,6 +1,9 @@
 from django import template
 
+from tracker.permissions import is_superuser_role
+
 register = template.Library()
+register.filter("is_superuser_role", is_superuser_role)
 
 
 @register.inclusion_tag("tracker/partials/stars_display.html")

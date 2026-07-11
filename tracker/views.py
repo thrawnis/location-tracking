@@ -16,9 +16,9 @@ from django.contrib.auth import authenticate, login, logout
 from django.contrib.auth.decorators import login_required, user_passes_test
 from django.core.cache import cache
 from django.contrib.auth.forms import AuthenticationForm
-from django.contrib.auth.models import User
+from django.contrib.auth.models import Group, User
 from django.db.models import Avg, Count, Exists, Max, OuterRef, Q
-from django.http import HttpResponseForbidden, JsonResponse
+from django.http import HttpResponseBadRequest, HttpResponseForbidden, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.views.decorators.http import require_POST
@@ -32,18 +32,18 @@ from .models import (
     Location, LocationReview, OsmSearchCache, PendingRegistration, Photo,
     TermsAcceptance, TOTPDevice,
 )
+from .permissions import SUPERUSER_GROUP_NAME, is_admin, is_superuser_role
 
 
-# ── Admin ─────────────────────────────────────────────────────────────────────
-
-def is_admin(user):
-    """Site admins are staff users (the first registrant is auto-promoted)."""
-    return user.is_authenticated and user.is_staff
-
+# ── Roles ─────────────────────────────────────────────────────────────────────
+# is_admin / is_superuser_role live in tracker/permissions.py (shared with
+# templates via the is_superuser_role filter). is_admin gates Django/site-
+# infrastructure access; is_superuser_role gates content editing/deleting and
+# is a strict superset-safe check (admins pass it too).
 
 def can_delete(user, owner):
-    """Destructive actions are allowed for admins and the original creator."""
-    return is_admin(user) or (owner is not None and owner == user)
+    """Destructive actions are allowed for superusers/admins and the original creator."""
+    return is_superuser_role(user) or (owner is not None and owner == user)
 
 
 # ── Audit helpers ─────────────────────────────────────────────────────────────
@@ -68,6 +68,14 @@ def _log(request, action, obj, detail=""):
         detail=detail,
         ip_address=_get_ip(request),
     )
+
+
+def _require_reason(request):
+    """Deletes must include a non-empty 'reason', recorded in the audit log
+    (the UI always supplies one via a prompt/textarea). Returns the trimmed
+    reason, or None if missing/blank."""
+    reason = (request.POST.get("reason") or "").strip()
+    return reason or None
 
 
 def _location_diff(old, new_data):
@@ -580,7 +588,7 @@ def location_create(request):
         'name','address','latitude','longitude','city','state',
         'gluten_free','dietary_notes','status','google_place_id',
     ] if request.GET.get(f)}
-    unlock = is_admin(request.user)
+    unlock = is_superuser_role(request.user)
     form = LocationForm(request.POST or None, initial=prefill or None, unlock_google_fields=unlock)
     if request.method == "POST" and form.is_valid():
         location = form.save(commit=False)
@@ -634,7 +642,7 @@ def rate_poi(request):
 @login_required
 def location_edit(request, pk):
     location = get_object_or_404(Location, pk=pk)
-    unlock = is_admin(request.user)
+    unlock = is_superuser_role(request.user)
     if request.method == "POST":
         # Snapshot the stored values BEFORE binding — ModelForm.is_valid()
         # mutates `location` in place, so we'd otherwise diff it against itself.
@@ -653,7 +661,7 @@ def location_edit(request, pk):
         "form": form,
         "action": "Edit",
         "location": location,
-        # True when an admin is editing a normally-locked Google POI
+        # True when a superuser/admin is editing a normally-locked Google POI
         "admin_override": unlock and bool(location.google_place_id),
     })
 
@@ -662,13 +670,17 @@ def location_edit(request, pk):
 def location_delete(request, pk):
     location = get_object_or_404(Location, pk=pk)
     if not can_delete(request.user, location.created_by):
-        return HttpResponseForbidden("Only the creator or an admin can delete this waypoint.")
+        return HttpResponseForbidden("Only the creator, a superuser, or an admin can delete this waypoint.")
     if request.method == "POST":
+        reason = (request.POST.get("reason") or "").strip()
+        if not reason:
+            messages.error(request, "Please provide a reason for deleting this waypoint.")
+            return render(request, "tracker/location_confirm_delete.html", {"location": location})
         _log(
             request,
             AuditLog.ACTION_DELETE,
             location,
-            'Deleted location "{}"'.format(location.name),
+            'Deleted location "{}" — reason: {}'.format(location.name, reason),
         )
         location.delete()
         messages.success(request, "Waypoint deleted.")
@@ -829,8 +841,8 @@ def item_add(request, pk):
 
 @login_required
 def item_edit(request, pk, item_pk):
-    if not is_admin(request.user):
-        return HttpResponseForbidden("Only admins can edit items.")
+    if not is_superuser_role(request.user):
+        return HttpResponseForbidden("Only superusers/admins can edit items.")
     location = get_object_or_404(Location, pk=pk)
     item = get_object_or_404(Item, pk=item_pk, location=location)
     if request.method == "POST":
@@ -897,8 +909,11 @@ def item_review_delete(request, pk, item_pk):
     location = get_object_or_404(Location, pk=pk)
     item = get_object_or_404(Item, pk=item_pk, location=location)
     review = get_object_or_404(ItemReview, item=item, user=request.user)
+    reason = _require_reason(request)
+    if not reason:
+        return HttpResponseBadRequest("A reason is required to delete a review.")
     _log(request, AuditLog.ACTION_DELETE, review,
-         'Deleted review for "{}" in "{}"'.format(item.name, location.name))
+         'Deleted review for "{}" in "{}" — reason: {}'.format(item.name, location.name, reason))
     review.delete()
     return _render_items_section(request, location)
 
@@ -906,15 +921,18 @@ def item_review_delete(request, pk, item_pk):
 @login_required
 @require_POST
 def item_delete(request, pk, item_pk):
-    if not is_admin(request.user):
-        return HttpResponseForbidden("Only admins can delete items.")
+    if not is_superuser_role(request.user):
+        return HttpResponseForbidden("Only superusers/admins can delete items.")
     location = get_object_or_404(Location, pk=pk)
     item = get_object_or_404(Item, pk=item_pk, location=location)
+    reason = _require_reason(request)
+    if not reason:
+        return HttpResponseBadRequest("A reason is required to delete an item.")
     _log(
         request,
         AuditLog.ACTION_DELETE,
         item,
-        'Deleted item "{}" from "{}"'.format(item.name, location.name),
+        'Deleted item "{}" from "{}" — reason: {}'.format(item.name, location.name, reason),
     )
     item.delete()
     return _render_items_section(request, location)
@@ -956,8 +974,11 @@ def photo_delete(request, pk, photo_pk):
     location = get_object_or_404(Location, pk=pk)
     photo = get_object_or_404(Photo, pk=photo_pk, location=location)
     if not can_delete(request.user, photo.uploaded_by):
-        return HttpResponseForbidden("Only the uploader or an admin can delete this photo.")
-    detail = 'Deleted photo from "{}"'.format(location.name)
+        return HttpResponseForbidden("Only the uploader, a superuser, or an admin can delete this photo.")
+    reason = _require_reason(request)
+    if not reason:
+        return HttpResponseBadRequest("A reason is required to delete a photo.")
+    detail = 'Deleted photo from "{}" — reason: {}'.format(location.name, reason)
     if photo.caption:
         detail += ' (caption: "{}")'.format(photo.caption)
     _log(request, AuditLog.ACTION_DELETE, photo, detail)
@@ -1188,8 +1209,11 @@ def location_review_upsert(request, pk):
 def location_review_delete(request, pk):
     location = get_object_or_404(Location, pk=pk)
     review = get_object_or_404(LocationReview, location=location, user=request.user)
+    reason = _require_reason(request)
+    if not reason:
+        return HttpResponseBadRequest("A reason is required to delete a review.")
     _log(request, AuditLog.ACTION_DELETE, review,
-         'Deleted review for "{}"'.format(location.name))
+         'Deleted review for "{}" — reason: {}'.format(location.name, reason))
     review.delete()
     return _render_location_reviews(request, location)
 
@@ -1224,9 +1248,13 @@ def collection_list(request):
 def collection_delete(request, pk):
     coll = get_object_or_404(Collection, pk=pk)
     if not can_delete(request.user, coll.created_by):
-        return HttpResponseForbidden("Only the creator or an admin can delete this collection.")
+        return HttpResponseForbidden("Only the creator, a superuser, or an admin can delete this collection.")
+    reason = (request.POST.get("reason") or "").strip()
+    if not reason:
+        messages.error(request, "Please provide a reason for deleting this collection.")
+        return redirect("collection_list")
     _log(request, AuditLog.ACTION_DELETE, coll,
-         'Deleted collection "{}"'.format(coll.name))
+         'Deleted collection "{}" — reason: {}'.format(coll.name, reason))
     coll.delete()
     messages.success(request, "Collection deleted.")
     return redirect("collection_list")
@@ -1498,9 +1526,15 @@ def admin_dashboard(request):
 
 @user_passes_test(is_admin)
 def admin_users(request):
-    """Staff-only user list. Admins can promote/demote other users here."""
+    """Admin-only user list. Admins can promote/demote admins and superusers here."""
     q = request.GET.get("q", "").strip()
-    users = User.objects.order_by("-is_staff", "username")
+    users = User.objects.annotate(
+        is_superuser_role=Exists(
+            User.groups.through.objects.filter(
+                user_id=OuterRef("pk"), group__name=SUPERUSER_GROUP_NAME,
+            )
+        )
+    ).order_by("-is_staff", "username")
     if q:
         users = users.filter(Q(username__icontains=q) | Q(email__icontains=q))
     return render(request, "tracker/admin_users.html", {
@@ -1536,6 +1570,28 @@ def admin_user_toggle_admin(request, pk):
         _log(request, AuditLog.ACTION_UPDATE, target,
              'Made "{}" an admin'.format(target.username))
         messages.success(request, "{} is now an admin.".format(target.username))
+
+    return redirect("admin_users")
+
+
+@user_passes_test(is_admin)
+@require_POST
+def admin_user_toggle_superuser(request, pk):
+    """Superuser is a plain auth Group membership — it grants content-editing
+    abilities only, never Django admin site or infrastructure access."""
+    target = get_object_or_404(User, pk=pk)
+    group, _ = Group.objects.get_or_create(name=SUPERUSER_GROUP_NAME)
+
+    if target.groups.filter(pk=group.pk).exists():
+        target.groups.remove(group)
+        _log(request, AuditLog.ACTION_UPDATE, target,
+             'Removed superuser role from "{}"'.format(target.username))
+        messages.success(request, "{} is no longer a superuser.".format(target.username))
+    else:
+        target.groups.add(group)
+        _log(request, AuditLog.ACTION_UPDATE, target,
+             'Made "{}" a superuser'.format(target.username))
+        messages.success(request, "{} is now a superuser.".format(target.username))
 
     return redirect("admin_users")
 

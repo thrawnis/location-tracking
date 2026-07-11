@@ -89,7 +89,7 @@
           {% if review.user == user %}
           <form hx-post="{% url 'location_review_delete' location.pk %}"
                 hx-target="#location-reviews" hx-swap="outerHTML"
-                hx-confirm="Delete your review?" class="ml-auto">
+                data-reason-prompt="Delete your review?" class="ml-auto">
             {% csrf_token %}
             <button type="submit" class="text-[10px] text-red-400 hover:text-red-600">delete</button>
           </form>
