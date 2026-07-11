@@ -616,6 +616,12 @@ def rate_poi(request):
     """
     place_id = (request.POST.get("google_place_id") or "").strip()
     name = (request.POST.get("name") or "").strip()[:255]
+    # Classified client-side from the Google Places `types` we already fetched
+    # (see classifyCategory in location_list.html) — cached here rather than
+    # asking the user to pick Restaurant/Store/Attraction/Other by hand.
+    category = request.POST.get("category") or ""
+    if category not in dict(Location.CATEGORY_CHOICES):
+        category = "other"
 
     location = Location.objects.filter(google_place_id=place_id).first() if place_id else None
     if location is None:
@@ -624,6 +630,7 @@ def rate_poi(request):
             return redirect("location_list")
         location = Location.objects.create(
             name=name,
+            category=category,
             latitude=request.POST.get("latitude") or None,
             longitude=request.POST.get("longitude") or None,
             address=(request.POST.get("address") or "").strip(),

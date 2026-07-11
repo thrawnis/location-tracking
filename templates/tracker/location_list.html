@@ -724,6 +724,7 @@ const CSRF_TOKEN = '{{ csrf_token }}';
     const rateParams = {
       name, latitude: lat.toFixed(6), longitude: lng.toFixed(6),
       address: addr || '', google_place_id: placeId || '',
+      category: classifyCategory(types),
     };
     const saved = placeId ? savedByPlaceId[placeId] : null;
 
@@ -893,6 +894,26 @@ const CSRF_TOKEN = '{{ csrf_token }}';
                          'furniture_store','home_goods_store','shoe_store','jewelry_store',
                          'car_dealer','car_repair','laundry'].includes(t))) return 'shop';
     return 'poi';
+  }
+
+  // Maps Google's place `types` to the Waypoint model's 4-way category
+  // (restaurant/store/attraction/other) — used to auto-fill (and cache) a
+  // new waypoint's category from data we already fetched, instead of making
+  // the user classify it by hand.
+  function classifyCategory(types) {
+    if (!types) return 'other';
+    if (types.some(t => ['restaurant','cafe','bar','bakery','meal_delivery','meal_takeaway',
+                         'food','night_club','liquor_store'].includes(t))) return 'restaurant';
+    if (types.some(t => ['grocery_or_supermarket','supermarket','store','convenience_store',
+                         'clothing_store','shopping_mall','department_store','pharmacy',
+                         'hardware_store','book_store','electronics_store','pet_store',
+                         'furniture_store','home_goods_store','shoe_store','jewelry_store',
+                         'car_dealer','car_repair','laundry',
+                         'gas_station','electric_vehicle_charging_station'].includes(t))) return 'store';
+    if (types.some(t => ['tourist_attraction','museum','park','amusement_park','zoo','aquarium',
+                         'art_gallery','stadium','movie_theater','casino','bowling_alley',
+                         'campground','national_park','hiking_area','historical_landmark'].includes(t))) return 'attraction';
+    return 'other';
   }
 
   // ── Card helpers ─────────────────────────────────────────────
@@ -1179,6 +1200,7 @@ const CSRF_TOKEN = '{{ csrf_token }}';
           longitude: lng.toFixed(6),
           address:   addr || '',
           google_place_id: placeId || '',
+          category: classifyCategory(types),
         };
 
         // Waypoint rating for this POI, if it's already a saved waypoint
@@ -1266,9 +1288,11 @@ const CSRF_TOKEN = '{{ csrf_token }}';
     if (fc) fc.textContent = '';
   }
 
-  // ── localStorage (remembers the last location label for the search box) ──
+  // ── sessionStorage (remembers the location box for this browser session
+  // only — cleared when the tab/browser closes, same lifetime as the login
+  // session's inactivity expiry, unlike localStorage which persists forever) ──
   const LOC_KEY = 'wp_last_location';
-  function saveLocation(val) { try { localStorage.setItem(LOC_KEY, val); } catch(_){} }
+  function saveLocation(val) { try { sessionStorage.setItem(LOC_KEY, val); } catch(_){} }
 
   // ── Precise-location help modal ─────────────────────────────────
   // Opened automatically by an explicit "Locate me" click that doesn't land
@@ -1298,10 +1322,12 @@ const CSRF_TOKEN = '{{ csrf_token }}';
   // reference (free — no API call), the map drops a "you are here" dot.
   // boxText: 'Current Location' for a precise fix, an approximate "City, ST"
   // label for a coarse one, or falsy to leave the location box untouched.
-  function onLocated(lat, lng, label, zoom, boxText) {
+  // updateBox=false suppresses writing boxText into the box entirely — used
+  // for the silent startup locate so it doesn't clobber a remembered value.
+  function onLocated(lat, lng, label, zoom, boxText, updateBox) {
     userPos = { lat, lng };
     renderList();                       // recompute distances for the list view
-    if (boxText) fillLocationSearch(boxText);
+    if (updateBox !== false && boxText) fillLocationSearch(boxText);
     if (mainMap) placeUserDot(lat, lng, label, zoom);
   }
 
@@ -1347,11 +1373,11 @@ const CSRF_TOKEN = '{{ csrf_token }}';
     }
   }
 
-  async function ipFallback(explicit) {
+  async function ipFallback(explicit, updateBox) {
     const data = await fetchGeoIp();
     if (data.status === 'ok') {
       const label = [data.city, data.region].filter(Boolean).join(', ');
-      onLocated(data.lat, data.lng, `Approx. location: ${data.city}, ${data.region}`, 10, label || null);
+      onLocated(data.lat, data.lng, `Approx. location: ${data.city}, ${data.region}`, 10, label || null, updateBox);
     } else if (data.status === 'rate_limited') {
       showGeoError('Location lookup rate-limited — try again in a minute');
     } else if (data.status === 'private') {
@@ -1369,7 +1395,8 @@ const CSRF_TOKEN = '{{ csrf_token }}';
   // IP), so it's used as-is for placement/distance — this just labels the
   // location box for the user, via the free IP lookup rather than a
   // (billable) Google reverse-geocode.
-  async function fillApproxLocationLabel() {
+  async function fillApproxLocationLabel(updateBox) {
+    if (updateBox === false) return;
     const data = await fetchGeoIp();
     if (data.status !== 'ok') return;   // leave the box empty — search stays disabled
     const label = [data.city, data.region].filter(Boolean).join(', ');
@@ -1379,17 +1406,21 @@ const CSRF_TOKEN = '{{ csrf_token }}';
   // explicit: true when the user clicked "Locate me" — only then do we pop
   // open the precise-location help on a non-precise result. Silent/automatic
   // locates (page load, distance sort) never interrupt the user with it.
-  function locateUser(explicit) {
+  // updateBox: false keeps the location box untouched (used on the silent
+  // startup locate when a remembered value is already showing there) while
+  // still updating userPos in the background for distance sorting/the dot.
+  function locateUser(explicit, updateBox) {
+    if (updateBox === undefined) updateBox = true;
     // Leave the box's current text alone until we actually have a fresh
     // result — clearing it up front meant a failed/slow lookup left the box
     // empty (and searches blocked) even if it already had a valid location.
-    try { localStorage.removeItem(LOC_KEY); } catch(_) {}
-    if (!navigator.geolocation) { ipFallback(explicit); return; }
+    if (updateBox) { try { sessionStorage.removeItem(LOC_KEY); } catch(_) {} }
+    if (!navigator.geolocation) { ipFallback(explicit, updateBox); return; }
     // Precise geolocation requires a secure context (HTTPS). Over plain HTTP
     // the browser blocks it, so we fall back to coarse IP location.
     if (!window.isSecureContext) {
       showGeoError('Precise location needs HTTPS — using approximate (IP) location');
-      ipFallback(explicit);
+      ipFallback(explicit, updateBox);
       return;
     }
 
@@ -1402,15 +1433,15 @@ const CSRF_TOKEN = '{{ csrf_token }}';
     const settle = () => {
       if (settled) return;
       settled = true; stop();
-      if (!best) { showGeoError('Couldn’t get a GPS fix — using approximate (IP) location'); ipFallback(explicit); return; }
+      if (!best) { showGeoError('Couldn’t get a GPS fix — using approximate (IP) location'); ipFallback(explicit, updateBox); return; }
       const acc = Math.round(best.coords.accuracy);
       const zoom = acc <= 100 ? 16 : (acc <= 800 ? 14 : 12);
       const precise = acc <= 150;
       // Precise fix → "Current Location" (no API call needed). Coarse fix →
       // labelled via the free IP lookup rather than a billable reverse-geocode.
       onLocated(best.coords.latitude, best.coords.longitude, 'You are here', zoom,
-                precise ? 'Current Location' : null);
-      if (!precise) fillApproxLocationLabel();
+                precise ? 'Current Location' : null, updateBox);
+      if (!precise) fillApproxLocationLabel(updateBox);
       if (explicit && !precise) openPreciseHelp();
       showGeoError(precise
         ? `📍 Located to ±${acc} m`
@@ -1427,7 +1458,7 @@ const CSRF_TOKEN = '{{ csrf_token }}';
         showGeoError(err.code === 1
           ? 'Location blocked by your browser — allow it for this site (Brave/iOS: tap the shield or lock icon), or type your location above.'
           : 'GPS unavailable — showing approximate location. You can type your location above.', 9000);
-        ipFallback(explicit);
+        ipFallback(explicit, updateBox);
       },
       { enableHighAccuracy: true, timeout: 20000, maximumAge: 0 }
     );
@@ -1705,7 +1736,7 @@ const CSRF_TOKEN = '{{ csrf_token }}';
       else { pendingLocationQuery = q; showView('map'); }
     });
     locInput.addEventListener('input', () => {
-      if (!locInput.value.trim()) { try { localStorage.removeItem(LOC_KEY); } catch (_) {} }
+      if (!locInput.value.trim()) { try { sessionStorage.removeItem(LOC_KEY); } catch (_) {} }
     });
 
     // Filter popover — both views.
@@ -1731,9 +1762,17 @@ const CSRF_TOKEN = '{{ csrf_token }}';
     const params = new URLSearchParams(window.location.search);
     if (params.get('view') === 'map') showView('map');
 
+    // Restore whatever location the user last typed/located this session
+    // (cleared automatically when the tab/session ends — see saveLocation)
+    // before the silent auto-locate below runs, so it never gets clobbered.
+    let remembered = null;
+    try { remembered = sessionStorage.getItem(LOC_KEY); } catch (_) {}
+    if (remembered) locInput.value = remembered;
+
     // Auto-locate on load so distance sorting is ready. This is free: a browser
-    // GPS fix, or our own /api/geoip endpoint — never a Google API call.
-    locateUser();
+    // GPS fix, or our own /api/geoip endpoint — never a Google API call. Never
+    // overwrites the box if we just restored a remembered value into it.
+    locateUser(false, !remembered);
   }
 
   // ── Map initialisation (Google Maps callback) ─────────────────

@@ -89,7 +89,9 @@ class RegisterForm(UserCreationForm):
 class LocationForm(forms.ModelForm):
     # Fields sourced from Google when a waypoint is saved from a map POI.
     # For such entries they are locked so only manually added waypoints are editable.
-    GOOGLE_SOURCED_FIELDS = ["name", "address", "latitude", "longitude", "city", "state"]
+    # "category" is auto-classified (and cached) from Google's place types
+    # rather than asked of the user — see rate_poi/classifyCategory.
+    GOOGLE_SOURCED_FIELDS = ["name", "address", "latitude", "longitude", "city", "state", "category"]
 
     class Meta:
         model = Location
@@ -138,7 +140,16 @@ class LocationForm(forms.ModelForm):
         if self.google_locked:
             for name in self.GOOGLE_SOURCED_FIELDS:
                 field = self.fields.get(name)
-                if field:
+                if not field:
+                    continue
+                # "readonly" has no effect on <select> (category) — disable it
+                # instead, and drop the "required" check since a disabled
+                # field submits nothing; clean() below reinstates the cached
+                # value regardless of what (if anything) came through.
+                if isinstance(field.widget, forms.Select):
+                    field.widget.attrs["disabled"] = True
+                    field.required = False
+                else:
                     field.widget.attrs["readonly"] = True
 
     # Fix up shouting / all-lowercase entry on the identifying fields.
