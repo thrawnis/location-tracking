@@ -45,19 +45,17 @@
       <div class="flex items-start gap-2 px-3 py-2.5 cursor-pointer select-none" @click="open = !open">
         <div class="min-w-0 flex-1">
           <p class="font-semibold text-sm text-slate-800">{{ item.name }}</p>
-          {% if my_review %}
-          <p class="mt-0.5">
-            <span class="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-violet-100 text-violet-700"
-                  title="You reviewed this">✓ Reviewed</span>
-          </p>
-          {% endif %}
           <!-- Aggregate rating — always visible -->
-          <div class="flex items-center gap-1.5 mt-1">
+          <div class="flex items-center gap-1.5 mt-1 flex-wrap">
             {% if item.avg_rating %}
-            {% stars_display item.avg_rating "sm" %}
-            <span class="text-[11px] text-slate-400">{{ item.review_count }} review{{ item.review_count|pluralize }}</span>
+            <span class="text-sm font-semibold text-amber-600">{{ item.avg_rating|floatformat:1 }}
+              <span class="text-[11px] font-normal text-slate-400">({{ item.review_count }})</span></span>
             {% else %}
             <span class="text-xs text-slate-400 italic">No reviews yet</span>
+            {% endif %}
+            {% if my_review %}
+            <span class="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-violet-100 text-violet-700"
+                  title="You reviewed this">✓ Reviewed</span>
             {% endif %}
           </div>
         </div>
