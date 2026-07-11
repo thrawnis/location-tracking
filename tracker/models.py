@@ -115,18 +115,26 @@ class Location(models.Model):
 
 
 class Collection(models.Model):
-    """A user-curated group of waypoints: a trip, a theme, a wishlist."""
+    """A user-curated group of waypoints: a trip, a theme, a wishlist.
 
-    name = models.CharField(max_length=120, unique=True)
+    Private by default and manageable only by its owner. An owner can flip
+    is_public to surface it (read-only, to everyone) on their profile page.
+    """
+
+    name = models.CharField(max_length=120)
     description = models.TextField(blank=True)
     locations = models.ManyToManyField(Location, related_name="collections", blank=True)
     created_by = models.ForeignKey(
         User, on_delete=models.SET_NULL, null=True, blank=True, related_name="collections"
     )
+    is_public = models.BooleanField(
+        default=False, help_text="Public collections appear on your profile page."
+    )
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
         ordering = ["name"]
+        unique_together = [("created_by", "name")]
 
     def __str__(self):
         return self.name

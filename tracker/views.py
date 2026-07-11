@@ -543,7 +543,6 @@ def location_list(request):
         "category_choices": Location.CATEGORY_CHOICES,
         "status_choices": Location.STATUS_CHOICES,
         "gf_choices": Location.GF_CHOICES,
-        "all_collections": Collection.objects.all(),
     })
 
 
@@ -572,7 +571,7 @@ def location_detail(request, pk):
         "photo_form": PhotoForm(),
         "my_review": my_review,
         "gf_my_vote": gf_my_vote,
-        "all_collections": Collection.objects.all(),
+        "all_collections": Collection.objects.filter(created_by=request.user),
         # Needed by the items_section partial so existing dishes render on load
         "items": _annotated_items(location),
         "my_reviews": my_item_reviews,
@@ -1219,24 +1218,30 @@ def location_review_delete(request, pk):
 
 
 # ── Collections ───────────────────────────────────────────────────────────────
+# Collections are private to their owner by default (only the owner can see,
+# edit, or delete their own collections list here) — an owner can flip a
+# collection's is_public flag to surface it, read-only, on their profile page.
 
 @login_required
 def collection_list(request):
     collections = (
         Collection.objects
+        .filter(created_by=request.user)
         .prefetch_related("locations")
-        .select_related("created_by")
         .annotate(loc_count=Count("locations"))
     )
     form = CollectionForm(request.POST or None)
     if request.method == "POST" and form.is_valid():
         coll = form.save(commit=False)
         coll.created_by = request.user
-        coll.save()
-        _log(request, AuditLog.ACTION_CREATE, coll,
-             'Created collection "{}"'.format(coll.name))
-        messages.success(request, 'Collection "{}" created.'.format(coll.name))
-        return redirect("collection_list")
+        if Collection.objects.filter(created_by=request.user, name=coll.name).exists():
+            form.add_error("name", "You already have a collection with this name.")
+        else:
+            coll.save()
+            _log(request, AuditLog.ACTION_CREATE, coll,
+                 'Created collection "{}"'.format(coll.name))
+            messages.success(request, 'Collection "{}" created.'.format(coll.name))
+            return redirect("collection_list")
     return render(request, "tracker/collection_list.html", {
         "collections": collections,
         "form": form,
@@ -1246,9 +1251,7 @@ def collection_list(request):
 @login_required
 @require_POST
 def collection_delete(request, pk):
-    coll = get_object_or_404(Collection, pk=pk)
-    if not can_delete(request.user, coll.created_by):
-        return HttpResponseForbidden("Only the creator, a superuser, or an admin can delete this collection.")
+    coll = get_object_or_404(Collection, pk=pk, created_by=request.user)
     reason = (request.POST.get("reason") or "").strip()
     if not reason:
         messages.error(request, "Please provide a reason for deleting this collection.")
@@ -1262,9 +1265,23 @@ def collection_delete(request, pk):
 
 @login_required
 @require_POST
+def collection_toggle_public(request, pk):
+    coll = get_object_or_404(Collection, pk=pk, created_by=request.user)
+    coll.is_public = not coll.is_public
+    coll.save(update_fields=["is_public"])
+    _log(request, AuditLog.ACTION_UPDATE, coll,
+         'Made collection "{}" {}'.format(coll.name, "public" if coll.is_public else "private"))
+    messages.success(request, 'Collection "{}" is now {}.'.format(
+        coll.name, "public" if coll.is_public else "private"))
+    return redirect("collection_list")
+
+
+@login_required
+@require_POST
 def collection_toggle(request, pk, loc_pk):
-    """Add/remove a location to/from a collection (HTMX, from detail page)."""
-    coll = get_object_or_404(Collection, pk=pk)
+    """Add/remove a location to/from one of the current user's own collections
+    (HTMX, from the location detail page). Only the owner may edit it."""
+    coll = get_object_or_404(Collection, pk=pk, created_by=request.user)
     location = get_object_or_404(Location, pk=loc_pk)
     if coll.locations.filter(pk=location.pk).exists():
         coll.locations.remove(location)
@@ -1275,7 +1292,23 @@ def collection_toggle(request, pk, loc_pk):
     _log(request, AuditLog.ACTION_UPDATE, coll, detail)
     return render(request, "tracker/partials/collections_widget.html", {
         "location": location,
-        "all_collections": Collection.objects.all(),
+        "all_collections": Collection.objects.filter(created_by=request.user),
+    })
+
+
+@login_required
+def user_profile(request, username):
+    """A user's public profile: username, join year, and their public
+    collections (alphabetical), each listing its waypoints alphabetically."""
+    profile_user = get_object_or_404(User, username=username)
+    collections = (
+        Collection.objects
+        .filter(created_by=profile_user, is_public=True)
+        .prefetch_related("locations")
+    )
+    return render(request, "tracker/user_profile.html", {
+        "profile_user": profile_user,
+        "collections": collections,
     })
 
 

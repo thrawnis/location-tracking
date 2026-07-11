@@ -227,7 +227,7 @@ class LocationReviewForm(forms.ModelForm):
 class CollectionForm(forms.ModelForm):
     class Meta:
         model = Collection
-        fields = ["name", "description"]
+        fields = ["name", "description", "is_public"]
         widgets = {
             "name": forms.TextInput(attrs={"placeholder": "e.g. Austin 2026, GF-safe spots"}),
             "description": forms.Textarea(attrs={"rows": 2, "placeholder": "Description (optional)"}),

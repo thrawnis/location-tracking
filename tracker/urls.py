@@ -37,7 +37,11 @@ urlpatterns = [
     # Collections
     path("collections/", views.collection_list, name="collection_list"),
     path("collections/<int:pk>/delete/", views.collection_delete, name="collection_delete"),
+    path("collections/<int:pk>/toggle-public/", views.collection_toggle_public, name="collection_toggle_public"),
     path("collections/<int:pk>/toggle/<int:loc_pk>/", views.collection_toggle, name="collection_toggle"),
+
+    # Public user profiles
+    path("u/<str:username>/", views.user_profile, name="user_profile"),
 
     # Import / Export
     path("export/", views.export_locations, name="export_locations"),
