@@ -132,6 +132,11 @@ LOGIN_URL = "/accounts/login/"
 LOGIN_REDIRECT_URL = "/"
 LOGOUT_REDIRECT_URL = "/"
 
+# Usernames are treated case-insensitively at login ("Alice" == "alice").
+AUTHENTICATION_BACKENDS = [
+    "tracker.auth_backends.CaseInsensitiveModelBackend",
+]
+
 MESSAGE_STORAGE = "django.contrib.messages.storage.session.SessionStorage"
 
 # ── Security headers ───────────────────────────────────────────────────────────

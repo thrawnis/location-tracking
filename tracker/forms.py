@@ -82,6 +82,15 @@ class RegisterForm(UserCreationForm):
         model = User
         fields = ("username", "email", "password1", "password2")
 
+    def clean_username(self):
+        # Usernames are case-insensitive at login, so reject one that only
+        # differs in case from an existing account (which would make the login
+        # lookup ambiguous). The default UserCreationForm only checks exact.
+        username = self.cleaned_data.get("username", "")
+        if username and User.objects.filter(username__iexact=username).exists():
+            raise forms.ValidationError("A user with that username already exists.")
+        return username
+
     def clean_email(self):
         email = self.cleaned_data.get("email", "").strip()
         if email and User.objects.filter(email__iexact=email).exists():

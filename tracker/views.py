@@ -1581,7 +1581,7 @@ def collection_toggle(request, pk, loc_pk):
 def user_profile(request, username):
     """A user's public profile: username, join year, and their public
     collections (alphabetical), each listing its waypoints alphabetically."""
-    profile_user = get_object_or_404(User, username=username)
+    profile_user = get_object_or_404(User, username__iexact=username)
     collections = (
         Collection.objects
         .filter(created_by=profile_user, is_public=True)
