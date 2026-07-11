@@ -151,6 +151,14 @@ class Collection(models.Model):
     is_public = models.BooleanField(
         default=False, help_text="Public collections appear on your profile page."
     )
+    # Superuser/admin-only: also surface this collection on the detail page of
+    # any number of waypoints (e.g. a company's "Food Trucks" collection shown
+    # on the office waypoint's page). Independent of `locations` above — a
+    # collection can feature waypoints it doesn't itself contain, and a
+    # waypoint featuring a collection isn't added to it.
+    featured_on = models.ManyToManyField(
+        Location, related_name="featured_collections", blank=True,
+    )
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
