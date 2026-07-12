@@ -64,15 +64,6 @@
   .osm-item:hover { border-color: #a5b4fc; }
   .osm-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; margin-top: 4px; }
 
-  /* ── Category filter chips ────────────────────────────────────── */
-  .filter-chip {
-    display: inline-flex; align-items: center; gap: 4px;
-    font-size: 11px; font-weight: 600; padding: 3px 9px; border-radius: 20px;
-    border: 1.5px solid currentColor; cursor: pointer; transition: opacity 150ms, background 150ms;
-    background: transparent; white-space: nowrap;
-  }
-  .filter-chip.chip-off { opacity: 0.35; background: #f1f5f9; }
-
   /* ── Quick nearby-search chips (Restaurants, Retail, …) ───────
      Only whole chips that fit on one line are shown — extras are
      hidden by JS (fitQuickChips), not clipped by CSS overflow. */
@@ -538,13 +529,6 @@
         <!-- Filter bar -->
         <div class="shrink-0 px-3 pt-2.5 pb-2 border-b border-slate-100 space-y-2">
           <div class="flex flex-wrap gap-1.5 items-center">
-            <span class="text-[10px] font-semibold text-slate-400 uppercase tracking-wide mr-1">Type</span>
-            <button class="filter-chip" data-cat="food" style="color:#3b82f6">🍴 Food</button>
-            <button class="filter-chip" data-cat="shop" style="color:#f97316">🛒 Shops</button>
-            <button class="filter-chip" data-cat="fuel" style="color:#78350f">⛽ Gas/EV</button>
-            <button class="filter-chip" data-cat="poi"  style="color:#22c55e">🏛 POI</button>
-          </div>
-          <div class="flex flex-wrap gap-1.5 items-center">
             <span class="text-[10px] font-semibold text-slate-400 uppercase tracking-wide mr-1">Distance</span>
             <button class="dist-chip dist-active" data-dist="all">All</button>
             <button class="dist-chip" data-dist="1">&lt; 1 mi</button>
@@ -638,7 +622,6 @@ const CSRF_TOKEN = '{{ csrf_token }}';
   let mineFilter     = true; // true → only places the current user has reviewed ("My Waypoints" is the default home view)
   let osmEntries     = [];   // { marker, cat, distKm, element }
   let sidebarOpen    = false;
-  let osmCatFilters  = { food: true, shop: true, fuel: true, poi: true };
   let distFilter     = 'all';
   let ignoreNextIdle = false;
 
@@ -1010,8 +993,7 @@ const CSRF_TOKEN = '{{ csrf_token }}';
   }
 
   // ── OSM/Nearby filter helpers ─────────────────────────────────
-  function entryVisible({ cat, distKm }) {
-    if (osmCatFilters[cat] === false) return false;
+  function entryVisible({ distKm }) {
     if (distFilter === 'all') return true;
     const mi = distKm * 0.621371;
     if (distFilter === '1')  return mi < 1;
@@ -1193,7 +1175,7 @@ const CSRF_TOKEN = '{{ csrf_token }}';
         const pinEl = document.createElement('div');
         pinEl.innerHTML = pinSvg(info.color);
         const marker = new google.maps.marker.AdvancedMarkerElement({
-          map:      osmCatFilters[cat] !== false ? mainMap : null,
+          map:      mainMap,
           position: { lat, lng },
           content:  pinEl,
           title:    name,
@@ -1947,15 +1929,6 @@ const CSRF_TOKEN = '{{ csrf_token }}';
       if (!hasLocationText()) { flashLocationRequired(); return; }
       showSearchAreaBtn(false);
       searchGooglePlaces(nameFilter);
-    });
-
-    document.querySelectorAll('.filter-chip').forEach(chip => {
-      chip.addEventListener('click', () => {
-        const cat = chip.dataset.cat;
-        osmCatFilters[cat] = !osmCatFilters[cat];
-        chip.classList.toggle('chip-off', !osmCatFilters[cat]);
-        applyOsmFilters();
-      });
     });
 
     document.querySelectorAll('.dist-chip').forEach(chip => {
