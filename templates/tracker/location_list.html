@@ -372,7 +372,7 @@
         <option value="rating">Waypoint rating</option>
         <option value="reviews">Number of reviews</option>
         <option value="recent">Recently added</option>
-        <option value="distance">Distance</option>
+        <option value="distance" selected>Distance</option>
       </select>
       <button id="wp-sort-dir" type="button" title="Reverse sort order"
               aria-label="Reverse sort order"
@@ -614,7 +614,7 @@ const CSRF_TOKEN = '{{ csrf_token }}';
   let userPos        = null;      // { lat, lng } reference point for distance sort
   let mapLoaded      = false;     // has the Google Maps library been requested?
   let currentView    = 'list';    // 'list' | 'map'
-  let listSort       = 'name';    // sort key for the list view
+  let listSort       = 'distance'; // sort key for the list view
   let listSortDir    = 1;         // 1 = ascending, -1 = descending
   let listPage       = 1;
   const LIST_PAGE_SIZE = 10;
@@ -1587,7 +1587,10 @@ const CSRF_TOKEN = '{{ csrf_token }}';
       listSortDir = 1;                                  // reset to the sort's natural order
       listPage = 1;
       setSortDirIcon();
-      if (listSort === 'distance' && !userPos) locateUser();   // need a fix to sort by distance
+      // Need a fix to sort by distance; never explicit and never allowed to
+      // touch the search box (updateBox=false) — see the matching comment
+      // where the default-sort case triggers the same silent locate below.
+      if (listSort === 'distance' && !userPos) locateUser(false, false);
       renderList();
     });
     document.getElementById('wp-sort-dir').addEventListener('click', () => {
@@ -1686,14 +1689,21 @@ const CSRF_TOKEN = '{{ csrf_token }}';
     try { remembered = sessionStorage.getItem(LOC_KEY); } catch (_) {}
     if (remembered) locInput.value = remembered;
 
-    // Auto-locate on load so distance sorting is ready — but only when nothing
-    // was already remembered this session; otherwise skip it entirely rather
-    // than fetching a fix we don't need. This is free either way: a browser
-    // GPS fix, or our own /api/geoip endpoint — never a Google API call.
-    // explicit=false always, so this can never pop open the precise-location
-    // help modal (that only ever fires for an explicit "Locate me" click —
-    // see the `explicit` param on locateUser).
-    if (!remembered) locateUser(false, true);
+    // Auto-locate on load — but only when nothing was already remembered this
+    // session; otherwise skip it entirely rather than fetching a fix we don't
+    // need. This is free either way: a browser GPS fix, or our own /api/geoip
+    // endpoint — never a Google API call. explicit=false always, so this can
+    // never pop open the precise-location help modal (that only ever fires
+    // for an explicit "Locate me" click — see the `explicit` param on
+    // locateUser).
+    if (!remembered) {
+      locateUser(false, true);
+    } else if (listSort === 'distance') {
+      // Distance is the default sort — still need a position fix to sort by,
+      // even though the search box already has a remembered value; just
+      // never let this one touch it (updateBox=false).
+      locateUser(false, false);
+    }
   }
 
   // ── Map initialisation (Google Maps callback) ─────────────────
