@@ -53,10 +53,6 @@
         <p class="text-red-500 text-xs mt-1">{{ form.file.errors|join:", " }}</p>
         {% endif %}
       </div>
-      <div class="flex items-center gap-2">
-        <label class="text-sm text-slate-600">{{ form.default_status.label }}:</label>
-        {{ form.default_status }}
-      </div>
       <button type="submit"
               class="bg-brand hover:bg-brand-dark text-white text-sm font-semibold px-4 py-2 rounded-lg transition-colors">
         ⬆ Import

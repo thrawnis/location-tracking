@@ -110,7 +110,6 @@ class LocationForm(forms.ModelForm):
         fields = [
             "name",
             "category",
-            "status",
             "address",
             "city",
             "state",
@@ -125,7 +124,6 @@ class LocationForm(forms.ModelForm):
         ]
         widgets = {
             "name": forms.TextInput(attrs={"placeholder": "Location name"}),
-            "status": forms.RadioSelect(),
             "address": forms.TextInput(attrs={"placeholder": "Address (optional — use map to set)"}),
             "city": forms.HiddenInput(),
             "state": forms.HiddenInput(),
@@ -262,12 +260,6 @@ class TakeoutImportForm(forms.Form):
 
     file = forms.FileField(
         help_text="Saved Places.json from Google Takeout, or any GeoJSON FeatureCollection",
-    )
-    default_status = forms.ChoiceField(
-        choices=Location.STATUS_CHOICES,
-        initial=Location.STATUS_WANT,
-        label="Import as",
-        help_text="Status to assign to imported places",
     )
 
 

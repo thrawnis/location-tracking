@@ -92,9 +92,6 @@
            class="flex items-center gap-3 px-5 py-2.5 hover:bg-slate-50 transition-colors">
           <span class="text-lg">{{ loc.category|category_icon }}</span>
           <span class="text-sm font-medium text-slate-700">{{ loc.name }}</span>
-          {% if loc.status == 'want' %}
-          <span class="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-sky-100 text-sky-700">Want to go</span>
-          {% endif %}
           <span class="text-xs text-slate-400 ml-auto">
             {{ loc.city }}{% if loc.city and loc.state %}, {% endif %}{{ loc.state }}
           </span>

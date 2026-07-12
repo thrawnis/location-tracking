@@ -25,19 +25,8 @@ class Location(models.Model):
         ("other", "Other"),
     ]
 
-    STATUS_BEEN = "been"
-    STATUS_WANT = "want"
-    STATUS_CHOICES = [
-        (STATUS_BEEN, "Been there"),
-        (STATUS_WANT, "Want to go"),
-    ]
-
     name = models.CharField(max_length=255)
     category = models.CharField(max_length=20, choices=CATEGORY_CHOICES, default="other")
-    status = models.CharField(
-        max_length=10, choices=STATUS_CHOICES, default=STATUS_BEEN,
-        help_text="Have you been here, or is it on your wishlist?",
-    )
     address = models.TextField(blank=True)
     city = models.CharField(max_length=100, blank=True)
     state = models.CharField(max_length=100, blank=True)

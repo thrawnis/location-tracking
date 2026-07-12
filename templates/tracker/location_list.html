@@ -308,27 +308,6 @@
            class="absolute right-0 mt-2 w-64 bg-white rounded-xl shadow-lg border border-slate-100
                   p-3 z-[1100] space-y-3">
         <div>
-          <label class="block text-[11px] font-semibold text-slate-500 uppercase tracking-wide mb-1">Category</label>
-          <select id="category-filter"
-                  class="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 bg-white
-                         focus:outline-none focus:ring-2 focus:ring-brand/30 focus:border-brand">
-            <option value="">All categories</option>
-            {% for val, label in category_choices %}
-            <option value="{{ val }}">{{ label }}</option>
-            {% endfor %}
-          </select>
-        </div>
-        <div>
-          <label class="block text-[11px] font-semibold text-slate-500 uppercase tracking-wide mb-1">Status</label>
-          <select id="status-filter" title="Been there / want to go"
-                  class="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 bg-white
-                         focus:outline-none focus:ring-2 focus:ring-brand/30 focus:border-brand">
-            <option value="">All statuses</option>
-            <option value="been">✓ Been there</option>
-            <option value="want">🌟 Want to go</option>
-          </select>
-        </div>
-        <div>
           <label class="block text-[11px] font-semibold text-slate-500 uppercase tracking-wide mb-1">Gluten-free</label>
           <select id="gf-filter" title="Gluten-free level"
                   class="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 bg-white
@@ -476,7 +455,6 @@
              data-state="{{ loc.state|lower }}"
              data-address="{{ loc.address|lower }}"
              data-category="{{ loc.category }}"
-             data-status="{{ loc.status }}"
              data-gf="{{ loc.gluten_free }}"
              data-mine="{{ loc.mine|yesno:'1,0' }}"
              data-lat="{{ loc.latitude|default:'' }}"
@@ -527,9 +505,6 @@
               {% else %}{% stars_display loc.overall_rating "sm" %}{% endif %}
               {% if loc.mine %}
               <span class="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-violet-100 text-violet-700">✓ You reviewed</span>
-              {% endif %}
-              {% if loc.status == 'want' %}
-              <span class="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-sky-100 text-sky-700">🌟 Want to go</span>
               {% endif %}
               {% if loc.gluten_free == 'dedicated' %}
               <span class="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-emerald-100 text-emerald-700">🌾 GF kitchen</span>
@@ -659,8 +634,6 @@ const CSRF_TOKEN = '{{ csrf_token }}';
   }
   let activeId       = null;
   let nameFilter     = '';
-  let catFilter      = '';
-  let statusFilter   = '';
   let gfFilter       = '';   // '' | 'dedicated' | 'gf-any'
   let mineFilter     = true; // true → only places the current user has reviewed ("My Waypoints" is the default home view)
   let osmEntries     = [];   // { marker, cat, distKm, element }
@@ -1011,15 +984,13 @@ const CSRF_TOKEN = '{{ csrf_token }}';
       const p   = card.dataset;
       const lat = parseFloat(p.lat), lng = parseFloat(p.lng);
       const nameOk   = !nameFilter   || p.name.includes(nameFilter);
-      const catOk    = !catFilter    || p.category === catFilter;
-      const statusOk = !statusFilter || p.status === statusFilter;
       const gfOk     = !gfFilter
                      || (gfFilter === 'dedicated' && p.gf === 'dedicated')
                      || (gfFilter === 'gf-any'    && (p.gf === 'dedicated' || p.gf === 'options'));
       const mineOk   = !mineFilter || p.mine === '1';
       const boundsOk = !bounds || (!isNaN(lat) && !isNaN(lng) &&
                         bounds.contains(new google.maps.LatLng(lat, lng)));
-      const show = nameOk && catOk && statusOk && gfOk && mineOk && boundsOk;
+      const show = nameOk && gfOk && mineOk && boundsOk;
 
       card.classList.toggle('hidden-card', !show);
       const entry = markerMap[p.id];
@@ -1031,7 +1002,7 @@ const CSRF_TOKEN = '{{ csrf_token }}';
 
   // Show a count badge on the filters icon when any filter is active
   function updateFilterBadge() {
-    const active = [catFilter, statusFilter, gfFilter, mineFilter].filter(Boolean).length;
+    const active = [gfFilter, mineFilter].filter(Boolean).length;
     const badge = document.getElementById('filter-badge');
     if (!badge) return;
     badge.textContent = active;
@@ -1486,13 +1457,11 @@ const CSRF_TOKEN = '{{ csrf_token }}';
   // Shared filters (name box + filter popover) applied to one waypoint.
   function listFilterOk(w) {
     const nameOk   = !nameFilter   || w._name.includes(nameFilter) || w._loc.includes(nameFilter);
-    const catOk    = !catFilter    || w.category === catFilter;
-    const statusOk = !statusFilter || w.status === statusFilter;
     const gfOk     = !gfFilter
                    || (gfFilter === 'dedicated' && w.gluten_free === 'dedicated')
                    || (gfFilter === 'gf-any'    && (w.gluten_free === 'dedicated' || w.gluten_free === 'options'));
     const mineOk   = !mineFilter || w.mine;
-    return nameOk && catOk && statusOk && gfOk && mineOk;
+    return nameOk && gfOk && mineOk;
   }
 
   function waypointDistKm(w) {
@@ -1545,7 +1514,6 @@ const CSRF_TOKEN = '{{ csrf_token }}';
       ? `<p class="text-xs font-semibold text-violet-600 mt-0.5">${escapeHtml(w.group_rating_summary)}</p>` : '';
     const badges = [
       w.mine ? '<span class="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-violet-100 text-violet-700">✓ You reviewed</span>' : '',
-      w.status === 'want' ? '<span class="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-sky-100 text-sky-700">🌟 Want to go</span>' : '',
       w.gluten_free === 'dedicated' ? '<span class="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-emerald-100 text-emerald-700">🌾 GF kitchen</span>'
         : w.gluten_free === 'options' ? '<span class="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700">🌾 GF options</span>' : '',
     ].join('');
@@ -1759,13 +1727,11 @@ const CSRF_TOKEN = '{{ csrf_token }}';
     });
 
     // Filter popover — both views.
-    document.getElementById('category-filter')?.addEventListener('change', e => { catFilter = e.target.value; onFiltersChanged(); });
-    document.getElementById('status-filter')?.addEventListener('change',  e => { statusFilter = e.target.value; onFiltersChanged(); });
     document.getElementById('gf-filter')?.addEventListener('change',      e => { gfFilter = e.target.value; onFiltersChanged(); });
     document.getElementById('mine-filter')?.addEventListener('change',    e => { mineFilter = e.target.checked; onFiltersChanged(); });
     document.getElementById('clear-filters')?.addEventListener('click', () => {
-      catFilter = statusFilter = gfFilter = ''; mineFilter = false;
-      ['category-filter', 'status-filter', 'gf-filter'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
+      gfFilter = ''; mineFilter = false;
+      const gfEl = document.getElementById('gf-filter'); if (gfEl) gfEl.value = '';
       const mineEl = document.getElementById('mine-filter'); if (mineEl) mineEl.checked = false;
       onFiltersChanged();
     });
@@ -1922,18 +1888,14 @@ const CSRF_TOKEN = '{{ csrf_token }}';
             : p.gluten_free === 'options'
             ? '<span style="font-size:10px;background:#fef3c7;color:#b45309;padding:1px 6px;border-radius:8px;font-weight:600">🌾 GF options</span>'
             : '';
-          const wantBadge = p.status === 'want'
-            ? '<span style="font-size:10px;background:#e0f2fe;color:#0369a1;padding:1px 6px;border-radius:8px;font-weight:600">🌟 Want to go</span>'
-            : '';
           const mineBadge = p.mine
             ? '<span style="font-size:10px;background:#ede9fe;color:#6d28d9;padding:1px 6px;border-radius:8px;font-weight:600">✓ You reviewed</span>'
             : '';
-          const statusBadges = `${wantBadge}${mineBadge}`;
 
           const popupContent = `<div style="min-width:190px;max-width:250px;font-family:inherit;padding:2px">
             ${p.photo ? `<img src="${p.photo}" alt="" style="width:100%;height:110px;object-fit:cover;border-radius:8px;margin-bottom:6px">` : ''}
             <p style="font-size:11px;color:#64748b;margin:0 0 3px">${escapeHtml(p.category_display)}</p>
-            ${statusBadges ? `<p style="margin:0 0 4px;display:flex;gap:4px;flex-wrap:wrap">${statusBadges}</p>` : ''}
+            ${mineBadge ? `<p style="margin:0 0 4px;display:flex;gap:4px;flex-wrap:wrap">${mineBadge}</p>` : ''}
             ${addrLine1 ? `<p style="font-size:12px;color:#475569;margin:0">📍 ${escapeHtml(addrLine1)}</p>` : ''}
             ${addrLine2 ? `<p style="font-size:12px;color:#475569;margin:0;padding-left:15px">${escapeHtml(addrLine2)}</p>` : ''}
             ${gfBadge ? `<p style="margin:4px 0 0;display:flex;gap:4px;flex-wrap:wrap">${gfBadge}</p>` : ''}

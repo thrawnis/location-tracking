@@ -83,7 +83,6 @@ def _location_diff(old, new_data):
     field_labels = {
         "name": "Name",
         "category": "Category",
-        "status": "Status",
         "address": "Address",
         "city": "City",
         "state": "State",
@@ -625,7 +624,6 @@ def location_list(request):
             "category": loc.category,
             "category_display": loc.get_category_display(),
             "icon": category_icons.get(loc.category, "📍"),
-            "status": loc.status,
             "gluten_free": loc.gluten_free,
             "mine": bool(loc.mine),
             "rating": round(float(rating), 1) if rating else None,
@@ -645,7 +643,6 @@ def location_list(request):
         "locations": locations,
         "waypoints": waypoints,
         "category_choices": Location.CATEGORY_CHOICES,
-        "status_choices": Location.STATUS_CHOICES,
         "gf_choices": Location.GF_CHOICES,
     })
 
@@ -714,7 +711,7 @@ def location_detail(request, pk):
 def location_create(request):
     prefill = {f: request.GET[f] for f in [
         'name','address','latitude','longitude','city','state',
-        'gluten_free','dietary_notes','status','google_place_id',
+        'gluten_free','dietary_notes','google_place_id',
     ] if request.GET.get(f)}
     unlock = is_superuser_role(request.user)
     form = LocationForm(request.POST or None, initial=prefill or None, unlock_google_fields=unlock)
@@ -764,7 +761,6 @@ def rate_poi(request):
             longitude=request.POST.get("longitude") or None,
             address=(request.POST.get("address") or "").strip(),
             google_place_id=place_id,
-            status=Location.STATUS_BEEN,
             created_by=request.user,
         )
         _log(request, AuditLog.ACTION_CREATE, location,
@@ -992,7 +988,6 @@ def locations_geojson(request):
                 "review_count": loc.num_reviews,
                 "group_rating_summary": _group_rating_summary_text(group_breakdowns.get(loc.pk)),
                 "google_place_id": loc.google_place_id,
-                "status": loc.status,
                 "gluten_free": loc.gluten_free,
                 "mine": loc.mine,
                 "photo": first_photo.image.url if first_photo else None,
@@ -1840,7 +1835,7 @@ def export_locations(request):
                 "geometry": {"type": "Point",
                              "coordinates": [float(loc.longitude), float(loc.latitude)]},
                 "properties": {
-                    "name": loc.name, "category": loc.category, "status": loc.status,
+                    "name": loc.name, "category": loc.category,
                     "address": loc.address, "city": loc.city, "state": loc.state,
                     "gluten_free": loc.gluten_free, "dietary_notes": loc.dietary_notes,
                     "rating": float(loc.user_avg_rating or loc.overall_rating or 0) or None,
@@ -1893,13 +1888,13 @@ def export_locations(request):
     resp["Content-Disposition"] = 'attachment; filename="waypoints.csv"'
     writer = csv.writer(resp)
     writer.writerow([
-        "name", "category", "status", "address", "city", "state",
+        "name", "category", "address", "city", "state",
         "latitude", "longitude",
         "gluten_free", "dietary_notes", "rating", "public_notes",
     ])
     for loc in qs:
         writer.writerow([_csv_safe(v) for v in [
-            loc.name, loc.category, loc.status, loc.address, loc.city, loc.state,
+            loc.name, loc.category, loc.address, loc.city, loc.state,
             loc.latitude or "", loc.longitude or "",
             loc.gluten_free, loc.dietary_notes,
             loc.user_avg_rating or loc.overall_rating or "", loc.public_notes,
@@ -1964,7 +1959,6 @@ def import_locations(request):
                 form.add_error("file", "That file is too large or too deeply nested to import.")
 
         if data is not None:
-            status = form.cleaned_data["default_status"]
             created, skipped = 0, 0
             for fields in _parse_takeout_features(data):
                 # Skip exact name duplicates (case-insensitive)
@@ -1972,7 +1966,7 @@ def import_locations(request):
                     skipped += 1
                     continue
                 loc = Location.objects.create(
-                    created_by=request.user, status=status, **fields,
+                    created_by=request.user, **fields,
                 )
                 _log(request, AuditLog.ACTION_CREATE, loc,
                      'Imported "{}" from file upload'.format(loc.name))

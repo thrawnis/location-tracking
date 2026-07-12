@@ -68,12 +68,6 @@
         {% endwith %}
         <!-- Google rating (filled by JS from Place Details when a place_id is known) -->
         <span id="google-rating-badge"></span>
-        {% if location.status == 'want' %}
-        <span class="inline-flex items-center gap-1 text-xs font-semibold px-2.5 py-1 rounded-full
-                     bg-sky-100 text-sky-700 border border-sky-200">
-          🌟 Want to go
-        </span>
-        {% endif %}
         <span id="open-now-badge"></span>
       </div>
       {% if user|is_superuser_role or location.created_by == user %}
