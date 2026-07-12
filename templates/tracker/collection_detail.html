@@ -19,6 +19,23 @@
     {% if collection.description %}
     <p class="text-sm text-slate-500 mt-1">{{ collection.description }}</p>
     {% endif %}
+    {% if user|is_superuser_role and collection.is_public %}
+    <div class="mt-2">
+      <form method="post" action="{% url 'collection_toggle_featured' collection.pk %}" class="inline">
+        {% csrf_token %}
+        <button type="submit"
+                class="text-xs font-semibold px-2.5 py-1 rounded-lg border transition-all
+                       {% if collection.is_featured %}text-amber-700 border-amber-300 bg-amber-50 hover:border-amber-500
+                       {% else %}text-slate-500 border-slate-200 hover:border-brand/40 hover:text-brand{% endif %}">
+          {% if collection.is_featured %}★ Unfeature{% else %}Feature{% endif %}
+        </button>
+      </form>
+      <p class="text-[11px] text-slate-400 mt-1">
+        Superuser/admin only: featuring adds a "★ Featured in" link to every waypoint in this
+        collection, pointing back to this page.
+      </p>
+    </div>
+    {% endif %}
   </div>
 
   <div class="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">

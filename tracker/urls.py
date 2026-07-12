@@ -39,6 +39,7 @@ urlpatterns = [
     # Collections
     path("collections/", views.collection_list, name="collection_list"),
     path("collections/<int:pk>/", views.collection_detail, name="collection_detail"),
+    path("collections/<int:pk>/edit/", views.collection_edit, name="collection_edit"),
     path("collections/<int:pk>/delete/", views.collection_delete, name="collection_delete"),
     path("collections/<int:pk>/toggle-public/", views.collection_toggle_public, name="collection_toggle_public"),
     path("collections/<int:pk>/toggle-featured/", views.collection_toggle_featured, name="collection_toggle_featured"),

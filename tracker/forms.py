@@ -255,6 +255,20 @@ class CollectionForm(forms.ModelForm):
         }
 
 
+class CollectionEditForm(forms.ModelForm):
+    """Rename/redescribe an existing collection. Deliberately excludes
+    is_public (that has its own dedicated toggle button/action) so submitting
+    this form can never silently flip it off."""
+
+    class Meta:
+        model = Collection
+        fields = ["name", "description"]
+        widgets = {
+            "name": forms.TextInput(attrs={"placeholder": "e.g. Austin 2026, GF-safe spots"}),
+            "description": forms.Textarea(attrs={"rows": 2, "placeholder": "Description (optional)"}),
+        }
+
+
 class TakeoutImportForm(forms.Form):
     """Upload a Google Takeout 'Saved Places' JSON or a generic GeoJSON file."""
 

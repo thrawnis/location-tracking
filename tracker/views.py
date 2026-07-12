@@ -24,8 +24,8 @@ from django.urls import reverse
 from django.views.decorators.http import require_POST
 
 from .forms import (
-    CollectionForm, ItemForm, ItemReviewForm, LocationForm, LocationReviewForm,
-    PhotoForm, RegisterForm, TakeoutImportForm,
+    CollectionEditForm, CollectionForm, ItemForm, ItemReviewForm, LocationForm,
+    LocationReviewForm, PhotoForm, RegisterForm, TakeoutImportForm,
 )
 from .models import (
     AuditLog, ChainGroup, Collection, EmailVerification, FriendGroup, FriendGroupJoinRequest,
@@ -1527,23 +1527,38 @@ def collection_list(request):
                  'Created collection "{}"'.format(coll.name))
             messages.success(request, 'Collection "{}" created.'.format(coll.name))
             return redirect("collection_list")
-    # Superusers/admins can promote any PUBLIC collection (their own or
-    # anyone else's) to "featured" — every waypoint it contains then links
-    # back to it from that waypoint's own detail page.
-    featurable = None
-    if is_superuser_role(request.user):
-        featurable = (
-            Collection.objects.filter(is_public=True)
-            .select_related("created_by")
-            .prefetch_related("locations")
-            .annotate(loc_count=Count("locations"))
-            .order_by("-is_featured", "name")
-        )
     return render(request, "tracker/collection_list.html", {
         "collections": collections,
         "form": form,
-        "featurable": featurable,
     })
+
+
+@login_required
+def collection_edit(request, pk):
+    """Rename/redescribe a collection. Owner, superuser, or admin — matches
+    the same override pattern used for waypoints (can_edit_location)."""
+    coll = get_object_or_404(Collection, pk=pk)
+    if not (coll.created_by_id == request.user.pk or is_superuser_role(request.user)):
+        return HttpResponseForbidden("Only the owner, a superuser, or an admin can edit this collection.")
+    if request.method == "POST":
+        form = CollectionEditForm(request.POST, instance=coll)
+        if form.is_valid():
+            name = form.cleaned_data["name"]
+            # Uniqueness is per-owner (see Collection.unique_together) — check
+            # against the OWNER's other collections, not the editor's, since a
+            # superuser editing someone else's collection isn't the owner.
+            if Collection.objects.filter(created_by_id=coll.created_by_id, name=name).exclude(pk=coll.pk).exists():
+                form.add_error("name", "A collection with that name already exists.")
+            else:
+                old_name = coll.name
+                form.save()
+                _log(request, AuditLog.ACTION_UPDATE, coll,
+                     'Renamed collection "{}" to "{}"'.format(old_name, coll.name)
+                     if old_name != coll.name else 'Updated collection "{}"'.format(coll.name))
+                messages.success(request, 'Collection "{}" updated.'.format(coll.name))
+                return redirect("collection_list")
+        messages.error(request, form.errors.get("name", ["Couldn't save — check the form."])[0])
+    return redirect("collection_list")
 
 
 @login_required
