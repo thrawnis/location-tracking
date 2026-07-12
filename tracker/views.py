@@ -804,11 +804,14 @@ def location_delete(request, pk):
     location = get_object_or_404(Location, pk=pk)
     if not can_delete(request.user, location.created_by):
         return HttpResponseForbidden("Only the creator, a superuser, or an admin can delete this waypoint.")
+    # Lets the admin dashboard link here with ?next=... so deleting (or
+    # cancelling) returns there instead of always landing on location_list.
+    nxt = _safe_next(request.POST.get("next") or request.GET.get("next") or "")
     if request.method == "POST":
         reason = (request.POST.get("reason") or "").strip()
         if not reason:
             messages.error(request, "Please provide a reason for deleting this waypoint.")
-            return render(request, "tracker/location_confirm_delete.html", {"location": location})
+            return render(request, "tracker/location_confirm_delete.html", {"location": location, "next": nxt})
         # If this location is chain-linked, items it happens to "own" (Item.
         # location) are still shared with the rest of the group — reassign
         # them to a surviving branch instead of letting CASCADE delete them.
@@ -824,8 +827,8 @@ def location_delete(request, pk):
         )
         location.delete()
         messages.success(request, "Waypoint deleted.")
-        return redirect("location_list")
-    return render(request, "tracker/location_confirm_delete.html", {"location": location})
+        return redirect(nxt or "location_list")
+    return render(request, "tracker/location_confirm_delete.html", {"location": location, "next": nxt})
 
 
 def _merge_chain_group_items(group):

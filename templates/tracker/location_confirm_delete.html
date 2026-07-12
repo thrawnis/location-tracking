@@ -17,6 +17,7 @@
     </p>
     <form method="post" class="space-y-3">
       {% csrf_token %}
+      {% if next %}<input type="hidden" name="next" value="{{ next }}">{% endif %}
       <div class="text-left">
         <label class="block text-xs font-medium text-slate-600 mb-1">
           Reason for deleting (required — recorded in the audit log)
@@ -30,7 +31,7 @@
                 class="bg-red-500 hover:bg-red-600 text-white font-semibold px-5 py-2.5 rounded-lg transition-colors">
           Yes, delete
         </button>
-        <a href="{% url 'location_detail' location.pk %}"
+        <a href="{% if next %}{{ next }}{% else %}{% url 'location_detail' location.pk %}{% endif %}"
            class="border border-slate-200 hover:border-slate-300 text-slate-600 hover:text-slate-800
                   font-semibold px-5 py-2.5 rounded-lg transition-all">
           Cancel

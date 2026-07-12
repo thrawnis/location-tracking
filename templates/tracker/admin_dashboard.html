@@ -105,7 +105,8 @@
               <div class="flex items-center justify-end gap-3 whitespace-nowrap">
                 <a href="{% url 'location_detail' loc.pk %}" class="text-slate-500 hover:text-brand">View</a>
                 <a href="{% url 'location_edit' loc.pk %}" class="text-brand hover:underline font-medium">Edit</a>
-                <a href="{% url 'location_delete' loc.pk %}" class="text-red-500 hover:text-red-700">Delete</a>
+                <a href="{% url 'location_delete' loc.pk %}?next={{ request.get_full_path|urlencode }}"
+                   class="text-red-500 hover:text-red-700">Delete</a>
               </div>
             </td>
           </tr>
