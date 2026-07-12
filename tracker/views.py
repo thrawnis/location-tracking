@@ -88,7 +88,6 @@ def _location_diff(old, new_data):
         "state": "State",
         "latitude": "Latitude",
         "longitude": "Longitude",
-        "overall_rating": "Rating",
         "gluten_free": "Gluten-free",
         "dietary_notes": "Dietary notes",
         "public_notes": "Public notes",

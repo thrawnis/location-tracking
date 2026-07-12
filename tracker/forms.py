@@ -116,7 +116,6 @@ class LocationForm(forms.ModelForm):
             "latitude",
             "longitude",
             "google_place_id",
-            "overall_rating",
             "gluten_free",
             "dietary_notes",
             "public_notes",
@@ -137,7 +136,6 @@ class LocationForm(forms.ModelForm):
             "private_notes": forms.Textarea(
                 attrs={"rows": 4, "placeholder": "Only visible when logged in"}
             ),
-            "overall_rating": forms.HiddenInput(),
         }
 
     def __init__(self, *args, unlock_google_fields=False, **kwargs):
