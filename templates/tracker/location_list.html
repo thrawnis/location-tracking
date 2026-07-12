@@ -1657,7 +1657,18 @@ const CSRF_TOKEN = '{{ csrf_token }}';
       onFiltersChanged();
     });
 
-    document.getElementById('locate-btn')?.addEventListener('click', () => locateUser(true));
+    // Precise geolocation is only ever possible with the Geolocation API in a
+    // secure (HTTPS) context — see the same checks at the top of locateUser().
+    // Without either, a click could only ever fall back to an approximate IP
+    // location, which isn't what this button promises — hide it entirely.
+    const locateBtn = document.getElementById('locate-btn');
+    if (locateBtn) {
+      if (navigator.geolocation && window.isSecureContext) {
+        locateBtn.addEventListener('click', () => locateUser(true));
+      } else {
+        locateBtn.remove();
+      }
+    }
 
     setSortDirIcon();
     renderList();
