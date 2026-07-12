@@ -1236,7 +1236,16 @@ const CSRF_TOKEN = '{{ csrf_token }}';
   function onLocated(lat, lng, label, zoom, boxText, updateBox) {
     userPos = { lat, lng };
     renderList();                       // recompute distances for the list view
-    if (updateBox !== false && boxText) fillLocationSearch(boxText);
+    if (updateBox !== false && boxText) {
+      // A GPS fix can take up several seconds to resolve (watchPosition
+      // keeps waiting for a better reading, see locateUser). If the user
+      // explicitly set a location in the meantime — typed one and pressed
+      // Enter, or used "Locate me" — sessionStorage already reflects that;
+      // don't let this now-stale fix silently overwrite it.
+      let alreadySet = null;
+      try { alreadySet = sessionStorage.getItem(LOC_KEY); } catch (_) {}
+      if (!alreadySet) fillLocationSearch(boxText);
+    }
     if (mainMap) placeUserDot(lat, lng, label, zoom);
   }
 
@@ -1850,8 +1859,13 @@ const CSRF_TOKEN = '{{ csrf_token }}';
 
     // Drop the "you are here" dot if we already have a fix from the list view's
     // auto-locate; otherwise locate now. Either way, no new Google API call.
+    // Never explicit and never allowed to touch the search box (updateBox=
+    // false) — this can resolve up to ~12s later (GPS watch/IP fallback), by
+    // which point the user may have already typed and submitted their own
+    // location (e.g. a zip code) or run a nearby search; without this it
+    // would silently clobber that with an approximate real-world fix.
     if (userPos) placeUserDot(userPos.lat, userPos.lng, 'You are here', 13);
-    else locateUser();
+    else locateUser(false, false);
 
     // ── Wire up MAP-ONLY UI events ──────────────────────────────
     // (The search box, filter popover, locate button, sort and view toggle
