@@ -13,8 +13,8 @@ class ItemInline(admin.TabularInline):
 
 @admin.register(Location)
 class LocationAdmin(admin.ModelAdmin):
-    list_display = ("name", "category", "overall_rating", "created_by", "created_at")
-    list_filter = ("category", "gluten_free")
+    list_display = ("name", "overall_rating", "created_by", "created_at")
+    list_filter = ("gluten_free",)
     search_fields = ("name", "address")
     inlines = [ItemInline]
 

@@ -45,7 +45,7 @@
       <li>
         <a href="{% url 'location_detail' loc.pk %}"
            class="flex items-center gap-3 px-5 py-3 hover:bg-slate-50 transition-colors">
-          <span class="text-lg">{{ loc.category|category_icon }}</span>
+          <span class="text-lg">📍</span>
           <div class="min-w-0 flex-1">
             <p class="text-sm font-medium text-slate-700 truncate">{{ loc.name }}</p>
             {% if loc.city or loc.state %}

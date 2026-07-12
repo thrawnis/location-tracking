@@ -82,7 +82,6 @@ def _require_reason(request):
 def _location_diff(old, new_data):
     field_labels = {
         "name": "Name",
-        "category": "Category",
         "address": "Address",
         "city": "City",
         "state": "State",
@@ -610,7 +609,6 @@ def location_list(request):
     # (list) view renders entirely from this payload client-side — sorting,
     # filtering and paging happen in the browser with no extra requests, so
     # loading the home page costs zero Google API calls.
-    category_icons = {"restaurant": "🍽️", "store": "🛍️", "attraction": "🎯", "other": "📍"}
     loc_list = list(locations)
     group_breakdowns = _bulk_group_rating_breakdown(request.user, [loc.pk for loc in loc_list])
     waypoints = []
@@ -620,9 +618,6 @@ def location_list(request):
         waypoints.append({
             "id": loc.pk,
             "name": loc.name,
-            "category": loc.category,
-            "category_display": loc.get_category_display(),
-            "icon": category_icons.get(loc.category, "📍"),
             "gluten_free": loc.gluten_free,
             "mine": bool(loc.mine),
             "rating": round(float(rating), 1) if rating else None,
@@ -641,7 +636,6 @@ def location_list(request):
     return render(request, "tracker/location_list.html", {
         "locations": locations,
         "waypoints": waypoints,
-        "category_choices": Location.CATEGORY_CHOICES,
         "gf_choices": Location.GF_CHOICES,
     })
 
@@ -718,14 +712,7 @@ def location_create(request):
         location = form.save(commit=False)
         location.created_by = request.user
         location.save()
-        _log(
-            request,
-            AuditLog.ACTION_CREATE,
-            location,
-            'Created location "{}" (category: {})'.format(
-                location.name, location.get_category_display()
-            ),
-        )
+        _log(request, AuditLog.ACTION_CREATE, location, 'Created location "{}"'.format(location.name))
         messages.success(request, "Waypoint added.")
         return redirect("location_detail", pk=location.pk)
     return render(request, "tracker/location_form.html", {"form": form, "action": "Add"})
@@ -741,12 +728,6 @@ def rate_poi(request):
     """
     place_id = (request.POST.get("google_place_id") or "").strip()
     name = (request.POST.get("name") or "").strip()[:255]
-    # Classified client-side from the Google Places `types` we already fetched
-    # (see classifyCategory in location_list.html) — cached here rather than
-    # asking the user to pick Restaurant/Store/Attraction/Other by hand.
-    category = request.POST.get("category") or ""
-    if category not in dict(Location.CATEGORY_CHOICES):
-        category = "other"
 
     location = Location.objects.filter(google_place_id=place_id).first() if place_id else None
     if location is None:
@@ -755,7 +736,6 @@ def rate_poi(request):
             return redirect("location_list")
         location = Location.objects.create(
             name=name,
-            category=category,
             latitude=request.POST.get("latitude") or None,
             longitude=request.POST.get("longitude") or None,
             address=(request.POST.get("address") or "").strip(),
@@ -984,8 +964,6 @@ def locations_geojson(request):
             "properties": {
                 "id": loc.pk,
                 "name": loc.name,
-                "category": loc.category,
-                "category_display": loc.get_category_display(),
                 "rating": str(round(rating, 1)) if rating else None,
                 "review_count": loc.num_reviews,
                 "group_rating_summary": _group_rating_summary_text(group_breakdowns.get(loc.pk)),
@@ -1852,7 +1830,7 @@ def export_locations(request):
                 "geometry": {"type": "Point",
                              "coordinates": [float(loc.longitude), float(loc.latitude)]},
                 "properties": {
-                    "name": loc.name, "category": loc.category,
+                    "name": loc.name,
                     "address": loc.address, "city": loc.city, "state": loc.state,
                     "gluten_free": loc.gluten_free, "dietary_notes": loc.dietary_notes,
                     "rating": float(loc.user_avg_rating or loc.overall_rating or 0) or None,
@@ -1870,7 +1848,6 @@ def export_locations(request):
             if not loc.has_coords():
                 continue
             desc_parts = [p for p in [
-                loc.get_category_display(),
                 loc.address,
                 f"GF: {loc.get_gluten_free_display()}" if loc.gluten_free else "",
                 loc.public_notes,
@@ -1905,13 +1882,13 @@ def export_locations(request):
     resp["Content-Disposition"] = 'attachment; filename="waypoints.csv"'
     writer = csv.writer(resp)
     writer.writerow([
-        "name", "category", "address", "city", "state",
+        "name", "address", "city", "state",
         "latitude", "longitude",
         "gluten_free", "dietary_notes", "rating", "public_notes",
     ])
     for loc in qs:
         writer.writerow([_csv_safe(v) for v in [
-            loc.name, loc.category, loc.address, loc.city, loc.state,
+            loc.name, loc.address, loc.city, loc.state,
             loc.latitude or "", loc.longitude or "",
             loc.gluten_free, loc.dietary_notes,
             loc.user_avg_rating or loc.overall_rating or "", loc.public_notes,

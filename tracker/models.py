@@ -18,15 +18,7 @@ MAX_PHOTO_UPLOAD_BYTES = 15 * 1024 * 1024  # 15 MB hard cap on the upload itself
 
 
 class Location(models.Model):
-    CATEGORY_CHOICES = [
-        ("restaurant", "Restaurant"),
-        ("store", "Store"),
-        ("attraction", "Attraction"),
-        ("other", "Other"),
-    ]
-
     name = models.CharField(max_length=255)
-    category = models.CharField(max_length=20, choices=CATEGORY_CHOICES, default="other")
     address = models.TextField(blank=True)
     city = models.CharField(max_length=100, blank=True)
     state = models.CharField(max_length=100, blank=True)
