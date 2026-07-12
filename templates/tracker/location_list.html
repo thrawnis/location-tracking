@@ -1736,10 +1736,14 @@ const CSRF_TOKEN = '{{ csrf_token }}';
     try { remembered = sessionStorage.getItem(LOC_KEY); } catch (_) {}
     if (remembered) locInput.value = remembered;
 
-    // Auto-locate on load so distance sorting is ready. This is free: a browser
-    // GPS fix, or our own /api/geoip endpoint — never a Google API call. Never
-    // overwrites the box if we just restored a remembered value into it.
-    locateUser(false, !remembered);
+    // Auto-locate on load so distance sorting is ready — but only when nothing
+    // was already remembered this session; otherwise skip it entirely rather
+    // than fetching a fix we don't need. This is free either way: a browser
+    // GPS fix, or our own /api/geoip endpoint — never a Google API call.
+    // explicit=false always, so this can never pop open the precise-location
+    // help modal (that only ever fires for an explicit "Locate me" click —
+    // see the `explicit` param on locateUser).
+    if (!remembered) locateUser(false, true);
   }
 
   // ── Map initialisation (Google Maps callback) ─────────────────
