@@ -1724,7 +1724,11 @@ const CSRF_TOKEN = '{{ csrf_token }}';
           mainMap.setCenter(place.geometry.location);
           mainMap.setZoom(12);
         }
-        saveLocation(place.formatted_address || q);
+        // Replace whatever the user typed with Google's corrected/canonical
+        // address (e.g. "laaguna niguel, cal" -> "Laguna Niguel, CA, USA") so
+        // the box reflects what was actually matched, not the raw input.
+        if (place.formatted_address) fillLocationSearch(place.formatted_address);
+        else saveLocation(q);
         applyFilters();
         if (nameFilter) { showSearchAreaBtn(false); searchGooglePlaces(nameFilter); }
       });
