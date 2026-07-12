@@ -232,6 +232,21 @@
 
 {% block extra_js %}
 <script>
+// ── Clean up "?rate=1" after it's done its job ────────────────────────────
+// Arriving here with ?rate=1 (from the map's "Rate Me!" button) auto-opens
+// the review form for this one visit — see location_detail's open_review.
+// The review is then saved via HTMX, which never changes the URL, so the
+// query param would otherwise stick around and re-trigger "auto-open the
+// form" (now in *edit* mode, since a review exists) on every future refresh.
+// Strip it from the address bar right away so a refresh only ever shows the
+// plain, closed state, keeping the #location-reviews scroll anchor.
+if (window.location.search.includes('rate=1')) {
+  const url = new URL(window.location.href);
+  url.searchParams.delete('rate');
+  window.history.replaceState({}, '', url.pathname + url.search + url.hash);
+}
+</script>
+<script>
 // ── Dish sort (client-side; survives HTMX swaps via localStorage) ────────────
 (function () {
   function applyDishSort() {
