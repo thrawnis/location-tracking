@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+{% load tracker_tags %}
+{% block title %}{{ collection.name }} – Waypoint{% endblock %}
+
+{% block content %}
+<div class="max-w-4xl mx-auto space-y-6">
+
+  <div>
+    {% if collection.created_by %}
+    <a href="{% url 'user_profile' collection.created_by.username %}"
+       class="text-xs text-slate-400 hover:text-brand">← {{ collection.created_by.username }}'s profile</a>
+    {% endif %}
+    <div class="flex items-center gap-2 flex-wrap mt-1">
+      <h1 class="text-2xl font-bold text-slate-900">{{ collection.name }}</h1>
+      {% if collection.is_featured %}
+      <span class="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700">★ Featured</span>
+      {% endif %}
+    </div>
+    {% if collection.description %}
+    <p class="text-sm text-slate-500 mt-1">{{ collection.description }}</p>
+    {% endif %}
+  </div>
+
+  <div class="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+    {% if locations %}
+    <ul class="divide-y divide-slate-50">
+      {% for loc in locations %}
+      <li>
+        <a href="{% url 'location_detail' loc.pk %}"
+           class="flex items-center gap-3 px-5 py-3 hover:bg-slate-50 transition-colors">
+          <span class="text-lg">{{ loc.category|category_icon }}</span>
+          <div class="min-w-0 flex-1">
+            <p class="text-sm font-medium text-slate-700 truncate">{{ loc.name }}</p>
+            {% if loc.city or loc.state %}
+            <p class="text-xs text-slate-400">
+              {{ loc.city }}{% if loc.city and loc.state %}, {% endif %}{{ loc.state }}
+            </p>
+            {% endif %}
+          </div>
+          {% if loc.user_avg_rating %}
+          <span class="text-sm font-semibold text-amber-600 shrink-0">
+            <span class="text-yellow-400">★</span> {{ loc.user_avg_rating|floatformat:1 }}
+          </span>
+          {% else %}
+          <span class="text-xs text-slate-400 italic shrink-0">Not yet rated</span>
+          {% endif %}
+        </a>
+      </li>
+      {% endfor %}
+    </ul>
+    {% else %}
+    <p class="px-5 py-8 text-sm text-slate-400 text-center">No waypoints in this collection yet.</p>
+    {% endif %}
+  </div>
+
+</div>
+{% endblock %}

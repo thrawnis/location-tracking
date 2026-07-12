@@ -18,7 +18,12 @@
   {% for coll in collections %}
   <div class="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
     <div class="px-5 py-4 border-b border-slate-100">
-      <h2 class="font-bold text-slate-900">{{ coll.name }}</h2>
+      <div class="flex items-center gap-2 flex-wrap">
+        <a href="{% url 'collection_detail' coll.pk %}" class="font-bold text-slate-900 hover:text-brand">{{ coll.name }}</a>
+        {% if coll.is_featured %}
+        <span class="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700">★ Featured</span>
+        {% endif %}
+      </div>
       {% if coll.description %}
       <p class="text-sm text-slate-500 mt-0.5">{{ coll.description }}</p>
       {% endif %}

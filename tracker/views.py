@@ -684,6 +684,11 @@ def location_detail(request, pk):
 
     group_rating_breakdown = _bulk_group_rating_breakdown(request.user, [location.pk]).get(location.pk, [])
 
+    # Public, superuser/admin-featured collections this waypoint belongs to
+    # (e.g. a company's "Food Trucks" list) — linked from the page for anyone
+    # to discover the rest of the collection's waypoints from here.
+    featured_collections = location.collections.filter(is_public=True, is_featured=True)
+
     return render(request, "tracker/location_detail.html", {
         "location": location,
         "item_form": ItemForm(),
@@ -701,6 +706,7 @@ def location_detail(request, pk):
         "chain_linked": chain_linked,
         "group_rating_breakdown": group_rating_breakdown,
         "can_edit": can_edit_location(request.user, location),
+        "featured_collections": featured_collections,
     })
 
 
@@ -1523,9 +1529,22 @@ def collection_list(request):
                  'Created collection "{}"'.format(coll.name))
             messages.success(request, 'Collection "{}" created.'.format(coll.name))
             return redirect("collection_list")
+    # Superusers/admins can promote any PUBLIC collection (their own or
+    # anyone else's) to "featured" — every waypoint it contains then links
+    # back to it from that waypoint's own detail page.
+    featurable = None
+    if is_superuser_role(request.user):
+        featurable = (
+            Collection.objects.filter(is_public=True)
+            .select_related("created_by")
+            .prefetch_related("locations")
+            .annotate(loc_count=Count("locations"))
+            .order_by("-is_featured", "name")
+        )
     return render(request, "tracker/collection_list.html", {
         "collections": collections,
         "form": form,
+        "featurable": featurable,
     })
 
 
@@ -1555,6 +1574,43 @@ def collection_toggle_public(request, pk):
     messages.success(request, 'Collection "{}" is now {}.'.format(
         coll.name, "public" if coll.is_public else "private"))
     return redirect("collection_list")
+
+
+@login_required
+@require_POST
+def collection_toggle_featured(request, pk):
+    """Superuser/admin only: feature/unfeature a PUBLIC collection. Featuring
+    is independent of ownership — any superuser/admin can feature any public
+    collection, not just their own."""
+    if not is_superuser_role(request.user):
+        return HttpResponseForbidden("Only superusers/admins can feature a collection.")
+    coll = get_object_or_404(Collection, pk=pk, is_public=True)
+    coll.is_featured = not coll.is_featured
+    coll.save(update_fields=["is_featured"])
+    _log(request, AuditLog.ACTION_UPDATE, coll,
+         '{} collection "{}"'.format("Featured" if coll.is_featured else "Unfeatured", coll.name))
+    messages.success(request, 'Collection "{}" is now {}.'.format(
+        coll.name, "featured" if coll.is_featured else "unfeatured"))
+    return redirect("collection_list")
+
+
+@login_required
+def collection_detail(request, pk):
+    """Read-only view of a collection's waypoints, reachable by anyone once
+    it's public — most commonly via the "Featured in" link superuser/admins
+    surface on each member waypoint's own detail page."""
+    coll = get_object_or_404(Collection.objects.select_related("created_by"), pk=pk)
+    if not (coll.is_public or coll.created_by_id == request.user.pk):
+        return HttpResponseForbidden("This collection is private.")
+    locations = (
+        coll.locations
+        .annotate(user_avg_rating=Avg("reviews__rating"))
+        .order_by("name")
+    )
+    return render(request, "tracker/collection_detail.html", {
+        "collection": coll,
+        "locations": locations,
+    })
 
 
 @login_required

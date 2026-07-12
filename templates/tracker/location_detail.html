@@ -112,6 +112,21 @@
       <!-- Dietary / GF card (HTMX-swappable) -->
       {% include "tracker/partials/gf_card.html" with location=location %}
 
+      <!-- Featured collections — superuser/admin-promoted only (see
+           Collection.is_featured); links back to the collection's own
+           detail page so all its other waypoints are one click away. -->
+      {% if featured_collections %}
+      <div class="bg-amber-50 border border-amber-200 rounded-xl shadow-sm p-4 flex items-center flex-wrap gap-2">
+        {% for coll in featured_collections %}
+        <a href="{% url 'collection_detail' coll.pk %}"
+           class="inline-flex items-center gap-1.5 text-sm font-semibold text-amber-800
+                  bg-white border border-amber-300 hover:border-amber-500 px-3 py-1.5 rounded-lg transition-all">
+          ★ Featured in: {{ coll.name }}
+        </a>
+        {% endfor %}
+      </div>
+      {% endif %}
+
       <!-- Ratings & reviews (HTMX-swappable) -->
       <div class="bg-white rounded-xl border border-slate-200 shadow-sm p-5">
         {% include "tracker/partials/location_reviews.html" with location=location my_review=my_review show_form=open_review review_form=location_review_form %}
