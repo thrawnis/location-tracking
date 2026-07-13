@@ -839,11 +839,31 @@ def _merge_chain_group_items(group):
 
 
 @login_required
+def location_chain_search(request, pk):
+    """Name search (substring, not exact) for picking a waypoint to chain-link
+    — unlike the auto-detected candidates on the location page, this isn't
+    limited to waypoints sharing the exact same name (e.g. lets "Starbucks -
+    Main St" find and link to "Starbucks Ocean Ave")."""
+    location = get_object_or_404(Location, pk=pk)
+    q = (request.GET.get("q") or "").strip()
+    if len(q) < 2:
+        return JsonResponse({"results": []})
+    qs = Location.objects.exclude(pk=location.pk)
+    if location.chain_group_id:
+        qs = qs.exclude(chain_group_id=location.chain_group_id)
+    qs = qs.filter(name__icontains=q).order_by("name")[:10]
+    return JsonResponse({"results": [
+        {"id": loc.pk, "name": loc.name, "city": loc.city, "state": loc.state}
+        for loc in qs
+    ]})
+
+
+@login_required
 @require_POST
 def location_link(request, pk, target_pk):
-    """Link two same-named waypoints (e.g. two Burger King branches) into a
-    shared chain group, so their items/dishes and item reviews are pooled.
-    Location-level info (address, hours, its own rating/reviews) stays put."""
+    """Link two waypoints (e.g. two Burger King branches) into a shared chain
+    group, so their items/dishes and item reviews are pooled. Location-level
+    info (address, hours, its own rating/reviews) stays put."""
     location = get_object_or_404(Location, pk=pk)
     target = get_object_or_404(Location, pk=target_pk)
     # Linking is destructive (merges/deletes shared items + reviews globally),
@@ -851,10 +871,6 @@ def location_link(request, pk, target_pk):
     if not can_edit_location(request.user, location):
         return HttpResponseForbidden(
             "Only the creator, a superuser, or an admin can chain-link this waypoint."
-        )
-    if location.name.strip().lower() != target.name.strip().lower():
-        return HttpResponseForbidden(
-            "Chain-linking is only for waypoints with the same name (different branches)."
         )
 
     if location.chain_group_id and target.chain_group_id:
@@ -887,12 +903,12 @@ def location_link(request, pk, target_pk):
 @require_POST
 def location_unlink(request, pk):
     """Remove this waypoint from its chain group. Items it originally added
-    stay with it; items only visible via other branches stop showing here."""
+    stay with it; items only visible via other branches stop showing here.
+    Superuser/admin only — more restrictive than linking, since detaching can
+    silently drop item reviews that were merged in when the chain was formed."""
     location = get_object_or_404(Location, pk=pk)
-    if not can_edit_location(request.user, location):
-        return HttpResponseForbidden(
-            "Only the creator, a superuser, or an admin can unlink this waypoint."
-        )
+    if not is_superuser_role(request.user):
+        return HttpResponseForbidden("Only a superuser or admin can detach a waypoint from its chain.")
     group = location.chain_group
     if not group:
         return redirect("location_detail", pk=location.pk)

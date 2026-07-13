@@ -30,6 +30,7 @@ urlpatterns = [
     path("locations/<int:pk>/", views.location_detail, name="location_detail"),
     path("locations/<int:pk>/edit/", views.location_edit, name="location_edit"),
     path("locations/<int:pk>/delete/", views.location_delete, name="location_delete"),
+    path("locations/<int:pk>/chain-search/", views.location_chain_search, name="location_chain_search"),
     path("locations/<int:pk>/link/<int:target_pk>/", views.location_link, name="location_link"),
     path("locations/<int:pk>/unlink/", views.location_unlink, name="location_unlink"),
     path("locations/<int:pk>/gf-vote/", views.gf_vote, name="gf_vote"),

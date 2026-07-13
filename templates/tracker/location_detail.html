@@ -164,9 +164,42 @@
       </div>
 
       <!-- Chain linking: share items/dishes with other branches of the same chain -->
-      {% if chain_linked or chain_candidates and can_edit %}
-      <div class="bg-white rounded-xl border border-slate-200 shadow-sm p-5 space-y-3">
-        <h2 class="text-sm font-semibold text-slate-500 uppercase tracking-wide">Chain / Branches</h2>
+      {% if chain_linked or can_edit %}
+      <div class="bg-white rounded-xl border border-slate-200 shadow-sm p-5 space-y-3"
+           x-data="{
+             chainModalOpen: false,
+             chainQuery: '',
+             chainResults: [],
+             chainSearching: false,
+             async chainSearch() {
+               const q = this.chainQuery.trim();
+               if (q.length < 2) { this.chainResults = []; return; }
+               this.chainSearching = true;
+               try {
+                 const res = await fetch('{% url "location_chain_search" location.pk %}?q=' + encodeURIComponent(q));
+                 const data = await res.json();
+                 this.chainResults = data.results || [];
+               } catch (e) { this.chainResults = []; }
+               this.chainSearching = false;
+             },
+             async chainLink(targetId) {
+               const res = await fetch('/locations/{{ location.pk }}/link/' + targetId + '/', {
+                 method: 'POST',
+                 headers: { 'X-CSRFToken': '{{ csrf_token }}' },
+               });
+               if (res.ok) window.location.reload();
+             },
+           }">
+        <div class="flex items-center justify-between gap-2">
+          <h2 class="text-sm font-semibold text-slate-500 uppercase tracking-wide">Chain / Branches</h2>
+          {% if can_edit %}
+          <button type="button" @click="chainModalOpen = true; chainQuery = ''; chainResults = []"
+                  class="text-xs font-semibold text-brand hover:text-brand-dark border border-brand/30
+                         hover:border-brand px-2.5 py-1 rounded-lg transition-all">
+            {% if chain_linked %}🔗 Link another branch{% else %}🔗 This is a chain{% endif %}
+          </button>
+          {% endif %}
+        </div>
 
         {% if chain_linked %}
         <div class="space-y-2">
@@ -182,7 +215,7 @@
             </li>
             {% endfor %}
           </ul>
-          {% if can_edit %}
+          {% if user|is_superuser_role %}
           <form method="post" action="{% url 'location_unlink' location.pk %}"
                 onsubmit="return confirm('Unlink this waypoint from its chain group? Items added at other branches will no longer show here.')">
             {% csrf_token %}
@@ -192,36 +225,89 @@
               Unlink from chain
             </button>
           </form>
+          {% else %}
+          <p class="text-[11px] text-slate-400">Only a superuser/admin can detach a waypoint from its chain.</p>
           {% endif %}
         </div>
+        {% elif can_edit %}
+        <p class="text-xs text-slate-400">
+          Is this waypoint part of a chain (e.g. Burger King, Kohl's)? Linking shares items/dishes and their
+          reviews across branches, but keeps each location's own address, hours, and rating separate.
+        </p>
         {% endif %}
 
-        {% if chain_candidates and can_edit %}
-        <div class="space-y-2 {% if chain_linked %}pt-3 border-t border-slate-100{% endif %}">
-          <p class="text-xs text-slate-400">
-            Other waypoints share this name. Linking is solely for <strong>chain stores/restaurants</strong>
-            (e.g. Burger King, Kohl's) — it shares items/dishes and their reviews across branches, but keeps
-            each location's own address, hours, and rating separate.
-          </p>
-          <ul class="space-y-1.5">
-            {% for cand in chain_candidates %}
-            <li class="flex items-center justify-between gap-2 text-sm">
-              <span class="truncate text-slate-600">
-                {{ cand.name }}{% if cand.city %} — {{ cand.city }}{% if cand.state %}, {{ cand.state }}{% endif %}{% endif %}
-              </span>
-              <form method="post" action="{% url 'location_link' location.pk cand.pk %}" class="shrink-0">
-                {% csrf_token %}
-                <button type="submit"
-                        class="text-xs font-semibold text-brand hover:text-brand-dark border border-brand/30
-                               hover:border-brand px-2.5 py-1 rounded-lg transition-all">
-                  Link
-                </button>
-              </form>
-            </li>
-            {% endfor %}
-          </ul>
+        <!-- "This is a chain" modal: explains implications, then finds a branch to link -->
+        <div x-show="chainModalOpen" x-cloak
+             class="fixed inset-0 z-[2000] flex items-center justify-center p-4 bg-black/40"
+             @click.self="chainModalOpen = false">
+          <div class="bg-white rounded-2xl shadow-xl max-w-md w-full p-5 space-y-4 text-sm text-slate-600" @click.stop>
+            <div class="flex items-center justify-between">
+              <h3 class="text-base font-bold text-slate-900">Link as a chain branch</h3>
+              <button type="button" @click="chainModalOpen = false" class="text-slate-400 hover:text-slate-700" aria-label="Close">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+                </svg>
+              </button>
+            </div>
+
+            <div class="bg-slate-50 border border-slate-200 rounded-lg p-3 text-xs text-slate-600 space-y-1.5">
+              <p class="font-semibold text-slate-700">What linking does:</p>
+              <ul class="list-disc list-inside space-y-1">
+                <li>Shares this waypoint's <strong>items/dishes and their reviews</strong> with every linked branch.</li>
+                <li>Keeps each branch's own <strong>address, hours, and overall waypoint rating</strong> separate.</li>
+                <li>Items with the same name are merged into one — if a reviewer had rated both copies, only one of those reviews survives.</li>
+                <li>Only a superuser/admin can undo this later (detach a branch from the chain).</li>
+              </ul>
+            </div>
+
+            {% if chain_candidates %}
+            <div class="space-y-1.5">
+              <p class="text-xs font-semibold text-slate-500 uppercase tracking-wide">Same name — quick link</p>
+              <ul class="space-y-1.5">
+                {% for cand in chain_candidates %}
+                <li class="flex items-center justify-between gap-2 text-sm">
+                  <span class="truncate text-slate-600">
+                    {{ cand.name }}{% if cand.city %} — {{ cand.city }}{% if cand.state %}, {{ cand.state }}{% endif %}{% endif %}
+                  </span>
+                  <form method="post" action="{% url 'location_link' location.pk cand.pk %}" class="shrink-0">
+                    {% csrf_token %}
+                    <button type="submit"
+                            class="text-xs font-semibold text-brand hover:text-brand-dark border border-brand/30
+                                   hover:border-brand px-2.5 py-1 rounded-lg transition-all">
+                      Link
+                    </button>
+                  </form>
+                </li>
+                {% endfor %}
+              </ul>
+            </div>
+            {% endif %}
+
+            <div class="space-y-1.5">
+              <p class="text-xs font-semibold text-slate-500 uppercase tracking-wide">Search for a branch</p>
+              <input type="text" x-model="chainQuery" @input.debounce.300ms="chainSearch()"
+                     placeholder="Search waypoints by name…"
+                     class="block w-full text-sm border border-slate-200 rounded-lg px-3 py-2 outline-none
+                            focus:border-brand focus:ring-2 focus:ring-brand/20">
+              <ul class="space-y-1.5 max-h-56 overflow-y-auto" x-show="chainResults.length">
+                <template x-for="r in chainResults" :key="r.id">
+                  <li class="flex items-center justify-between gap-2 text-sm">
+                    <span class="truncate text-slate-600"
+                          x-text="r.name + (r.city ? ' — ' + r.city + (r.state ? ', ' + r.state : '') : '')"></span>
+                    <button type="button" @click="chainLink(r.id)"
+                            class="shrink-0 text-xs font-semibold text-brand hover:text-brand-dark border border-brand/30
+                                   hover:border-brand px-2.5 py-1 rounded-lg transition-all">
+                      Link
+                    </button>
+                  </li>
+                </template>
+              </ul>
+              <p x-show="chainQuery.trim().length >= 2 && !chainSearching && !chainResults.length" class="text-xs text-slate-400">
+                No matches.
+              </p>
+            </div>
+          </div>
         </div>
-        {% endif %}
       </div>
       {% endif %}
     </div>
