@@ -77,10 +77,36 @@ class RegisterForm(UserCreationForm):
         required=True,
         error_messages={"required": "You must agree to the Terms of Service to register."},
     )
+    captcha = forms.CharField(
+        required=True, max_length=16, label="Enter the characters shown",
+        widget=forms.TextInput(attrs={
+            "autocomplete": "off", "autocapitalize": "characters", "spellcheck": "false",
+            "placeholder": "Type the code above",
+        }),
+    )
 
     class Meta:
         model = User
         fields = ("username", "email", "password1", "password2")
+
+    def __init__(self, *args, request=None, **kwargs):
+        # Needs the request to check the answer stashed in the session by the
+        # captcha image view.
+        self.request = request
+        super().__init__(*args, **kwargs)
+
+    def clean_captcha(self):
+        from time import time
+        from .captcha import CAPTCHA_TTL, SESSION_ANSWER, SESSION_TIME
+        answer = (self.cleaned_data.get("captcha") or "").strip().upper()
+        session = getattr(self.request, "session", None)
+        expected = session.get(SESSION_ANSWER) if session is not None else None
+        issued = session.get(SESSION_TIME, 0) if session is not None else 0
+        if not expected or (time() - issued) > CAPTCHA_TTL:
+            raise forms.ValidationError("The verification code expired — please try the new one.")
+        if answer != expected:
+            raise forms.ValidationError("The verification code didn't match — please try again.")
+        return answer
 
     def clean_username(self):
         # Usernames are case-insensitive at login, so reject one that only

@@ -18,7 +18,7 @@ from django.core.cache import cache
 from django.contrib.auth.forms import AuthenticationForm
 from django.contrib.auth.models import Group, User
 from django.db.models import Avg, Count, Exists, Max, OuterRef, Q
-from django.http import HttpResponseBadRequest, HttpResponseForbidden, JsonResponse
+from django.http import HttpResponse, HttpResponseBadRequest, HttpResponseForbidden, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.views.decorators.http import require_POST
@@ -304,11 +304,29 @@ def _make_admin_if_first(user):
         user.save(update_fields=["is_staff", "is_superuser"])
 
 
+@ratelimit("captcha", 40, 60)
+def captcha_image(request):
+    """Serve a fresh registration CAPTCHA, stashing the answer in the session.
+    Public (registration is anonymous); rate-limited so it can't be hammered."""
+    from time import time
+    from . import captcha as captcha_mod
+    text = captcha_mod.make_text()
+    request.session[captcha_mod.SESSION_ANSWER] = text
+    request.session[captcha_mod.SESSION_TIME] = int(time())
+    resp = HttpResponse(captcha_mod.render_image(text), content_type="image/png")
+    resp["Cache-Control"] = "no-store, max-age=0, must-revalidate"
+    return resp
+
+
 def register_view(request):
     if request.user.is_authenticated:
         return redirect("location_list")
-    form = RegisterForm(request.POST or None)
+    form = RegisterForm(request.POST or None, request=request)
     if request.method == "POST" and form.is_valid():
+        # One-time use: clear the solved challenge so it can't be replayed.
+        from . import captcha as captcha_mod
+        request.session.pop(captcha_mod.SESSION_ANSWER, None)
+        request.session.pop(captcha_mod.SESSION_TIME, None)
         if not settings.REQUIRE_EMAIL_VERIFICATION:
             # Verification disabled — create the account directly.
             user = form.save()
