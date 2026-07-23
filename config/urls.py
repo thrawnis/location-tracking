@@ -6,6 +6,7 @@ from django.conf.urls.static import static
 from tracker import views as tracker_views
 
 urlpatterns = [
+    path("robots.txt", tracker_views.robots_txt, name="robots_txt"),
     path("admin/", admin.site.urls),
     path("accounts/login/", tracker_views.login_view, name="login"),
     path("accounts/logout/", tracker_views.logout_view, name="logout"),

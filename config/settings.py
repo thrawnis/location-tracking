@@ -139,6 +139,33 @@ AUTHENTICATION_BACKENDS = [
 
 MESSAGE_STORAGE = "django.contrib.messages.storage.session.SessionStorage"
 
+# ── Cache ──────────────────────────────────────────────────────────────────────
+# Rate-limit and 2FA/login throttle counters live in the cache. Set REDIS_URL in
+# production (e.g. redis://127.0.0.1:6379/0) so counters are SHARED across all
+# gunicorn workers — the LocMemCache fallback is per-process, so throttles are
+# only approximate (each worker counts separately) without it.
+_redis_url = os.environ.get("REDIS_URL", "").strip()
+if _redis_url:
+    CACHES = {
+        "default": {
+            "BACKEND": "django.core.cache.backends.redis.RedisCache",
+            "LOCATION": _redis_url,
+        }
+    }
+else:
+    CACHES = {
+        "default": {
+            "BACKEND": "django.core.cache.backends.locmem.LocMemCache",
+            "LOCATION": "waypoint-default",
+        }
+    }
+
+# The single request header our trusted edge proxy sets with the real client IP.
+# Default suits Cloudflare Tunnel; set CLIENT_IP_HEADER=REMOTE_ADDR when there is
+# no trusted proxy. We never trust X-Forwarded-For (a client can spoof it), so
+# IP-keyed throttles can't be evaded by forging a header. See tracker.ratelimit.
+CLIENT_IP_HEADER = os.environ.get("CLIENT_IP_HEADER", "HTTP_CF_CONNECTING_IP")
+
 # ── Security headers ───────────────────────────────────────────────────────────
 SECURE_CONTENT_TYPE_NOSNIFF = True
 X_FRAME_OPTIONS = "DENY"

@@ -34,6 +34,7 @@ from .models import (
     TermsAcceptance, TOTPDevice,
 )
 from .permissions import SUPERUSER_GROUP_NAME, can_edit_location, is_admin, is_superuser_role
+from .ratelimit import get_client_ip, ratelimit
 
 
 # ── Roles ─────────────────────────────────────────────────────────────────────
@@ -50,13 +51,9 @@ def can_delete(user, owner):
 # ── Audit helpers ─────────────────────────────────────────────────────────────
 
 def _get_ip(request):
-    # Behind Cloudflare (Tunnel), CF-Connecting-IP holds the real visitor IP.
-    # Without it we'd see Cloudflare's edge IP and geolocate the wrong place.
-    cf = request.META.get("HTTP_CF_CONNECTING_IP")
-    if cf:
-        return cf.strip()
-    xff = request.META.get("HTTP_X_FORWARDED_FOR")
-    return xff.split(",")[0].strip() if xff else request.META.get("REMOTE_ADDR")
+    # Single source of truth: the trusted-proxy-aware resolver in ratelimit,
+    # which (unlike the old code) never trusts the spoofable X-Forwarded-For.
+    return get_client_ip(request)
 
 
 def _log(request, action, obj, detail=""):
@@ -592,6 +589,7 @@ def _group_rating_summary_text(breakdown):
 # ── Locations ─────────────────────────────────────────────────────────────────
 
 @login_required
+@ratelimit("home", 60, 60)
 def location_list(request):
     my_reviews = LocationReview.objects.filter(location=OuterRef("pk"), user=request.user)
     locations = (
@@ -641,6 +639,7 @@ def location_list(request):
 
 
 @login_required
+@ratelimit("loc_detail", 90, 60)
 def location_detail(request, pk):
     location = get_object_or_404(
         Location.objects.prefetch_related(
@@ -839,6 +838,7 @@ def _merge_chain_group_items(group):
 
 
 @login_required
+@ratelimit("chain_search", 30, 60, json=True)
 def location_chain_search(request, pk):
     """Name search (substring, not exact) for picking a waypoint to chain-link
     — unlike the auto-detected candidates on the location page, this isn't
@@ -953,6 +953,7 @@ def gf_vote(request, pk):
 
 
 @login_required
+@ratelimit("geojson", 30, 60, json=True)
 def locations_geojson(request):
     my_reviews = LocationReview.objects.filter(location=OuterRef("pk"), user=request.user)
     qs = (
@@ -1297,6 +1298,7 @@ _PRIVATE_PREFIXES = ("10.", "172.16.", "172.17.", "172.18.", "172.19.",
                      "172.30.", "172.31.", "192.168.")
 
 @login_required
+@ratelimit("geoip", 20, 60, json=True)
 def geoip_view(request):
     ip = _get_ip(request) or ""
     is_private = ip in ("127.0.0.1", "::1") or any(ip.startswith(p) for p in _PRIVATE_PREFIXES)
@@ -1341,6 +1343,8 @@ def _round2(value):
 
 
 @login_required
+@ratelimit("osm_hour", 200, 3600, json=True)
+@ratelimit("osm_min", 20, 60, json=True)
 def osm_search(request):
     """
     Proxy for Overpass API with a 24-hour server-side cache.
@@ -1827,6 +1831,7 @@ def group_leave(request, pk):
 # ── Export ────────────────────────────────────────────────────────────────────
 
 @login_required
+@ratelimit("export", 10, 3600)
 def export_locations(request):
     """Download all waypoints as CSV, GeoJSON, or KML."""
     from django.http import HttpResponse
@@ -2019,6 +2024,7 @@ def activity_feed(request):
 # ── Duplicate detection API ───────────────────────────────────────────────────
 
 @login_required
+@ratelimit("check_dup", 60, 60, json=True)
 def check_duplicate(request):
     """
     GET lat, lng[, exclude] → nearby existing waypoints within ~100 m,
@@ -2061,6 +2067,16 @@ def check_duplicate(request):
             })
     matches.sort(key=lambda m: m["distance_m"])
     return JsonResponse({"matches": matches[:5]})
+
+
+# ── robots.txt ─────────────────────────────────────────────────────────────────
+
+def robots_txt(request):
+    """Ask well-behaved crawlers to stay out entirely. Almost every page is
+    behind login anyway (so nothing is indexable), but this makes the intent
+    explicit for search engines and generic crawlers. Public by design."""
+    from django.http import HttpResponse
+    return HttpResponse("User-agent: *\nDisallow: /\n", content_type="text/plain")
 
 
 # ── Admin dashboard ───────────────────────────────────────────────────────────
