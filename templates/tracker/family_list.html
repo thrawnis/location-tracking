@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+{% block title %}Families – Waypoint{% endblock %}
+
+{% block content %}
+<div class="max-w-2xl mx-auto space-y-6">
+
+  <div>
+    <h1 class="text-2xl font-bold text-slate-900">Families</h1>
+    <p class="text-sm text-slate-500 mt-1">
+      A family lets you log waypoint and dish reviews <strong>on each other's behalf</strong>.
+      Share a family's invite link; whoever opens it can approve and join. Any member can add a
+      review for another member, but only that member (or an admin) can edit or delete it.
+    </p>
+  </div>
+
+  <!-- Create form -->
+  <form method="post" class="bg-white rounded-xl border border-slate-200 shadow-sm p-4 flex flex-wrap gap-3">
+    {% csrf_token %}
+    <input type="text" name="name" placeholder="Family name, e.g. The Smiths" required
+           class="flex-1 min-w-[200px] text-sm border border-slate-200 rounded-lg px-3 py-2 bg-white
+                  focus:outline-none focus:ring-2 focus:ring-brand/30 focus:border-brand">
+    <button type="submit"
+            class="bg-brand hover:bg-brand-dark text-white text-sm font-semibold px-4 py-2 rounded-lg transition-colors shrink-0">
+      ＋ New Family
+    </button>
+  </form>
+
+  <!-- Families -->
+  {% for family in families %}
+  <a href="{% url 'family_detail' family.pk %}"
+     class="block bg-white rounded-xl border border-slate-200 shadow-sm p-4 hover:border-brand/40 transition-all">
+    <h2 class="font-bold text-slate-900">{{ family.name }}</h2>
+    <p class="text-xs text-slate-400 mt-0.5">{{ family.member_count }} member{{ family.member_count|pluralize }}</p>
+  </a>
+  {% empty %}
+  <div class="text-center py-12 text-slate-400">
+    <p class="text-sm">You're not in any families yet. Create one above, or open a family invite link someone shared with you.</p>
+  </div>
+  {% endfor %}
+
+</div>
+{% endblock %}

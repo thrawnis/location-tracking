@@ -73,6 +73,45 @@
   </form>
   {% endif %}
 
+  <!-- Add a review on behalf of a family member -->
+  {% if family_targets and not show_form %}
+  <div class="mb-4" x-data="{ open: false }">
+    <button type="button" @click="open = !open" x-show="!open"
+            class="text-xs font-semibold text-violet-700 hover:text-violet-900 border border-violet-200
+                   hover:border-violet-400 px-2.5 py-1 rounded-lg transition-all">
+      ＋ Add a review for a family member
+    </button>
+    <form x-show="open" x-cloak
+          hx-post="{% url 'location_review_on_behalf' location.pk %}"
+          hx-target="#location-reviews" hx-swap="outerHTML"
+          class="p-3 bg-violet-50/50 border border-violet-200 rounded-xl space-y-2">
+      {% csrf_token %}
+      <p class="text-xs font-semibold text-violet-700">Log a rating on behalf of…</p>
+      <select name="subject" required
+              class="block w-full text-sm border border-slate-200 rounded-lg px-2.5 py-1.5 bg-white
+                     focus:outline-none focus:ring-2 focus:ring-brand/20 focus:border-brand">
+        <option value="">Choose a family member…</option>
+        {% for m in family_targets %}
+        <option value="{{ m.pk }}">{{ m.username }}</option>
+        {% endfor %}
+      </select>
+      {% include "tracker/partials/star_input.html" with field_name="rating" current_value="" %}
+      <textarea name="notes" rows="2" placeholder="Their review (optional)"
+                class="block w-full text-sm border border-slate-200 rounded-lg px-2.5 py-1.5 outline-none
+                       focus:border-brand focus:ring-2 focus:ring-brand/20 resize-none"></textarea>
+      <div class="flex items-center gap-2">
+        <button type="submit"
+                class="bg-brand hover:bg-brand-dark text-white text-xs font-semibold px-3 py-1.5 rounded-lg transition-colors">
+          Add review
+        </button>
+        <button type="button" @click="open = false"
+                class="text-xs text-slate-500 hover:text-slate-700 px-2 py-1.5">Cancel</button>
+      </div>
+      <p class="text-[10px] text-slate-400">They'll see it the next time they sign in. Only they can edit or delete it.</p>
+    </form>
+  </div>
+  {% endif %}
+
   <!-- Review list -->
   <div class="space-y-2.5">
     {% for review in location.reviews.all %}
@@ -97,6 +136,9 @@
           </form>
           {% endif %}
         </div>
+        {% if review.on_behalf %}
+        <p class="text-[10px] text-violet-600 mt-0.5">added by {{ review.submitted_by.username }} on their behalf</p>
+        {% endif %}
         {% if review.notes %}
         <p class="text-sm text-slate-600 mt-0.5 whitespace-pre-line leading-snug">{{ review.notes }}</p>
         {% endif %}

@@ -28,7 +28,8 @@ from .forms import (
     LocationReviewForm, PhotoForm, RegisterForm, TakeoutImportForm,
 )
 from .models import (
-    AuditLog, ChainGroup, Collection, EmailVerification, FriendGroup, FriendGroupJoinRequest,
+    AuditLog, ChainGroup, Collection, EmailVerification, Family, FamilyMembership,
+    FriendGroup, FriendGroupJoinRequest,
     FriendGroupMembership, GlutenFreeVote, Item, ItemReview,
     Location, LocationReview, OsmSearchCache, PendingRegistration, Photo,
     TermsAcceptance, TOTPDevice,
@@ -661,8 +662,8 @@ def location_list(request):
 def location_detail(request, pk):
     location = get_object_or_404(
         Location.objects.prefetch_related(
-            "photos", "items__reviews__user",
-            "reviews__user", "collections",
+            "photos", "items__reviews__user", "items__reviews__submitted_by",
+            "reviews__user", "reviews__submitted_by", "collections",
         ),
         pk=pk,
     )
@@ -696,6 +697,10 @@ def location_detail(request, pk):
     # to discover the rest of the collection's waypoints from here.
     featured_collections = location.collections.filter(is_public=True, is_featured=True)
 
+    # Materialized once so the items_section partial and its on-behalf targets
+    # agree on the same list.
+    items = list(_annotated_items(location))
+
     return render(request, "tracker/location_detail.html", {
         "location": location,
         "item_form": ItemForm(),
@@ -704,7 +709,9 @@ def location_detail(request, pk):
         "gf_my_vote": gf_my_vote,
         "all_collections": Collection.objects.filter(created_by=request.user),
         # Needed by the items_section partial so existing dishes render on load
-        "items": _annotated_items(location),
+        "items": items,
+        "item_behalf_targets": _item_behalf_targets(request, location, items),
+        "family_targets": _location_family_targets(request, location),
         "my_reviews": my_item_reviews,
         # Auto-open the location review form when arriving via "Rate Me!"
         "open_review": open_review,
@@ -1035,10 +1042,38 @@ def _annotated_items(location):
             review_count=Count("reviews", distinct=True),
             latest_review=Max("reviews__created_at"),
         )
-        .prefetch_related("reviews__user")
+        .prefetch_related("reviews__user", "reviews__submitted_by")
         .order_by("name")
         .distinct()
     )
+
+
+def _item_behalf_targets(request, location, items):
+    """Per-item {item_pk: [User, ...]} the current user may add a dish review
+    for: shares a family, HAS rated this waypoint overall (same gate as their
+    own item reviews), and doesn't already have a review for that item."""
+    result = {}
+    if not (request.user.is_authenticated and items):
+        return result
+    fam_ids = family_member_ids(request.user)
+    if not fam_ids:
+        return result
+    loc_rated = set(location.reviews.filter(user_id__in=fam_ids).values_list("user_id", flat=True))
+    eligible_ids = [i for i in fam_ids if i in loc_rated]
+    if not eligible_ids:
+        return result
+    item_pks = [it.pk for it in items]
+    already = {}   # item_pk -> set(user_ids who reviewed it)
+    for iid, uid in ItemReview.objects.filter(
+        item_id__in=item_pks, user_id__in=eligible_ids
+    ).values_list("item_id", "user_id"):
+        already.setdefault(iid, set()).add(uid)
+    fam_users = list(User.objects.filter(pk__in=eligible_ids).order_by("username"))
+    for it in items:
+        targets = [u for u in fam_users if u.pk not in already.get(it.pk, set())]
+        if targets:
+            result[it.pk] = targets
+    return result
 
 
 def _render_items_section(
@@ -1055,14 +1090,18 @@ def _render_items_section(
         ).select_related("item"):
             my_reviews[rev.item_id] = rev
 
+    items = list(_annotated_items(location))
+    item_behalf_targets = _item_behalf_targets(request, location, items)
+
     return render(request, "tracker/partials/items_section.html", {
         "location": location,
-        "items": _annotated_items(location),
+        "items": items,
         "item_form": item_form or ItemForm(),
         "show_form": show_form,
         "review_item_pk": review_item_pk,
         "review_form": review_form or ItemReviewForm(),
         "my_reviews": my_reviews,
+        "item_behalf_targets": item_behalf_targets,
         "edit_item_pk": edit_item_pk,
         "edit_form": edit_form,
         # Reviewing an item/dish requires having rated the waypoint overall first.
@@ -1195,7 +1234,8 @@ def item_review_upsert(request, pk, item_pk):
 @login_required
 @require_POST
 def item_review_delete(request, pk, item_pk):
-    """Delete the logged-in user's own review."""
+    """Delete the logged-in user's own review (user=request.user — never a
+    family member's, even one added on your behalf)."""
     location = get_object_or_404(Location, pk=pk)
     item = get_object_or_404(_item_queryset_for_location(location), pk=item_pk)
     review = get_object_or_404(ItemReview, item=item, user=request.user)
@@ -1205,6 +1245,48 @@ def item_review_delete(request, pk, item_pk):
     _log(request, AuditLog.ACTION_DELETE, review,
          'Deleted review for "{}" in "{}" — reason: {}'.format(item.name, location.name, reason))
     review.delete()
+    return _render_items_section(request, location)
+
+
+@login_required
+@require_POST
+def item_review_on_behalf(request, pk, item_pk):
+    """Add a dish/item review for a family member (add-only). The subject must
+    have rated the waypoint overall first (same gate as a self item review),
+    and must not already have a review for this item."""
+    location = get_object_or_404(Location, pk=pk)
+    item = get_object_or_404(_item_queryset_for_location(location), pk=item_pk)
+    try:
+        subject_id = int(request.POST.get("subject") or 0)
+    except (TypeError, ValueError):
+        subject_id = 0
+    if subject_id not in family_member_ids(request.user):
+        return HttpResponseForbidden("You can only add reviews for members of your own family.")
+    subject = get_object_or_404(User, pk=subject_id)
+    if not location.reviews.filter(user=subject).exists():
+        messages.error(request,
+                       "{} needs to rate this waypoint overall before you can review its dishes for them."
+                       .format(subject.username))
+        return _render_items_section(request, location)
+    if ItemReview.objects.filter(item=item, user=subject).exists():
+        messages.error(request,
+                       "{} already reviewed “{}” — only they can change it.".format(subject.username, item.name))
+        return _render_items_section(request, location)
+    form = ItemReviewForm(request.POST)
+    if not form.is_valid():
+        messages.error(request, "Please choose a rating for {}.".format(subject.username))
+        return _render_items_section(request, location)
+    review = form.save(commit=False)
+    review.item = item
+    review.user = subject
+    review.submitted_by = request.user
+    review.subject_seen = False
+    review.private_notes = ""      # never write "private" notes on someone else's behalf
+    review.save()
+    _log(request, AuditLog.ACTION_CREATE, review,
+         'Added review for "{}" in "{}" on behalf of {}: {}/5'.format(
+             item.name, location.name, subject.username, review.rating))
+    messages.success(request, "Dish review added for {}.".format(subject.username))
     return _render_items_section(request, location)
 
 
@@ -1464,6 +1546,19 @@ def osm_search(request):
 
 # ── Location reviews (HTMX) ───────────────────────────────────────────────────
 
+def _location_family_targets(request, location):
+    """Family members the current user may add a review for HERE — i.e. shares
+    a family with, minus anyone who already has a review for this location
+    (adding is allowed, editing another member's review is not)."""
+    if not request.user.is_authenticated:
+        return []
+    fam_ids = family_member_ids(request.user)
+    if not fam_ids:
+        return []
+    reviewed = set(location.reviews.filter(user_id__in=fam_ids).values_list("user_id", flat=True))
+    return list(User.objects.filter(pk__in=[i for i in fam_ids if i not in reviewed]).order_by("username"))
+
+
 def _render_location_reviews(request, location, review_form=None, show_form=False):
     my_review = location.reviews.filter(user=request.user).first() \
         if request.user.is_authenticated else None
@@ -1472,6 +1567,7 @@ def _render_location_reviews(request, location, review_form=None, show_form=Fals
         "my_review": my_review,
         "review_form": review_form or LocationReviewForm(instance=my_review),
         "show_form": show_form,
+        "family_targets": _location_family_targets(request, location),
         # This view is only ever hit via HTMX, so it's safe to always include
         # the out-of-band header-badge swap (see template comment).
         "oob": True,
@@ -1507,6 +1603,8 @@ def location_review_upsert(request, pk):
 @require_POST
 def location_review_delete(request, pk):
     location = get_object_or_404(Location, pk=pk)
+    # user=request.user ensures you can only delete your OWN review — never a
+    # family member's, even one they added on your behalf belongs to you.
     review = get_object_or_404(LocationReview, location=location, user=request.user)
     reason = _require_reason(request)
     if not reason:
@@ -1514,6 +1612,39 @@ def location_review_delete(request, pk):
     _log(request, AuditLog.ACTION_DELETE, review,
          'Deleted review for "{}" — reason: {}'.format(location.name, reason))
     review.delete()
+    return _render_location_reviews(request, location)
+
+
+@login_required
+@require_POST
+def location_review_on_behalf(request, pk):
+    """Add a waypoint review for a family member. Add-only: if the subject
+    already has a review here it's left untouched (you can't edit theirs)."""
+    location = get_object_or_404(Location, pk=pk)
+    try:
+        subject_id = int(request.POST.get("subject") or 0)
+    except (TypeError, ValueError):
+        subject_id = 0
+    if subject_id not in family_member_ids(request.user):
+        return HttpResponseForbidden("You can only add reviews for members of your own family.")
+    subject = get_object_or_404(User, pk=subject_id)
+    if LocationReview.objects.filter(location=location, user=subject).exists():
+        messages.error(request,
+                       "{} already has a review here — only they can change it.".format(subject.username))
+        return _render_location_reviews(request, location)
+    form = LocationReviewForm(request.POST)
+    if not form.is_valid():
+        messages.error(request, "Please choose a rating for {}.".format(subject.username))
+        return _render_location_reviews(request, location)
+    review = form.save(commit=False)
+    review.location = location
+    review.user = subject
+    review.submitted_by = request.user
+    review.subject_seen = False       # surfaced to the subject on their next login
+    review.save()
+    _log(request, AuditLog.ACTION_CREATE, review,
+         'Added review for "{}" on behalf of {}: {}/5'.format(location.name, subject.username, review.rating))
+    messages.success(request, "Review added for {}.".format(subject.username))
     return _render_location_reviews(request, location)
 
 
@@ -1844,6 +1975,159 @@ def group_leave(request, pk):
     else:
         messages.success(request, "You left the group.")
     return redirect("group_list")
+
+
+# ── Families (post reviews on each other's behalf) ────────────────────────────
+
+def _is_family_member(user, family):
+    return family.memberships.filter(user=user).exists()
+
+
+def family_member_ids(user):
+    """User ids that share at least one Family with `user` (excluding `user`).
+    These are exactly the people `user` may post reviews on behalf of."""
+    fam_ids = FamilyMembership.objects.filter(user=user).values_list("family_id", flat=True)
+    return set(
+        FamilyMembership.objects
+        .filter(family_id__in=list(fam_ids))
+        .exclude(user=user)
+        .values_list("user_id", flat=True)
+    )
+
+
+def family_members_qs(user):
+    """The distinct User objects `user` may post on behalf of, ordered."""
+    return User.objects.filter(pk__in=family_member_ids(user)).order_by("username")
+
+
+@login_required
+def family_list(request):
+    """The current user's families, plus a create form."""
+    families = (
+        Family.objects.filter(memberships__user=request.user)
+        .prefetch_related("memberships__user")
+        .order_by("name")
+    )
+    if request.method == "POST":
+        name = (request.POST.get("name") or "").strip()
+        if not name:
+            messages.error(request, "Please enter a family name.")
+        else:
+            family = Family.objects.create(name=name, created_by=request.user)
+            FamilyMembership.objects.create(family=family, user=request.user)
+            _log(request, AuditLog.ACTION_CREATE, family, 'Created family "{}"'.format(family.name))
+            messages.success(request, 'Family "{}" created.'.format(family.name))
+            return redirect("family_detail", pk=family.pk)
+    return render(request, "tracker/family_list.html", {"families": families})
+
+
+@login_required
+def family_detail(request, pk):
+    family = get_object_or_404(Family, pk=pk)
+    if not _is_family_member(request.user, family):
+        return HttpResponseForbidden("You're not a member of this family.")
+    members = User.objects.filter(family_memberships__family=family).order_by("username")
+    invite_url = request.build_absolute_uri(
+        reverse("family_invite_preview", args=[family.invite_token])
+    )
+    return render(request, "tracker/family_detail.html", {
+        "family": family,
+        "members": members,
+        "invite_url": invite_url,
+    })
+
+
+@login_required
+def family_invite_preview(request, token):
+    """What an invitee sees: the family name + member count, with an Approve
+    (join) button. The invitee's own click IS the approval."""
+    family = get_object_or_404(Family, invite_token=token)
+    already = _is_family_member(request.user, family)
+    if request.method == "POST" and not already:
+        FamilyMembership.objects.get_or_create(family=family, user=request.user)
+        _log(request, AuditLog.ACTION_UPDATE, family,
+             'Joined family "{}"'.format(family.name))
+        messages.success(request, 'You joined the "{}" family.'.format(family.name))
+        return redirect("family_detail", pk=family.pk)
+    if already:
+        return redirect("family_detail", pk=family.pk)
+    return render(request, "tracker/family_invite_preview.html", {"family": family})
+
+
+@login_required
+@require_POST
+def family_invite_regenerate(request, pk):
+    family = get_object_or_404(Family, pk=pk)
+    if not _is_family_member(request.user, family):
+        return HttpResponseForbidden("Only family members can do that.")
+    from .models import _invite_token
+    family.invite_token = _invite_token()
+    family.save(update_fields=["invite_token"])
+    _log(request, AuditLog.ACTION_UPDATE, family,
+         'Regenerated invite link for family "{}"'.format(family.name))
+    messages.success(request, "Invite link regenerated — the old link no longer works.")
+    return redirect("family_detail", pk=family.pk)
+
+
+@login_required
+@require_POST
+def family_leave(request, pk):
+    family = get_object_or_404(Family, pk=pk)
+    membership = FamilyMembership.objects.filter(family=family, user=request.user).first()
+    if not membership:
+        return redirect("family_list")
+    membership.delete()
+    _log(request, AuditLog.ACTION_DELETE, family, 'Left family "{}"'.format(family.name))
+    if not family.memberships.exists():
+        family.delete()
+        messages.success(request, "You left the family. It had no other members, so it was removed.")
+    else:
+        messages.success(request, "You left the family.")
+    return redirect("family_list")
+
+
+@login_required
+def on_behalf_reviews(request):
+    """Everything family members have logged on the current user's behalf,
+    newest first. Viewing this page marks the as-yet-unseen ones seen (that's
+    what the login banner points at)."""
+    loc = list(
+        LocationReview.objects.filter(user=request.user, submitted_by__isnull=False)
+        .exclude(submitted_by=request.user)
+        .select_related("location", "submitted_by").order_by("-created_at")
+    )
+    items = list(
+        ItemReview.objects.filter(user=request.user, submitted_by__isnull=False)
+        .exclude(submitted_by=request.user)
+        .select_related("item", "item__location", "submitted_by").order_by("-created_at")
+    )
+
+    entries = []
+    for r in loc:
+        entries.append({
+            "kind": "Waypoint", "title": r.location.name,
+            "url": reverse("location_detail", args=[r.location_id]),
+            "by": r.submitted_by, "rating": r.rating, "notes": r.notes,
+            "when": r.created_at, "is_new": not r.subject_seen,
+        })
+    for r in items:
+        entries.append({
+            "kind": "Dish", "title": "{} · {}".format(r.item.name, r.item.location.name),
+            "url": reverse("location_detail", args=[r.item.location_id]),
+            "by": r.submitted_by, "rating": r.rating, "notes": r.notes,
+            "when": r.created_at, "is_new": not r.subject_seen,
+        })
+    entries.sort(key=lambda e: e["when"], reverse=True)
+
+    # Mark the unseen ones seen now that we've shown them.
+    LocationReview.objects.filter(
+        user=request.user, submitted_by__isnull=False, subject_seen=False
+    ).exclude(submitted_by=request.user).update(subject_seen=True)
+    ItemReview.objects.filter(
+        user=request.user, submitted_by__isnull=False, subject_seen=False
+    ).exclude(submitted_by=request.user).update(subject_seen=True)
+
+    return render(request, "tracker/on_behalf_reviews.html", {"entries": entries})
 
 
 # ── Export ────────────────────────────────────────────────────────────────────

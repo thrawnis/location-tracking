@@ -137,6 +137,9 @@
                 {% stars_display review.rating "sm" %}
                 <span class="text-[10px] text-slate-400 ml-auto">{{ review.updated_at|date:"M j, Y" }}</span>
               </div>
+              {% if review.on_behalf %}
+              <p class="text-[10px] text-violet-600 mt-0.5">added by {{ review.submitted_by.username }} on their behalf</p>
+              {% endif %}
               {% if review.notes %}
               <p class="text-xs text-slate-600 mt-0.5 leading-snug">{{ review.notes }}</p>
               {% endif %}
@@ -262,6 +265,43 @@
           {% endif %}
         </div>
         {% endif %}
+
+        <!-- Add a dish review on behalf of a family member -->
+        {% with targets=item_behalf_targets|get_item:item.pk %}
+        {% if targets %}
+        <div class="border-t border-violet-100 px-3 py-2" x-data="{ open: false }" @click.stop>
+          <button type="button" @click="open = !open" x-show="!open"
+                  class="text-[11px] font-semibold text-violet-700 hover:text-violet-900">
+            ＋ Add for a family member
+          </button>
+          <form x-show="open" x-cloak
+                hx-post="{% url 'item_review_on_behalf' location.pk item.pk %}"
+                hx-target="#items-section" hx-swap="outerHTML" class="space-y-2 pt-1">
+            {% csrf_token %}
+            <select name="subject" required
+                    class="block w-full text-xs border border-slate-200 rounded-lg px-2 py-1.5 bg-white
+                           focus:outline-none focus:ring-2 focus:ring-brand/20 focus:border-brand">
+              <option value="">Choose a family member…</option>
+              {% for m in targets %}
+              <option value="{{ m.pk }}">{{ m.username }}</option>
+              {% endfor %}
+            </select>
+            {% include "tracker/partials/star_input.html" with field_name="rating" current_value="" %}
+            <textarea name="notes" rows="2" placeholder="Their review (optional)"
+                      class="block w-full text-xs border border-slate-200 rounded-lg px-2 py-1.5 outline-none
+                             focus:border-brand focus:ring-2 focus:ring-brand/20 resize-none"></textarea>
+            <div class="flex gap-2">
+              <button type="submit"
+                      class="bg-brand text-white text-xs font-semibold px-3 py-1.5 rounded-lg hover:bg-brand-dark transition-colors">
+                Add review
+              </button>
+              <button type="button" @click="open = false" class="text-xs text-slate-500 hover:text-slate-700 px-2 py-1.5">Cancel</button>
+            </div>
+            <p class="text-[10px] text-slate-400">They'll see it next time they sign in. Only they can edit or delete it.</p>
+          </form>
+        </div>
+        {% endif %}
+        {% endwith %}
       </div>
 
     </div>

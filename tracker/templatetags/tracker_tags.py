@@ -26,5 +26,9 @@ def stars_display(rating, size="md"):
 
 @register.filter
 def get_item(dictionary, key):
-    """Allow dict lookups by variable key in templates: my_dict|get_item:key"""
-    return dictionary.get(key)
+    """Allow dict lookups by variable key in templates: my_dict|get_item:key.
+    Tolerates a non-dict (e.g. an undefined var resolving to '') so a missing
+    context variable renders as empty rather than raising."""
+    if hasattr(dictionary, "get"):
+        return dictionary.get(key)
+    return None

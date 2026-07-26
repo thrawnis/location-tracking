@@ -36,6 +36,7 @@ urlpatterns = [
     path("locations/<int:pk>/gf-vote/", views.gf_vote, name="gf_vote"),
     path("locations/<int:pk>/review/", views.location_review_upsert, name="location_review_upsert"),
     path("locations/<int:pk>/review/delete/", views.location_review_delete, name="location_review_delete"),
+    path("locations/<int:pk>/review/on-behalf/", views.location_review_on_behalf, name="location_review_on_behalf"),
 
     # Collections
     path("collections/", views.collection_list, name="collection_list"),
@@ -58,6 +59,14 @@ urlpatterns = [
     path("groups/<int:pk>/requests/<int:request_pk>/deny/", views.group_request_deny, name="group_request_deny"),
     path("groups/invite/<str:token>/", views.group_invite_preview, name="group_invite_preview"),
 
+    # Families (post reviews on each other's behalf)
+    path("families/", views.family_list, name="family_list"),
+    path("families/<int:pk>/", views.family_detail, name="family_detail"),
+    path("families/<int:pk>/leave/", views.family_leave, name="family_leave"),
+    path("families/<int:pk>/invite/regenerate/", views.family_invite_regenerate, name="family_invite_regenerate"),
+    path("families/invite/<str:token>/", views.family_invite_preview, name="family_invite_preview"),
+    path("reviews/for-me/", views.on_behalf_reviews, name="on_behalf_reviews"),
+
     # Import / Export
     path("export/", views.export_locations, name="export_locations"),
     path("import/", views.import_locations, name="import_locations"),
@@ -74,6 +83,7 @@ urlpatterns = [
     path("locations/<int:pk>/items/<int:item_pk>/delete/", views.item_delete, name="item_delete"),
     path("locations/<int:pk>/items/<int:item_pk>/review/", views.item_review_upsert, name="item_review_upsert"),
     path("locations/<int:pk>/items/<int:item_pk>/review/delete/", views.item_review_delete, name="item_review_delete"),
+    path("locations/<int:pk>/items/<int:item_pk>/review/on-behalf/", views.item_review_on_behalf, name="item_review_on_behalf"),
 
     # Photos (HTMX)
     path("locations/<int:pk>/photos/add/", views.photo_add, name="photo_add"),

@@ -159,12 +159,25 @@ class LocationReview(models.Model):
         validators=RATING_VALIDATORS,
     )
     notes = models.TextField(blank=True, help_text="Your review of this place")
+    # Who actually authored this review. NULL means the subject wrote it
+    # themselves; a different user means a family member posted it on the
+    # subject's behalf (see Family). The review always "belongs to" `user` —
+    # only they (or an admin) may edit/delete it.
+    submitted_by = models.ForeignKey(
+        User, on_delete=models.SET_NULL, null=True, blank=True, related_name="+",
+    )
+    # False while the subject hasn't yet seen the "added on your behalf" notice.
+    subject_seen = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
         unique_together = [("location", "user")]
         ordering = ["-created_at"]
+
+    @property
+    def on_behalf(self):
+        return self.submitted_by_id is not None and self.submitted_by_id != self.user_id
 
     def __str__(self):
         return f"{self.user.username} → {self.location.name}: {self.rating}"
@@ -215,12 +228,21 @@ class ItemReview(models.Model):
     private_notes = models.TextField(
         blank=True, help_text="Only visible to you — never shown to other users"
     )
+    # See LocationReview.submitted_by / subject_seen — same on-behalf mechanics.
+    submitted_by = models.ForeignKey(
+        User, on_delete=models.SET_NULL, null=True, blank=True, related_name="+",
+    )
+    subject_seen = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
         unique_together = [("item", "user")]
         ordering = ["-created_at"]
+
+    @property
+    def on_behalf(self):
+        return self.submitted_by_id is not None and self.submitted_by_id != self.user_id
 
     def __str__(self):
         return f"{self.user.username} → {self.item.name}: {self.rating}"
@@ -445,3 +467,39 @@ class FriendGroupJoinRequest(models.Model):
 
     def __str__(self):
         return f"{self.user.username} -> {self.group.name} ({self.status})"
+
+
+class Family(models.Model):
+    """A group of people who trust each other to log reviews on one another's
+    behalf. Unlike FriendGroup, joining is by the INVITEE's own approval: a
+    member shares the invite link, and whoever opens it can accept and join.
+    Any member may post a waypoint/dish review attributed to another member,
+    but only the attributed member (or an admin) can edit or delete it."""
+    name = models.CharField(max_length=120)
+    created_by = models.ForeignKey(
+        User, on_delete=models.SET_NULL, null=True, blank=True, related_name="+"
+    )
+    invite_token = models.CharField(max_length=64, unique=True, default=_invite_token)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["name"]
+
+    def __str__(self):
+        return self.name
+
+    @property
+    def member_count(self):
+        return self.memberships.count()
+
+
+class FamilyMembership(models.Model):
+    family = models.ForeignKey(Family, on_delete=models.CASCADE, related_name="memberships")
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="family_memberships")
+    joined_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        unique_together = [("family", "user")]
+
+    def __str__(self):
+        return f"{self.user.username} in {self.family.name}"
