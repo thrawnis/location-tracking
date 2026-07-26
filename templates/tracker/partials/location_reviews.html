@@ -127,6 +127,7 @@
             <span class="text-yellow-400">★</span> {{ review.rating|floatformat:1 }}
           </span>
           <span class="text-[10px] text-slate-400">{{ review.updated_at|date:"M j, Y" }}</span>
+          {% include "tracker/partials/onbehalf_callout.html" with review=review %}
           {% if review.user == user %}
           <form hx-post="{% url 'location_review_delete' location.pk %}"
                 hx-target="#location-reviews" hx-swap="outerHTML"
@@ -136,9 +137,6 @@
           </form>
           {% endif %}
         </div>
-        {% if review.on_behalf %}
-        <p class="text-[10px] text-violet-600 mt-0.5">added by {{ review.submitted_by.username }} on their behalf</p>
-        {% endif %}
         {% if review.notes %}
         <p class="text-sm text-slate-600 mt-0.5 whitespace-pre-line leading-snug">{{ review.notes }}</p>
         {% endif %}
