@@ -469,37 +469,35 @@ class FriendGroupJoinRequest(models.Model):
         return f"{self.user.username} -> {self.group.name} ({self.status})"
 
 
-class Family(models.Model):
-    """A group of people who trust each other to log reviews on one another's
-    behalf. Unlike FriendGroup, joining is by the INVITEE's own approval: a
-    member shares the invite link, and whoever opens it can accept and join.
-    Any member may post a waypoint/dish review attributed to another member,
-    but only the attributed member (or an admin) can edit or delete it."""
-    name = models.CharField(max_length=120)
-    created_by = models.ForeignKey(
-        User, on_delete=models.SET_NULL, null=True, blank=True, related_name="+"
-    )
-    invite_token = models.CharField(max_length=64, unique=True, default=_invite_token)
+class ConnectToken(models.Model):
+    """A user's personal "add me to your family" invite link. Sharing the URL
+    lets someone open it and connect one-to-one with this user. Regenerating
+    the token invalidates the old link."""
+    user = models.OneToOneField(User, on_delete=models.CASCADE, related_name="connect_token")
+    token = models.CharField(max_length=64, unique=True, default=_invite_token)
+
+    def __str__(self):
+        return f"connect-token for {self.user.username}"
+
+
+class Connection(models.Model):
+    """A symmetric one-to-one "family" link between two users — a friends-list
+    style connection, NOT a group. Being connected to B and to C does not link
+    B and C in any way. Either connected user may post waypoint/dish reviews on
+    the other's behalf; only the attributed user (or an admin) can edit/delete
+    them. Stored as an ordered pair (user_low.pk < user_high.pk) so each pair
+    is unique regardless of who initiated it."""
+    user_low = models.ForeignKey(User, on_delete=models.CASCADE, related_name="+")
+    user_high = models.ForeignKey(User, on_delete=models.CASCADE, related_name="+")
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
-        ordering = ["name"]
+        unique_together = [("user_low", "user_high")]
 
     def __str__(self):
-        return self.name
+        return f"{self.user_low.username} ↔ {self.user_high.username}"
 
-    @property
-    def member_count(self):
-        return self.memberships.count()
-
-
-class FamilyMembership(models.Model):
-    family = models.ForeignKey(Family, on_delete=models.CASCADE, related_name="memberships")
-    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="family_memberships")
-    joined_at = models.DateTimeField(auto_now_add=True)
-
-    class Meta:
-        unique_together = [("family", "user")]
-
-    def __str__(self):
-        return f"{self.user.username} in {self.family.name}"
+    @staticmethod
+    def ordered(a, b):
+        """Return (low, high) ordered by pk for canonical storage."""
+        return (a, b) if a.pk < b.pk else (b, a)

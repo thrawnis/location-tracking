@@ -59,12 +59,11 @@ urlpatterns = [
     path("groups/<int:pk>/requests/<int:request_pk>/deny/", views.group_request_deny, name="group_request_deny"),
     path("groups/invite/<str:token>/", views.group_invite_preview, name="group_invite_preview"),
 
-    # Families (post reviews on each other's behalf)
-    path("families/", views.family_list, name="family_list"),
-    path("families/<int:pk>/", views.family_detail, name="family_detail"),
-    path("families/<int:pk>/leave/", views.family_leave, name="family_leave"),
-    path("families/<int:pk>/invite/regenerate/", views.family_invite_regenerate, name="family_invite_regenerate"),
-    path("families/invite/<str:token>/", views.family_invite_preview, name="family_invite_preview"),
+    # Family — one-to-one connections (post reviews on each other's behalf)
+    path("family/", views.family_list, name="family_list"),
+    path("family/invite/regenerate/", views.family_invite_regenerate, name="family_invite_regenerate"),
+    path("family/disconnect/<int:user_pk>/", views.family_disconnect, name="family_disconnect"),
+    path("family/connect/<str:token>/", views.family_connect_preview, name="family_connect_preview"),
     path("reviews/for-me/", views.on_behalf_reviews, name="on_behalf_reviews"),
 
     # Import / Export

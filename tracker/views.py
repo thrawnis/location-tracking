@@ -28,7 +28,7 @@ from .forms import (
     LocationReviewForm, PhotoForm, RegisterForm, TakeoutImportForm,
 )
 from .models import (
-    AuditLog, ChainGroup, Collection, EmailVerification, Family, FamilyMembership,
+    AuditLog, ChainGroup, Collection, Connection, ConnectToken, EmailVerification,
     FriendGroup, FriendGroupJoinRequest,
     FriendGroupMembership, GlutenFreeVote, Item, ItemReview,
     Location, LocationReview, OsmSearchCache, PendingRegistration, Photo,
@@ -1977,112 +1977,84 @@ def group_leave(request, pk):
     return redirect("group_list")
 
 
-# ── Families (post reviews on each other's behalf) ────────────────────────────
-
-def _is_family_member(user, family):
-    return family.memberships.filter(user=user).exists()
-
+# ── Family (one-to-one connections — post reviews on each other's behalf) ─────
+# A "family" here is a friends-list of direct, symmetric one-to-one links, NOT
+# a group: being connected to B and to C never links B and C. Only directly
+# connected users may post reviews on each other's behalf.
 
 def family_member_ids(user):
-    """User ids that share at least one Family with `user` (excluding `user`).
-    These are exactly the people `user` may post reviews on behalf of."""
-    fam_ids = FamilyMembership.objects.filter(user=user).values_list("family_id", flat=True)
-    return set(
-        FamilyMembership.objects
-        .filter(family_id__in=list(fam_ids))
-        .exclude(user=user)
-        .values_list("user_id", flat=True)
-    )
+    """User ids DIRECTLY connected to `user` — exactly the people `user` may
+    post reviews on behalf of (and who may post on `user`'s behalf). Not
+    transitive: only first-degree connections."""
+    lows = Connection.objects.filter(user_low=user).values_list("user_high_id", flat=True)
+    highs = Connection.objects.filter(user_high=user).values_list("user_low_id", flat=True)
+    return set(lows) | set(highs)
 
 
-def family_members_qs(user):
-    """The distinct User objects `user` may post on behalf of, ordered."""
-    return User.objects.filter(pk__in=family_member_ids(user)).order_by("username")
+def _my_connect_token(user):
+    token, _ = ConnectToken.objects.get_or_create(user=user)
+    return token
 
 
 @login_required
 def family_list(request):
-    """The current user's families, plus a create form."""
-    families = (
-        Family.objects.filter(memberships__user=request.user)
-        .prefetch_related("memberships__user")
-        .order_by("name")
-    )
-    if request.method == "POST":
-        name = (request.POST.get("name") or "").strip()
-        if not name:
-            messages.error(request, "Please enter a family name.")
-        else:
-            family = Family.objects.create(name=name, created_by=request.user)
-            FamilyMembership.objects.create(family=family, user=request.user)
-            _log(request, AuditLog.ACTION_CREATE, family, 'Created family "{}"'.format(family.name))
-            messages.success(request, 'Family "{}" created.'.format(family.name))
-            return redirect("family_detail", pk=family.pk)
-    return render(request, "tracker/family_list.html", {"families": families})
-
-
-@login_required
-def family_detail(request, pk):
-    family = get_object_or_404(Family, pk=pk)
-    if not _is_family_member(request.user, family):
-        return HttpResponseForbidden("You're not a member of this family.")
-    members = User.objects.filter(family_memberships__family=family).order_by("username")
-    invite_url = request.build_absolute_uri(
-        reverse("family_invite_preview", args=[family.invite_token])
-    )
-    return render(request, "tracker/family_detail.html", {
-        "family": family,
-        "members": members,
+    """The user's personal invite link + the list of people they're connected
+    to one-to-one."""
+    connected = list(User.objects.filter(pk__in=family_member_ids(request.user)).order_by("username"))
+    token = _my_connect_token(request.user)
+    invite_url = request.build_absolute_uri(reverse("family_connect_preview", args=[token.token]))
+    return render(request, "tracker/family_list.html", {
+        "connected": connected,
         "invite_url": invite_url,
     })
 
 
 @login_required
-def family_invite_preview(request, token):
-    """What an invitee sees: the family name + member count, with an Approve
-    (join) button. The invitee's own click IS the approval."""
-    family = get_object_or_404(Family, invite_token=token)
-    already = _is_family_member(request.user, family)
-    if request.method == "POST" and not already:
-        FamilyMembership.objects.get_or_create(family=family, user=request.user)
-        _log(request, AuditLog.ACTION_UPDATE, family,
-             'Joined family "{}"'.format(family.name))
-        messages.success(request, 'You joined the "{}" family.'.format(family.name))
-        return redirect("family_detail", pk=family.pk)
-    if already:
-        return redirect("family_detail", pk=family.pk)
-    return render(request, "tracker/family_invite_preview.html", {"family": family})
-
-
-@login_required
-@require_POST
-def family_invite_regenerate(request, pk):
-    family = get_object_or_404(Family, pk=pk)
-    if not _is_family_member(request.user, family):
-        return HttpResponseForbidden("Only family members can do that.")
-    from .models import _invite_token
-    family.invite_token = _invite_token()
-    family.save(update_fields=["invite_token"])
-    _log(request, AuditLog.ACTION_UPDATE, family,
-         'Regenerated invite link for family "{}"'.format(family.name))
-    messages.success(request, "Invite link regenerated — the old link no longer works.")
-    return redirect("family_detail", pk=family.pk)
-
-
-@login_required
-@require_POST
-def family_leave(request, pk):
-    family = get_object_or_404(Family, pk=pk)
-    membership = FamilyMembership.objects.filter(family=family, user=request.user).first()
-    if not membership:
+def family_connect_preview(request, token):
+    """Someone opened another user's personal invite link. Their own click on
+    Approve creates the one-to-one connection between the two of them."""
+    ct = get_object_or_404(ConnectToken.objects.select_related("user"), token=token)
+    target = ct.user
+    if target == request.user:
+        messages.info(request, "That's your own invite link — share it with someone else.")
         return redirect("family_list")
-    membership.delete()
-    _log(request, AuditLog.ACTION_DELETE, family, 'Left family "{}"'.format(family.name))
-    if not family.memberships.exists():
-        family.delete()
-        messages.success(request, "You left the family. It had no other members, so it was removed.")
-    else:
-        messages.success(request, "You left the family.")
+    already = target.pk in family_member_ids(request.user)
+    if request.method == "POST" and not already:
+        low, high = Connection.ordered(request.user, target)
+        Connection.objects.get_or_create(user_low=low, user_high=high)
+        _log(request, AuditLog.ACTION_CREATE, request.user,
+             'Connected with {} (family)'.format(target.username))
+        messages.success(request, "You're now connected with {}.".format(target.username))
+        return redirect("family_list")
+    if already:
+        messages.info(request, "You're already connected with {}.".format(target.username))
+        return redirect("family_list")
+    return render(request, "tracker/family_connect_preview.html", {"target": target})
+
+
+@login_required
+@require_POST
+def family_invite_regenerate(request):
+    """Rotate your personal invite link, invalidating the old one."""
+    from .models import _invite_token
+    token = _my_connect_token(request.user)
+    token.token = _invite_token()
+    token.save(update_fields=["token"])
+    _log(request, AuditLog.ACTION_UPDATE, request.user, "Regenerated family invite link")
+    messages.success(request, "Invite link regenerated — the old link no longer works.")
+    return redirect("family_list")
+
+
+@login_required
+@require_POST
+def family_disconnect(request, user_pk):
+    """Remove a one-to-one connection (either side can do this)."""
+    other = get_object_or_404(User, pk=user_pk)
+    low, high = Connection.ordered(request.user, other)
+    Connection.objects.filter(user_low=low, user_high=high).delete()
+    _log(request, AuditLog.ACTION_DELETE, request.user,
+         'Disconnected from {} (family)'.format(other.username))
+    messages.success(request, "Removed {} from your family.".format(other.username))
     return redirect("family_list")
 
 
