@@ -1,0 +1,217 @@
+{% extends "base.html" %}
+{% block title %}Help &amp; Glossary – Waypoint{% endblock %}
+
+{% comment %}
+  Single source for the in-app glossary. When a feature changes, update the
+  matching section here. Links use {% url %} so they follow route renames.
+{% endcomment %}
+
+{% block content %}
+<div class="max-w-3xl mx-auto space-y-8">
+
+  <div>
+    <h1 class="text-2xl font-bold text-slate-900">Help &amp; Glossary</h1>
+    <p class="text-sm text-slate-500 mt-1">
+      What the main ideas in Waypoint mean, and where to find them. Jump to a topic:
+    </p>
+  </div>
+
+  <!-- Table of contents -->
+  <nav class="bg-white rounded-xl border border-slate-200 shadow-sm p-4">
+    <ul class="grid sm:grid-cols-2 gap-x-6 gap-y-1.5 text-sm">
+      <li><a href="#waypoints" class="text-brand hover:underline">Waypoints</a></li>
+      <li><a href="#waypoint-ratings" class="text-brand hover:underline">Waypoint ratings</a></li>
+      <li><a href="#items" class="text-brand hover:underline">Items &amp; dishes</a></li>
+      <li><a href="#gluten-free" class="text-brand hover:underline">Gluten-free info &amp; votes</a></li>
+      <li><a href="#photos" class="text-brand hover:underline">Photos</a></li>
+      <li><a href="#collections" class="text-brand hover:underline">Collections</a></li>
+      <li><a href="#groups" class="text-brand hover:underline">Groups</a></li>
+      <li><a href="#linked-accounts" class="text-brand hover:underline">Linked accounts</a></li>
+      <li><a href="#reviews-for-you" class="text-brand hover:underline">Reviews added for you</a></li>
+      <li><a href="#chains" class="text-brand hover:underline">Chain linking</a></li>
+      <li><a href="#map" class="text-brand hover:underline">Map &amp; nearby search</a></li>
+      <li><a href="#import-export" class="text-brand hover:underline">Import &amp; export</a></li>
+      <li><a href="#activity" class="text-brand hover:underline">Activity feed</a></li>
+      <li><a href="#security" class="text-brand hover:underline">Account &amp; security</a></li>
+      <li><a href="#roles" class="text-brand hover:underline">Roles: superuser &amp; admin</a></li>
+    </ul>
+  </nav>
+
+  {% comment %} Reusable card styling via a simple pattern below. {% endcomment %}
+
+  <section id="waypoints" class="bg-white rounded-xl border border-slate-200 shadow-sm p-5 scroll-mt-20">
+    <h2 class="text-lg font-bold text-slate-900">Waypoints</h2>
+    <p class="text-sm text-slate-600 mt-1.5 leading-relaxed">
+      A <strong>waypoint</strong> is any place you track — a restaurant, store, park, or anywhere
+      else. Each waypoint has its own page with its address, map link, ratings, dishes, photos, and
+      notes. You can add one manually or save one straight from the map's “Rate Me!” button.
+    </p>
+    <div class="mt-3 flex flex-wrap gap-2 text-sm">
+      <a href="{% url 'location_list' %}" class="font-semibold text-brand hover:underline">Browse waypoints →</a>
+      <a href="{% url 'location_create' %}" class="font-semibold text-brand hover:underline">Add a waypoint →</a>
+    </div>
+  </section>
+
+  <section id="waypoint-ratings" class="bg-white rounded-xl border border-slate-200 shadow-sm p-5 scroll-mt-20">
+    <h2 class="text-lg font-bold text-slate-900">Waypoint ratings</h2>
+    <p class="text-sm text-slate-600 mt-1.5 leading-relaxed">
+      Each person can leave one overall <strong>rating and review</strong> per waypoint. The
+      waypoint's headline score is the average of everyone's ratings. When a Google listing is
+      known, the app also shows Google's rating alongside yours for comparison. You can edit or
+      delete your own review at any time from the waypoint's page.
+    </p>
+  </section>
+
+  <section id="items" class="bg-white rounded-xl border border-slate-200 shadow-sm p-5 scroll-mt-20">
+    <h2 class="text-lg font-bold text-slate-900">Items &amp; dishes</h2>
+    <p class="text-sm text-slate-600 mt-1.5 leading-relaxed">
+      Within a waypoint you can list specific <strong>items or dishes</strong> (e.g. “Margherita
+      pizza”) and rate each one individually. To rate a dish you first need to have rated the
+      waypoint overall. Dish ratings are shown as a star and average next to each item.
+    </p>
+  </section>
+
+  <section id="gluten-free" class="bg-white rounded-xl border border-slate-200 shadow-sm p-5 scroll-mt-20">
+    <h2 class="text-lg font-bold text-slate-900">Gluten-free info &amp; votes</h2>
+    <p class="text-sm text-slate-600 mt-1.5 leading-relaxed">
+      Waypoints can record their <strong>gluten-free</strong> accommodation (a dedicated GF kitchen,
+      GF options, etc.) plus dietary notes. Anyone can cast an agree/disagree <strong>vote</strong>
+      on whether the listed GF status is accurate, so the community keeps it honest.
+    </p>
+  </section>
+
+  <section id="photos" class="bg-white rounded-xl border border-slate-200 shadow-sm p-5 scroll-mt-20">
+    <h2 class="text-lg font-bold text-slate-900">Photos</h2>
+    <p class="text-sm text-slate-600 mt-1.5 leading-relaxed">
+      Upload <strong>photos</strong> to a waypoint. Large images are resized automatically. Only the
+      person who uploaded a photo (or a superuser/admin) can rotate or delete it.
+    </p>
+  </section>
+
+  <section id="collections" class="bg-white rounded-xl border border-slate-200 shadow-sm p-5 scroll-mt-20">
+    <h2 class="text-lg font-bold text-slate-900">Collections</h2>
+    <p class="text-sm text-slate-600 mt-1.5 leading-relaxed">
+      A <strong>collection</strong> is your own curated group of waypoints — a trip, a theme, a
+      wishlist (e.g. “Austin 2026” or “GF-safe spots”). Collections are private by default; mark
+      one <strong>public</strong> to show it, read-only, on your profile. A superuser/admin can
+      <strong>feature</strong> a public collection so every waypoint in it links back to it — handy
+      for things like a company's rotating food-truck list.
+    </p>
+    <div class="mt-3 text-sm">
+      <a href="{% url 'collection_list' %}" class="font-semibold text-brand hover:underline">Manage collections →</a>
+    </div>
+  </section>
+
+  <section id="groups" class="bg-white rounded-xl border border-slate-200 shadow-sm p-5 scroll-mt-20">
+    <h2 class="text-lg font-bold text-slate-900">Groups</h2>
+    <p class="text-sm text-slate-600 mt-1.5 leading-relaxed">
+      A <strong>group</strong> is a private circle of friends — not listed or searchable anywhere.
+      You bring people in by sharing the group's invite link, and an existing member approves each
+      request. A group's page shows the waypoints its members have rated, so you can see how your
+      circle scored a place separately from the overall average.
+    </p>
+    <div class="mt-3 text-sm">
+      <a href="{% url 'group_list' %}" class="font-semibold text-brand hover:underline">Your groups →</a>
+    </div>
+  </section>
+
+  <section id="linked-accounts" class="bg-white rounded-xl border border-slate-200 shadow-sm p-5 scroll-mt-20">
+    <h2 class="text-lg font-bold text-slate-900">Linked accounts</h2>
+    <p class="text-sm text-slate-600 mt-1.5 leading-relaxed">
+      <strong>Linked accounts</strong> are one-to-one connections that let you log waypoint and dish
+      reviews <strong>on each other's behalf</strong>. Share your personal invite link; when someone
+      opens it and approves, the two of you are linked. Either of you can then add a review
+      attributed to the other — but only the person a review belongs to (or an admin) can edit or
+      delete it. Links are direct: being linked to two people never links <em>them</em> to each other.
+    </p>
+    <div class="mt-3 text-sm">
+      <a href="{% url 'linked_accounts' %}" class="font-semibold text-brand hover:underline">Manage linked accounts →</a>
+    </div>
+  </section>
+
+  <section id="reviews-for-you" class="bg-white rounded-xl border border-slate-200 shadow-sm p-5 scroll-mt-20">
+    <h2 class="text-lg font-bold text-slate-900">Reviews added for you</h2>
+    <p class="text-sm text-slate-600 mt-1.5 leading-relaxed">
+      When a linked account logs a review on your behalf, it shows up here (and a banner points you
+      to it the next time you sign in). Every review is attributed to you, so you stay in full
+      control — edit or delete any of them from the waypoint's page.
+    </p>
+    <div class="mt-3 text-sm">
+      <a href="{% url 'on_behalf_reviews' %}" class="font-semibold text-brand hover:underline">Reviews added for you →</a>
+    </div>
+  </section>
+
+  <section id="chains" class="bg-white rounded-xl border border-slate-200 shadow-sm p-5 scroll-mt-20">
+    <h2 class="text-lg font-bold text-slate-900">Chain linking</h2>
+    <p class="text-sm text-slate-600 mt-1.5 leading-relaxed">
+      Two waypoints that are branches of the same chain (e.g. two Burger King locations) can be
+      <strong>linked</strong> so they share one pooled list of items/dishes and their reviews, while
+      each branch keeps its own address, hours, and overall rating. Use the “This is a chain” button
+      on a waypoint's page to search for and link another branch. Detaching a branch is a
+      superuser/admin action.
+    </p>
+  </section>
+
+  <section id="map" class="bg-white rounded-xl border border-slate-200 shadow-sm p-5 scroll-mt-20">
+    <h2 class="text-lg font-bold text-slate-900">Map &amp; nearby search</h2>
+    <p class="text-sm text-slate-600 mt-1.5 leading-relaxed">
+      Set a location (type a city/zip, or use your device's location) and search <strong>nearby</strong>
+      for places by name or category. Results you don't have yet can be saved as waypoints and rated
+      on the spot with “Rate Me!”. The list defaults to sorting by distance from your location.
+    </p>
+    <div class="mt-3 text-sm">
+      <a href="{% url 'location_list' %}" class="font-semibold text-brand hover:underline">Open the map &amp; search →</a>
+    </div>
+  </section>
+
+  <section id="import-export" class="bg-white rounded-xl border border-slate-200 shadow-sm p-5 scroll-mt-20">
+    <h2 class="text-lg font-bold text-slate-900">Import &amp; export</h2>
+    <p class="text-sm text-slate-600 mt-1.5 leading-relaxed">
+      <strong>Import</strong> your saved places from Google Takeout (or any GeoJSON file) to bulk-add
+      waypoints, and <strong>export</strong> all waypoints as CSV, GeoJSON, or KML for backup or use
+      in Google My Maps, Google Earth, or a GPS app.
+    </p>
+    <div class="mt-3 text-sm">
+      <a href="{% url 'import_locations' %}" class="font-semibold text-brand hover:underline">Import / export →</a>
+    </div>
+  </section>
+
+  <section id="activity" class="bg-white rounded-xl border border-slate-200 shadow-sm p-5 scroll-mt-20">
+    <h2 class="text-lg font-bold text-slate-900">Activity feed</h2>
+    <p class="text-sm text-slate-600 mt-1.5 leading-relaxed">
+      Your <strong>activity feed</strong> is a running log of your own recent adds, edits, and
+      deletes across waypoints, reviews, items, and photos.
+    </p>
+    <div class="mt-3 text-sm">
+      <a href="{% url 'activity_feed' %}" class="font-semibold text-brand hover:underline">Your activity →</a>
+    </div>
+  </section>
+
+  <section id="security" class="bg-white rounded-xl border border-slate-200 shadow-sm p-5 scroll-mt-20">
+    <h2 class="text-lg font-bold text-slate-900">Account &amp; security</h2>
+    <p class="text-sm text-slate-600 mt-1.5 leading-relaxed">
+      Protect your account with <strong>two-factor authentication</strong> (a TOTP app like Google
+      Authenticator or Authy). It's optional for regular members and required for admins.
+    </p>
+    <div class="mt-3 text-sm">
+      <a href="{% url 'two_factor_settings' %}" class="font-semibold text-brand hover:underline">Two-factor settings →</a>
+    </div>
+  </section>
+
+  <section id="roles" class="bg-white rounded-xl border border-slate-200 shadow-sm p-5 scroll-mt-20">
+    <h2 class="text-lg font-bold text-slate-900">Roles: superuser &amp; admin</h2>
+    <p class="text-sm text-slate-600 mt-1.5 leading-relaxed">
+      Most people are ordinary members who manage their own content. A <strong>superuser</strong> can
+      edit or delete anyone's content (waypoints, items, photos, reviews) and feature collections,
+      but has no access to site infrastructure. An <strong>admin</strong> has every superuser ability
+      plus the management dashboard, user management, audit log, and site settings.
+    </p>
+    {% if user.is_staff %}
+    <div class="mt-3 text-sm">
+      <a href="{% url 'admin_dashboard' %}" class="font-semibold text-brand hover:underline">Admin dashboard →</a>
+    </div>
+    {% endif %}
+  </section>
+
+</div>
+{% endblock %}

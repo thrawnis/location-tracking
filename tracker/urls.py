@@ -17,6 +17,9 @@ urlpatterns = [
     path("verify-email/resend/", views.verify_email_resend, name="verify_email_resend"),
     path("verify-email/confirm/", views.verify_email_confirm, name="verify_email_confirm"),
 
+    # Help / glossary
+    path("help/", views.help_page, name="help_page"),
+
     # Terms of Service
     path("terms/", views.terms, name="terms"),
     path("terms/accept/", views.terms_accept, name="terms_accept"),

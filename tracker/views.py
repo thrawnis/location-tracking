@@ -507,6 +507,16 @@ def verify_email_confirm(request):
     return redirect("location_list" if request.user.is_authenticated else "login")
 
 
+# ── Help / glossary ───────────────────────────────────────────────────────────
+
+@login_required
+def help_page(request):
+    """A glossary of the app's concepts with links to each feature. The content
+    lives in templates/tracker/help.html; keep it updated when features change
+    (its links use {% url %} so they follow route renames automatically)."""
+    return render(request, "tracker/help.html")
+
+
 # ── Terms of Service ──────────────────────────────────────────────────────────
 
 def terms(request):
