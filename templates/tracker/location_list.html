@@ -1230,11 +1230,23 @@ const CSRF_TOKEN = '{{ csrf_token }}';
     if (fc) fc.textContent = '';
   }
 
-  // ── sessionStorage (remembers the location box for this browser session
-  // only — cleared when the tab/browser closes, same lifetime as the login
-  // session's inactivity expiry, unlike localStorage which persists forever) ──
-  const LOC_KEY = 'wp_last_location';
-  function saveLocation(val) { try { sessionStorage.setItem(LOC_KEY, val); } catch(_){} }
+  // ── Persisted session state (localStorage, so it survives closing/reopening
+  // the app after it's been idle — you continue where you left off instead of
+  // re-locating). We keep the location box label, the search/distance centre
+  // coordinates, and the last nearby-search term. ──
+  const LOC_KEY    = 'wp_last_location';   // location box label text
+  const CENTER_KEY = 'wp_last_center';     // {lat,lng} JSON — nearby-search + distance centre
+  const QUERY_KEY  = 'wp_last_query';      // last nearby-search term
+
+  function saveLocation(val) { try { localStorage.setItem(LOC_KEY, val); } catch(_){} }
+  function clearLocation()   { try { localStorage.removeItem(LOC_KEY); localStorage.removeItem(CENTER_KEY); } catch(_){} }
+  function saveCenter(c)     { try { if (c) localStorage.setItem(CENTER_KEY, JSON.stringify(c)); } catch(_){} }
+  function loadCenter()      { try { const r = localStorage.getItem(CENTER_KEY); return r ? JSON.parse(r) : null; } catch(_){ return null; } }
+  function saveQuery(q)      { try { if (q) localStorage.setItem(QUERY_KEY, q); else localStorage.removeItem(QUERY_KEY); } catch(_){} }
+  function loadQuery()       { try { return localStorage.getItem(QUERY_KEY) || ''; } catch(_){ return ''; } }
+
+  // Set the search/distance centre and persist it so a reopen doesn't re-locate.
+  function setSearchCenter(c) { searchCenter = c; saveCenter(c); }
 
   // ── Precise-location help modal ─────────────────────────────────
   // Opened automatically by an explicit "Locate me" click that doesn't land
@@ -1271,16 +1283,16 @@ const CSRF_TOKEN = '{{ csrf_token }}';
     // Use the fix as the nearby-search centre only when the user hasn't set an
     // explicit location themselves (an empty box) — a typed location wins and
     // is resolved via geocoding in resolveSearchCenter instead.
-    if (!hasLocationText()) searchCenter = { lat, lng };
+    if (!hasLocationText()) setSearchCenter({ lat, lng });
     renderList();                       // recompute distances for the list view
     if (updateBox !== false && boxText) {
       // A GPS fix can take up several seconds to resolve (watchPosition
       // keeps waiting for a better reading, see locateUser). If the user
       // explicitly set a location in the meantime — typed one and pressed
-      // Enter, or used "Locate me" — sessionStorage already reflects that;
-      // don't let this now-stale fix silently overwrite it.
+      // Enter, or used "Locate me" — the box already reflects that; don't let
+      // this now-stale fix silently overwrite it.
       let alreadySet = null;
-      try { alreadySet = sessionStorage.getItem(LOC_KEY); } catch (_) {}
+      try { alreadySet = localStorage.getItem(LOC_KEY); } catch (_) {}
       if (!alreadySet) fillLocationSearch(boxText);
     }
     if (mainMap) placeUserDot(lat, lng, label, zoom);
@@ -1369,7 +1381,7 @@ const CSRF_TOKEN = '{{ csrf_token }}';
     // Leave the box's current text alone until we actually have a fresh
     // result — clearing it up front meant a failed/slow lookup left the box
     // empty (and searches blocked) even if it already had a valid location.
-    if (updateBox) { try { sessionStorage.removeItem(LOC_KEY); } catch(_) {} }
+    if (updateBox) clearLocation();
     if (!navigator.geolocation) { ipFallback(explicit, updateBox); return; }
     // Precise geolocation requires a secure context (HTTPS). Over plain HTTP
     // the browser blocks it, so we fall back to coarse IP location.
@@ -1648,7 +1660,7 @@ const CSRF_TOKEN = '{{ csrf_token }}';
       textGeocoder.geocode({ address: q }, (results, status) => {
         if (status === 'OK' && results[0]) {
           const loc = results[0].geometry.location;
-          searchCenter = { lat: loc.lat(), lng: loc.lng() };
+          setSearchCenter({ lat: loc.lat(), lng: loc.lng() });
           if (results[0].formatted_address) fillLocationSearch(results[0].formatted_address);
           cb(searchCenter);
         } else { cb(null); }
@@ -1663,6 +1675,7 @@ const CSRF_TOKEN = '{{ csrf_token }}';
     if (!query) { clearTextResults(); return; }
     if (!searchCenter && !userPos && !hasLocationText()) { flashLocationRequired(); return; }
     lastNearbyQuery = query;
+    saveQuery(query);              // remember so a reopen restores this search
     osmSpinner(true);
     ensurePlacesLib(() => {
       resolveSearchCenter((center) => {
@@ -1683,6 +1696,7 @@ const CSRF_TOKEN = '{{ csrf_token }}';
 
   function clearTextResults() {
     lastNearbyQuery = '';
+    saveQuery('');                 // forget the remembered search
     document.getElementById('nearby-results')?.classList.add('hidden');
     const list = document.getElementById('nearby-list');
     if (list) list.innerHTML = '';
@@ -1849,8 +1863,10 @@ const CSRF_TOKEN = '{{ csrf_token }}';
             osmSpinner(false);
             if (status === 'OK' && results[0]) {
               const loc = results[0].geometry.location;
-              searchCenter = { lat: loc.lat(), lng: loc.lng() };
+              setSearchCenter({ lat: loc.lat(), lng: loc.lng() });
+              userPos = { lat: loc.lat(), lng: loc.lng() };   // distance sort follows the typed location
               if (results[0].formatted_address) fillLocationSearch(results[0].formatted_address);
+              renderList();
               if (lastNearbyQuery) runTextSearch(lastNearbyQuery);
             } else {
               showGeoError(`Couldn't find "${q}"`);
@@ -1866,7 +1882,7 @@ const CSRF_TOKEN = '{{ csrf_token }}';
       // Any manual edit invalidates the cached search centre so the next search
       // re-geocodes the current text rather than reusing a stale coordinate.
       searchCenter = null;
-      if (!locInput.value.trim()) { try { sessionStorage.removeItem(LOC_KEY); } catch (_) {} }
+      if (!locInput.value.trim()) clearLocation();
     });
 
     // Filter popover — both views.
@@ -1901,27 +1917,39 @@ const CSRF_TOKEN = '{{ csrf_token }}';
     const params = new URLSearchParams(window.location.search);
     if (!MAP_DISABLED && params.get('view') === 'map') showView('map');
 
-    // Restore whatever location the user last typed/located this session
-    // (cleared automatically when the tab/session ends — see saveLocation)
-    // before the silent auto-locate below runs, so it never gets clobbered.
+    // Continue where you left off. These persist across app restarts
+    // (localStorage), so reopening after being idle restores your location and
+    // last search instead of re-locating and asking for your location again.
     let remembered = null;
-    try { remembered = sessionStorage.getItem(LOC_KEY); } catch (_) {}
+    try { remembered = localStorage.getItem(LOC_KEY); } catch (_) {}
     if (remembered) locInput.value = remembered;
 
-    // Auto-locate on load — but only when nothing was already remembered this
-    // session; otherwise skip it entirely rather than fetching a fix we don't
-    // need. This is free either way: a browser GPS fix, or our own /api/geoip
-    // endpoint — never a Google API call. explicit=false always, so this can
-    // never pop open the precise-location help modal (that only ever fires
-    // for an explicit "Locate me" click — see the `explicit` param on
-    // locateUser).
-    if (!remembered) {
+    // Restore the saved centre so distance sorting works immediately — and so
+    // we don't need to fire geolocation at all when a location is remembered.
+    const savedCenter = loadCenter();
+    if (savedCenter) {
+      searchCenter = savedCenter;
+      if (!userPos) userPos = savedCenter;
+      renderList();
+    }
+
+    // Restore the last nearby search and re-run it (text-only mode) so the
+    // results reappear right where you left them — no location prompt, since
+    // the centre is already known.
+    const savedQuery = loadQuery();
+    if (savedQuery) {
+      const ni = document.getElementById('name-search');
+      if (ni) ni.value = savedQuery;
+      nameFilter = savedQuery.trim().toLowerCase();
+      renderList();
+      if (MAP_DISABLED) runTextSearch(savedQuery);
+    }
+
+    // Auto-locate ONLY on a truly fresh start — nothing remembered at all.
+    // explicit=false, so this can never pop open the precise-location help
+    // modal (that only fires for an explicit "Locate me" click).
+    if (!remembered && !savedCenter) {
       locateUser(false, true);
-    } else if (listSort === 'distance') {
-      // Distance is the default sort — still need a position fix to sort by,
-      // even though the search box already has a remembered value; just
-      // never let this one touch it (updateBox=false).
-      locateUser(false, false);
     }
   }
 
