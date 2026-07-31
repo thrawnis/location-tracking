@@ -711,7 +711,7 @@ def location_detail(request, pk):
         # Needed by the items_section partial so existing dishes render on load
         "items": items,
         "item_behalf_targets": _item_behalf_targets(request, location, items),
-        "family_targets": _location_family_targets(request, location),
+        "linked_targets": _location_linked_targets(request, location),
         "my_reviews": my_item_reviews,
         # Auto-open the location review form when arriving via "Rate Me!"
         "open_review": open_review,
@@ -1050,12 +1050,12 @@ def _annotated_items(location):
 
 def _item_behalf_targets(request, location, items):
     """Per-item {item_pk: [User, ...]} the current user may add a dish review
-    for: shares a family, HAS rated this waypoint overall (same gate as their
+    for: is a linked account, HAS rated this waypoint overall (same gate as their
     own item reviews), and doesn't already have a review for that item."""
     result = {}
     if not (request.user.is_authenticated and items):
         return result
-    fam_ids = family_member_ids(request.user)
+    fam_ids = linked_account_ids(request.user)
     if not fam_ids:
         return result
     loc_rated = set(location.reviews.filter(user_id__in=fam_ids).values_list("user_id", flat=True))
@@ -1235,7 +1235,7 @@ def item_review_upsert(request, pk, item_pk):
 @require_POST
 def item_review_delete(request, pk, item_pk):
     """Delete the logged-in user's own review (user=request.user — never a
-    family member's, even one added on your behalf)."""
+    linked account's, even one added on your behalf)."""
     location = get_object_or_404(Location, pk=pk)
     item = get_object_or_404(_item_queryset_for_location(location), pk=item_pk)
     review = get_object_or_404(ItemReview, item=item, user=request.user)
@@ -1251,7 +1251,7 @@ def item_review_delete(request, pk, item_pk):
 @login_required
 @require_POST
 def item_review_on_behalf(request, pk, item_pk):
-    """Add a dish/item review for a family member (add-only). The subject must
+    """Add a dish/item review for a linked account (add-only). The subject must
     have rated the waypoint overall first (same gate as a self item review),
     and must not already have a review for this item."""
     location = get_object_or_404(Location, pk=pk)
@@ -1260,8 +1260,8 @@ def item_review_on_behalf(request, pk, item_pk):
         subject_id = int(request.POST.get("subject") or 0)
     except (TypeError, ValueError):
         subject_id = 0
-    if subject_id not in family_member_ids(request.user):
-        return HttpResponseForbidden("You can only add reviews for members of your own family.")
+    if subject_id not in linked_account_ids(request.user):
+        return HttpResponseForbidden("You can only add reviews for your linked accounts.")
     subject = get_object_or_404(User, pk=subject_id)
     if not location.reviews.filter(user=subject).exists():
         messages.error(request,
@@ -1546,13 +1546,13 @@ def osm_search(request):
 
 # ── Location reviews (HTMX) ───────────────────────────────────────────────────
 
-def _location_family_targets(request, location):
-    """Family members the current user may add a review for HERE — i.e. shares
-    a family with, minus anyone who already has a review for this location
+def _location_linked_targets(request, location):
+    """Linked accounts the current user may add a review for HERE — i.e. is
+    connected to, minus anyone who already has a review for this location
     (adding is allowed, editing another member's review is not)."""
     if not request.user.is_authenticated:
         return []
-    fam_ids = family_member_ids(request.user)
+    fam_ids = linked_account_ids(request.user)
     if not fam_ids:
         return []
     reviewed = set(location.reviews.filter(user_id__in=fam_ids).values_list("user_id", flat=True))
@@ -1567,7 +1567,7 @@ def _render_location_reviews(request, location, review_form=None, show_form=Fals
         "my_review": my_review,
         "review_form": review_form or LocationReviewForm(instance=my_review),
         "show_form": show_form,
-        "family_targets": _location_family_targets(request, location),
+        "linked_targets": _location_linked_targets(request, location),
         # This view is only ever hit via HTMX, so it's safe to always include
         # the out-of-band header-badge swap (see template comment).
         "oob": True,
@@ -1604,7 +1604,7 @@ def location_review_upsert(request, pk):
 def location_review_delete(request, pk):
     location = get_object_or_404(Location, pk=pk)
     # user=request.user ensures you can only delete your OWN review — never a
-    # family member's, even one they added on your behalf belongs to you.
+    # linked account's, even one they added on your behalf belongs to you.
     review = get_object_or_404(LocationReview, location=location, user=request.user)
     reason = _require_reason(request)
     if not reason:
@@ -1618,15 +1618,15 @@ def location_review_delete(request, pk):
 @login_required
 @require_POST
 def location_review_on_behalf(request, pk):
-    """Add a waypoint review for a family member. Add-only: if the subject
+    """Add a waypoint review for a linked account. Add-only: if the subject
     already has a review here it's left untouched (you can't edit theirs)."""
     location = get_object_or_404(Location, pk=pk)
     try:
         subject_id = int(request.POST.get("subject") or 0)
     except (TypeError, ValueError):
         subject_id = 0
-    if subject_id not in family_member_ids(request.user):
-        return HttpResponseForbidden("You can only add reviews for members of your own family.")
+    if subject_id not in linked_account_ids(request.user):
+        return HttpResponseForbidden("You can only add reviews for your linked accounts.")
     subject = get_object_or_404(User, pk=subject_id)
     if LocationReview.objects.filter(location=location, user=subject).exists():
         messages.error(request,
@@ -1977,12 +1977,12 @@ def group_leave(request, pk):
     return redirect("group_list")
 
 
-# ── Family (one-to-one connections — post reviews on each other's behalf) ─────
-# A "family" here is a friends-list of direct, symmetric one-to-one links, NOT
+# ── Linked accounts (one-to-one connections — review on each other's behalf) ──
+# "Linked accounts" are a friends-list of direct, symmetric one-to-one links, NOT
 # a group: being connected to B and to C never links B and C. Only directly
 # connected users may post reviews on each other's behalf.
 
-def family_member_ids(user):
+def linked_account_ids(user):
     """User ids DIRECTLY connected to `user` — exactly the people `user` may
     post reviews on behalf of (and who may post on `user`'s behalf). Not
     transitive: only first-degree connections."""
@@ -1997,70 +1997,70 @@ def _my_connect_token(user):
 
 
 @login_required
-def family_list(request):
+def linked_accounts(request):
     """The user's personal invite link + the list of people they're connected
     to one-to-one."""
-    connected = list(User.objects.filter(pk__in=family_member_ids(request.user)).order_by("username"))
+    connected = list(User.objects.filter(pk__in=linked_account_ids(request.user)).order_by("username"))
     token = _my_connect_token(request.user)
-    invite_url = request.build_absolute_uri(reverse("family_connect_preview", args=[token.token]))
-    return render(request, "tracker/family_list.html", {
+    invite_url = request.build_absolute_uri(reverse("linked_account_connect", args=[token.token]))
+    return render(request, "tracker/linked_accounts.html", {
         "connected": connected,
         "invite_url": invite_url,
     })
 
 
 @login_required
-def family_connect_preview(request, token):
+def linked_account_connect(request, token):
     """Someone opened another user's personal invite link. Their own click on
     Approve creates the one-to-one connection between the two of them."""
     ct = get_object_or_404(ConnectToken.objects.select_related("user"), token=token)
     target = ct.user
     if target == request.user:
         messages.info(request, "That's your own invite link — share it with someone else.")
-        return redirect("family_list")
-    already = target.pk in family_member_ids(request.user)
+        return redirect("linked_accounts")
+    already = target.pk in linked_account_ids(request.user)
     if request.method == "POST" and not already:
         low, high = Connection.ordered(request.user, target)
         Connection.objects.get_or_create(user_low=low, user_high=high)
         _log(request, AuditLog.ACTION_CREATE, request.user,
-             'Connected with {} (family)'.format(target.username))
+             'Linked account: connected with {}'.format(target.username))
         messages.success(request, "You're now connected with {}.".format(target.username))
-        return redirect("family_list")
+        return redirect("linked_accounts")
     if already:
         messages.info(request, "You're already connected with {}.".format(target.username))
-        return redirect("family_list")
-    return render(request, "tracker/family_connect_preview.html", {"target": target})
+        return redirect("linked_accounts")
+    return render(request, "tracker/linked_account_connect.html", {"target": target})
 
 
 @login_required
 @require_POST
-def family_invite_regenerate(request):
+def linked_account_invite_regenerate(request):
     """Rotate your personal invite link, invalidating the old one."""
     from .models import _invite_token
     token = _my_connect_token(request.user)
     token.token = _invite_token()
     token.save(update_fields=["token"])
-    _log(request, AuditLog.ACTION_UPDATE, request.user, "Regenerated family invite link")
+    _log(request, AuditLog.ACTION_UPDATE, request.user, "Regenerated linked-account invite link")
     messages.success(request, "Invite link regenerated — the old link no longer works.")
-    return redirect("family_list")
+    return redirect("linked_accounts")
 
 
 @login_required
 @require_POST
-def family_disconnect(request, user_pk):
+def linked_account_disconnect(request, user_pk):
     """Remove a one-to-one connection (either side can do this)."""
     other = get_object_or_404(User, pk=user_pk)
     low, high = Connection.ordered(request.user, other)
     Connection.objects.filter(user_low=low, user_high=high).delete()
     _log(request, AuditLog.ACTION_DELETE, request.user,
-         'Disconnected from {} (family)'.format(other.username))
-    messages.success(request, "Removed {} from your family.".format(other.username))
-    return redirect("family_list")
+         'Linked account: disconnected from {}'.format(other.username))
+    messages.success(request, "Removed {} from your linked accounts.".format(other.username))
+    return redirect("linked_accounts")
 
 
 @login_required
 def on_behalf_reviews(request):
-    """Everything family members have logged on the current user's behalf,
+    """Everything linked accounts have logged on the current user's behalf,
     newest first. Viewing this page marks the as-yet-unseen ones seen (that's
     what the login banner points at)."""
     loc = list(

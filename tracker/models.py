@@ -160,9 +160,9 @@ class LocationReview(models.Model):
     )
     notes = models.TextField(blank=True, help_text="Your review of this place")
     # Who actually authored this review. NULL means the subject wrote it
-    # themselves; a different user means a family member posted it on the
-    # subject's behalf (see Family). The review always "belongs to" `user` —
-    # only they (or an admin) may edit/delete it.
+    # themselves; a different user means a linked account posted it on the
+    # subject's behalf (see Connection). The review always "belongs to" `user`
+    # — only they (or an admin) may edit/delete it.
     submitted_by = models.ForeignKey(
         User, on_delete=models.SET_NULL, null=True, blank=True, related_name="+",
     )
@@ -470,9 +470,9 @@ class FriendGroupJoinRequest(models.Model):
 
 
 class ConnectToken(models.Model):
-    """A user's personal "add me to your family" invite link. Sharing the URL
-    lets someone open it and connect one-to-one with this user. Regenerating
-    the token invalidates the old link."""
+    """A user's personal invite link for linked accounts. Sharing the URL lets
+    someone open it and connect one-to-one with this user. Regenerating the
+    token invalidates the old link."""
     user = models.OneToOneField(User, on_delete=models.CASCADE, related_name="connect_token")
     token = models.CharField(max_length=64, unique=True, default=_invite_token)
 
@@ -481,12 +481,12 @@ class ConnectToken(models.Model):
 
 
 class Connection(models.Model):
-    """A symmetric one-to-one "family" link between two users — a friends-list
-    style connection, NOT a group. Being connected to B and to C does not link
-    B and C in any way. Either connected user may post waypoint/dish reviews on
-    the other's behalf; only the attributed user (or an admin) can edit/delete
-    them. Stored as an ordered pair (user_low.pk < user_high.pk) so each pair
-    is unique regardless of who initiated it."""
+    """A symmetric one-to-one "linked account" between two users — a
+    friends-list style connection, NOT a group. Being linked to B and to C does
+    not link B and C in any way. Either linked user may post waypoint/dish
+    reviews on the other's behalf; only the attributed user (or an admin) can
+    edit/delete them. Stored as an ordered pair (user_low.pk < user_high.pk) so
+    each pair is unique regardless of who initiated it."""
     user_low = models.ForeignKey(User, on_delete=models.CASCADE, related_name="+")
     user_high = models.ForeignKey(User, on_delete=models.CASCADE, related_name="+")
     created_at = models.DateTimeField(auto_now_add=True)

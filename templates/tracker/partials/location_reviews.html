@@ -73,13 +73,13 @@
   </form>
   {% endif %}
 
-  <!-- Add a review on behalf of a family member -->
-  {% if family_targets and not show_form %}
+  <!-- Add a review on behalf of a linked account -->
+  {% if linked_targets and not show_form %}
   <div class="mb-4" x-data="{ open: false }">
     <button type="button" @click="open = !open" x-show="!open"
             class="text-xs font-semibold text-violet-700 hover:text-violet-900 border border-violet-200
                    hover:border-violet-400 px-2.5 py-1 rounded-lg transition-all">
-      ＋ Add a review for a family member
+      ＋ Add a review for a linked account
     </button>
     <form x-show="open" x-cloak
           hx-post="{% url 'location_review_on_behalf' location.pk %}"
@@ -90,8 +90,8 @@
       <select name="subject" required
               class="block w-full text-sm border border-slate-200 rounded-lg px-2.5 py-1.5 bg-white
                      focus:outline-none focus:ring-2 focus:ring-brand/20 focus:border-brand">
-        <option value="">Choose a family member…</option>
-        {% for m in family_targets %}
+        <option value="">Choose a linked account…</option>
+        {% for m in linked_targets %}
         <option value="{{ m.pk }}">{{ m.username }}</option>
         {% endfor %}
       </select>

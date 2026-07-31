@@ -264,13 +264,13 @@
         </div>
         {% endif %}
 
-        <!-- Add a dish review on behalf of a family member -->
+        <!-- Add a dish review on behalf of a linked account -->
         {% with targets=item_behalf_targets|get_item:item.pk %}
         {% if targets %}
         <div class="border-t border-violet-100 px-3 py-2" x-data="{ open: false }" @click.stop>
           <button type="button" @click="open = !open" x-show="!open"
                   class="text-[11px] font-semibold text-violet-700 hover:text-violet-900">
-            ＋ Add for a family member
+            ＋ Add for a linked account
           </button>
           <form x-show="open" x-cloak
                 hx-post="{% url 'item_review_on_behalf' location.pk item.pk %}"
@@ -279,7 +279,7 @@
             <select name="subject" required
                     class="block w-full text-xs border border-slate-200 rounded-lg px-2 py-1.5 bg-white
                            focus:outline-none focus:ring-2 focus:ring-brand/20 focus:border-brand">
-              <option value="">Choose a family member…</option>
+              <option value="">Choose a linked account…</option>
               {% for m in targets %}
               <option value="{{ m.pk }}">{{ m.username }}</option>
               {% endfor %}
