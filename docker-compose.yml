@@ -18,6 +18,10 @@ services:
       retries: 5
 
   app:
+    # Pinned explicitly (not Compose's directory-name default) so `up --no-build`
+    # picks up the image rebuild.sh builds with `docker buildx build`. The build:
+    # stanza is kept only as a documented fallback — the deploy script never uses
+    # Compose's own builder (its buildx detection is unreliable on the server).
     image: waypoint:latest
     build: .
     container_name: waypoint
