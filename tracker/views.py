@@ -1060,25 +1060,20 @@ def _annotated_items(location):
 
 def _item_behalf_targets(request, location, items):
     """Per-item {item_pk: [User, ...]} the current user may add a dish review
-    for: is a linked account, HAS rated this waypoint overall (same gate as their
-    own item reviews), and doesn't already have a review for that item."""
+    for: is a linked account and doesn't already have a review for that item."""
     result = {}
     if not (request.user.is_authenticated and items):
         return result
     fam_ids = linked_account_ids(request.user)
     if not fam_ids:
         return result
-    loc_rated = set(location.reviews.filter(user_id__in=fam_ids).values_list("user_id", flat=True))
-    eligible_ids = [i for i in fam_ids if i in loc_rated]
-    if not eligible_ids:
-        return result
     item_pks = [it.pk for it in items]
     already = {}   # item_pk -> set(user_ids who reviewed it)
     for iid, uid in ItemReview.objects.filter(
-        item_id__in=item_pks, user_id__in=eligible_ids
+        item_id__in=item_pks, user_id__in=fam_ids
     ).values_list("item_id", "user_id"):
         already.setdefault(iid, set()).add(uid)
-    fam_users = list(User.objects.filter(pk__in=eligible_ids).order_by("username"))
+    fam_users = list(User.objects.filter(pk__in=fam_ids).order_by("username"))
     for it in items:
         targets = [u for u in fam_users if u.pk not in already.get(it.pk, set())]
         if targets:
@@ -1261,9 +1256,8 @@ def item_review_delete(request, pk, item_pk):
 @login_required
 @require_POST
 def item_review_on_behalf(request, pk, item_pk):
-    """Add a dish/item review for a linked account (add-only). The subject must
-    have rated the waypoint overall first (same gate as a self item review),
-    and must not already have a review for this item."""
+    """Add a dish/item review for a linked account (add-only). Must not already
+    have a review for this item — no waypoint review is required first."""
     location = get_object_or_404(Location, pk=pk)
     item = get_object_or_404(_item_queryset_for_location(location), pk=item_pk)
     try:
@@ -1273,11 +1267,6 @@ def item_review_on_behalf(request, pk, item_pk):
     if subject_id not in linked_account_ids(request.user):
         return HttpResponseForbidden("You can only add reviews for your linked accounts.")
     subject = get_object_or_404(User, pk=subject_id)
-    if not location.reviews.filter(user=subject).exists():
-        messages.error(request,
-                       "{} needs to rate this waypoint overall before you can review its dishes for them."
-                       .format(subject.username))
-        return _render_items_section(request, location)
     if ItemReview.objects.filter(item=item, user=subject).exists():
         messages.error(request,
                        "{} already reviewed “{}” — only they can change it.".format(subject.username, item.name))
