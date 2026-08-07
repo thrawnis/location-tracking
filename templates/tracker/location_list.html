@@ -309,7 +309,7 @@
           </select>
         </div>
         <label class="flex items-center gap-2 cursor-pointer select-none pt-1 border-t border-slate-100">
-          <input type="checkbox" id="mine-filter" checked
+          <input type="checkbox" id="mine-filter"
                  class="w-4 h-4 rounded border-slate-300 text-brand focus:ring-brand/30">
           <span class="text-sm text-slate-700">Only places I've rated or noted</span>
         </label>
@@ -614,6 +614,11 @@ const CSRF_TOKEN = '{{ csrf_token }}';
   let savedIndexCbs  = [];
   let searchCenter   = null;   // {lat,lng} centre for the text search + distances
   let lastNearbyQuery = '';
+  // Opening the app lands on what's around you rather than your own saved
+  // list: once a position is known, run this search automatically. Only ever
+  // on a fresh open — a restored search (see loadQuery) always wins.
+  const DEFAULT_NEARBY_QUERY = 'restaurant';
+  let defaultSearchDone = false;
 
   let mainMap        = null;
   let geocoder       = null;
@@ -637,7 +642,7 @@ const CSRF_TOKEN = '{{ csrf_token }}';
   let activeId       = null;
   let nameFilter     = '';
   let gfFilter       = '';   // '' | 'dedicated' | 'gf-any'
-  let mineFilter     = true; // true → only places the current user has reviewed ("My Waypoints" is the default home view)
+  let mineFilter     = false; // true → only places the current user has reviewed (turned on by ?panel=mine / the filter checkbox)
   let osmEntries     = [];   // { marker, cat, distKm, element }
   let sidebarOpen    = false;
   let distFilter     = 'all';
@@ -1309,6 +1314,7 @@ const CSRF_TOKEN = '{{ csrf_token }}';
       if (!hasUserLocationText()) fillLocationSearch(boxText, 'auto');
     }
     if (mainMap) placeUserDot(lat, lng, label, zoom);
+    maybeRunDefaultSearch();            // fresh open → show what's nearby
   }
 
   // ── User location dot (map only) ──────────────────────────────
@@ -1741,6 +1747,23 @@ const CSRF_TOKEN = '{{ csrf_token }}';
     });
   }
 
+  // Run the opening "what's nearby" search as soon as a position is known.
+  // Deliberately skipped when anything was restored or the user is already
+  // searching, so it can never clobber what they left off with — and it runs
+  // at most once per page load (one Places call, same as tapping the chip).
+  function maybeRunDefaultSearch() {
+    if (defaultSearchDone || !MAP_DISABLED) return;
+    if (lastNearbyQuery || nameFilter) return;      // a search is already active
+    if (!searchCenter && !userPos) return;          // no position to search around yet
+    defaultSearchDone = true;
+    const ni = document.getElementById('name-search');
+    if (ni) ni.value = DEFAULT_NEARBY_QUERY;
+    nameFilter = DEFAULT_NEARBY_QUERY;
+    listPage = 1;
+    renderList();
+    runTextSearch(DEFAULT_NEARBY_QUERY);
+  }
+
   function clearTextResults() {
     lastNearbyQuery = '';
     saveQuery('');                 // forget the remembered search
@@ -1955,11 +1978,22 @@ const CSRF_TOKEN = '{{ csrf_token }}';
     setSortDirIcon();
     renderList();
 
-    // "My Waypoints" is already the default view, so ?panel=mine (linked from
-    // the dropdown) needs no extra handling here. ?view=map opens straight
-    // into the map view.
+    // The home view now opens on what's nearby rather than the user's own
+    // list, so the "My Waypoints" dropdown link (?panel=mine) has to switch
+    // that filter on explicitly. ?view=map opens straight into the map view.
     const params = new URLSearchParams(window.location.search);
     if (!MAP_DISABLED && params.get('view') === 'map') showView('map');
+    const wantsMine = params.get('panel') === 'mine';
+    if (wantsMine) {
+      mineFilter = true;
+      const mineEl = document.getElementById('mine-filter');
+      if (mineEl) mineEl.checked = true;
+      updateFilterBadge();
+      renderList();
+      // They asked for their own list — don't let the opening nearby search
+      // run, since its name filter would hide the very waypoints they came for.
+      defaultSearchDone = true;
+    }
 
     // Continue where you left off. These persist across app restarts
     // (localStorage), so reopening after being idle restores your location and
@@ -1996,6 +2030,11 @@ const CSRF_TOKEN = '{{ csrf_token }}';
       renderList();
       if (MAP_DISABLED) runTextSearch(savedQuery);
     }
+
+    // Nothing to return to, but a location is already known (a remembered
+    // place) — open on what's nearby right away. When we still have to locate,
+    // onLocated fires this instead as soon as the fix lands.
+    if (!savedQuery && savedCenter) maybeRunDefaultSearch();
 
     // Auto-locate on a truly fresh start (nothing remembered), and also when
     // the only thing remembered was an automatic label — otherwise the box
