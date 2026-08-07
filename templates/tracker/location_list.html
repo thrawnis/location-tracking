@@ -1303,7 +1303,8 @@ const CSRF_TOKEN = '{{ csrf_token }}';
     // Use the fix as the nearby-search centre only when the user hasn't set an
     // explicit location themselves (an empty box) — a typed location wins and
     // is resolved via geocoding in resolveSearchCenter instead.
-    if (!hasUserLocationText()) setSearchCenter({ lat, lng });
+    const centreMoved = !hasUserLocationText();
+    if (centreMoved) setSearchCenter({ lat, lng });
     renderList();                       // recompute distances for the list view
     if (updateBox !== false && boxText) {
       // A GPS fix can take up several seconds to resolve (watchPosition
@@ -1314,7 +1315,13 @@ const CSRF_TOKEN = '{{ csrf_token }}';
       if (!hasUserLocationText()) fillLocationSearch(boxText, 'auto');
     }
     if (mainMap) placeUserDot(lat, lng, label, zoom);
-    maybeRunDefaultSearch();            // fresh open → show what's nearby
+    if (centreMoved && MAP_DISABLED && lastNearbyQuery) {
+      // A search was already showing (e.g. re-checking "Current Location"
+      // with results on screen) — refresh it around the new fix instead of
+      // silently moving the centre while stale results stay on screen.
+      runTextSearch(lastNearbyQuery);
+    }
+    maybeRunDefaultSearch();            // fresh open, nothing active yet → show what's nearby
   }
 
   // ── User location dot (map only) ──────────────────────────────
@@ -1724,23 +1731,36 @@ const CSRF_TOKEN = '{{ csrf_token }}';
     cb(userPos || null);
   }
 
+  // Bumped on every call so a superseded search's still-pending callbacks
+  // (waiting on the async Maps-script load, or on Places itself) can tell
+  // they're stale and bail instead of firing a duplicate request or
+  // rendering results for a query/centre nobody's looking at any more —
+  // e.g. re-checking "Current Location" while the restored search from
+  // reopening was still waiting on the script to finish loading.
+  let searchToken = 0;
+
   function runTextSearch(query) {
     query = (query || '').trim();
     if (!query) { clearTextResults(); return; }
     if (!searchCenter && !userPos && !hasLocationText()) { flashLocationRequired(); return; }
     lastNearbyQuery = query;
     saveQuery(query);              // remember so a reopen restores this search
+    const token = ++searchToken;
     osmSpinner(true);
     ensurePlacesLib(() => {
+      if (token !== searchToken) return;   // superseded before the script even loaded
       resolveSearchCenter((center) => {
+        if (token !== searchToken) { osmSpinner(false); return; }
         if (!center) { osmSpinner(false); flashLocationRequired(); return; }
         ensureSavedIndex(() => {
+          if (token !== searchToken) { osmSpinner(false); return; }
           textPlaces.textSearch({
             query,
             location: new google.maps.LatLng(center.lat, center.lng),
             radius: TEXT_SEARCH_RADIUS_M,
           }, (results, status) => {
             osmSpinner(false);
+            if (token !== searchToken) return;   // a newer search already replaced this one
             renderTextResults(query, center, results, status);
           });
         });
