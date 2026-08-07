@@ -1693,6 +1693,7 @@ const CSRF_TOKEN = '{{ csrf_token }}';
             savedByPlaceId[p.google_place_id] = {
               rating: p.rating, count: p.review_count || 0,
               groupSummary: p.group_rating_summary || null,
+              url: p.url || null,
             };
           }
         });
@@ -1809,7 +1810,17 @@ const CSRF_TOKEN = '{{ csrf_token }}';
       const saved   = placeId ? savedByPlaceId[placeId] : null;
       const rateParams = { name, latitude: lat.toFixed(6), longitude: lng.toFixed(6),
                            address: addr || '', google_place_id: placeId || '' };
-      return `<div class="flex items-start gap-2.5 bg-white border border-slate-200 rounded-lg p-3">
+      // Already a tracked waypoint → the whole card opens its detail page
+      // (see the delegated click/keydown handler below, not a plain <a>: this
+      // card also contains the "Rate Me!" form, and an <a> wrapping a <form>
+      // would race the form's own submit navigation).
+      const detailUrl = saved && saved.url ? saved.url : '';
+      const cardAttrs = detailUrl
+        ? `data-href="${escapeHtml(detailUrl)}" role="link" tabindex="0"`
+        : '';
+      const cardClass = 'flex items-start gap-2.5 bg-white border border-slate-200 rounded-lg p-3'
+        + (detailUrl ? ' cursor-pointer hover:border-brand/40 hover:shadow-sm transition-shadow' : '');
+      return `<div class="${cardClass}" ${cardAttrs}>
         <div class="w-2.5 h-2.5 rounded-full shrink-0 mt-1.5" style="background:${info.color}"></div>
         <div class="min-w-0 flex-1">
           <div class="flex items-start justify-between gap-2">
@@ -1907,6 +1918,25 @@ const CSRF_TOKEN = '{{ csrf_token }}';
       clearTextResults();
       const ni = document.getElementById('name-search');
       if (ni) { ni.value = ''; nameFilter = ''; listPage = 1; renderList(); }
+    });
+
+    // Tapping anywhere on an already-tracked result opens its detail page —
+    // not just the "Rate Me!" pill. Delegated (cards are rebuilt on every
+    // search) and deliberately NOT a plain <a> wrapping the card, since the
+    // card also contains the Rate Me <form> and a wrapping <a>'s own
+    // navigation would race that form's submit.
+    const nearbyList = document.getElementById('nearby-list');
+    nearbyList?.addEventListener('click', e => {
+      if (e.target.closest('form, button, a')) return;   // let Rate Me! work normally
+      const card = e.target.closest('[data-href]');
+      if (card) window.location.href = card.dataset.href;
+    });
+    nearbyList?.addEventListener('keydown', e => {
+      if (e.key !== 'Enter' && e.key !== ' ') return;
+      const card = e.target.closest('[data-href]');
+      if (!card) return;
+      e.preventDefault();
+      window.location.href = card.dataset.href;
     });
 
     fitQuickChips();
