@@ -380,44 +380,48 @@
       <div id="nearby-list" class="space-y-1.5"></div>
     </div>
 
-    <!-- Sort / paging controls -->
-    <div class="flex flex-wrap items-center gap-2 mb-3">
-      <span id="wp-list-count" class="text-sm font-semibold text-slate-600 mr-auto">Loading…</span>
+    <!-- Saved-waypoint list — hidden while a nearby search is showing above it
+         (see syncSavedListVisibility), so the two lists never stack. -->
+    <div id="saved-list-section">
+      <!-- Sort / paging controls -->
+      <div class="flex flex-wrap items-center gap-2 mb-3">
+        <span id="wp-list-count" class="text-sm font-semibold text-slate-600 mr-auto">Loading…</span>
 
-      <label class="text-[11px] font-semibold text-slate-400 uppercase tracking-wide">Sort</label>
-      <select id="wp-sort"
-              class="text-sm border border-slate-200 rounded-lg pl-3 pr-8 py-1.5 bg-white
-                     focus:outline-none focus:ring-2 focus:ring-brand/30 focus:border-brand">
-        <option value="name">Name</option>
-        <option value="rating">Waypoint rating</option>
-        <option value="reviews">Number of reviews</option>
-        <option value="recent">Recently added</option>
-        <option value="distance" selected>Distance</option>
-      </select>
-      <button id="wp-sort-dir" type="button" title="Reverse sort order"
-              aria-label="Reverse sort order"
-              class="flex items-center justify-center w-9 h-9 rounded-lg border border-slate-200
-                     bg-white text-slate-500 hover:text-brand hover:border-brand/40 transition-all">
-        <svg id="wp-sort-dir-icon" class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2"
-             stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24">
-          <path d="M3 6h11M3 12h7M3 18h5M17 5v14M17 19l3-3M17 19l-3-3"/>
-        </svg>
-      </button>
-    </div>
+        <label class="text-[11px] font-semibold text-slate-400 uppercase tracking-wide">Sort</label>
+        <select id="wp-sort"
+                class="text-sm border border-slate-200 rounded-lg pl-3 pr-8 py-1.5 bg-white
+                       focus:outline-none focus:ring-2 focus:ring-brand/30 focus:border-brand">
+          <option value="name">Name</option>
+          <option value="rating">Waypoint rating</option>
+          <option value="reviews">Number of reviews</option>
+          <option value="recent">Recently added</option>
+          <option value="distance" selected>Distance</option>
+        </select>
+        <button id="wp-sort-dir" type="button" title="Reverse sort order"
+                aria-label="Reverse sort order"
+                class="flex items-center justify-center w-9 h-9 rounded-lg border border-slate-200
+                       bg-white text-slate-500 hover:text-brand hover:border-brand/40 transition-all">
+          <svg id="wp-sort-dir-icon" class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2"
+               stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24">
+            <path d="M3 6h11M3 12h7M3 18h5M17 5v14M17 19l3-3M17 19l-3-3"/>
+          </svg>
+        </button>
+      </div>
 
-    <div id="wp-list" class="space-y-2"></div>
+      <div id="wp-list" class="space-y-2"></div>
 
-    <!-- Pagination -->
-    <div id="wp-pagination" class="hidden items-center justify-center gap-2 mt-5">
-      <button id="wp-prev" type="button"
-              class="px-3 py-1.5 text-sm font-semibold text-slate-600 bg-white border border-slate-200
-                     rounded-lg hover:border-brand/40 hover:text-brand disabled:opacity-40
-                     disabled:pointer-events-none transition-all">← Prev</button>
-      <span id="wp-page-info" class="text-sm text-slate-500 px-2"></span>
-      <button id="wp-next" type="button"
-              class="px-3 py-1.5 text-sm font-semibold text-slate-600 bg-white border border-slate-200
-                     rounded-lg hover:border-brand/40 hover:text-brand disabled:opacity-40
-                     disabled:pointer-events-none transition-all">Next →</button>
+      <!-- Pagination -->
+      <div id="wp-pagination" class="hidden items-center justify-center gap-2 mt-5">
+        <button id="wp-prev" type="button"
+                class="px-3 py-1.5 text-sm font-semibold text-slate-600 bg-white border border-slate-200
+                       rounded-lg hover:border-brand/40 hover:text-brand disabled:opacity-40
+                       disabled:pointer-events-none transition-all">← Prev</button>
+        <span id="wp-page-info" class="text-sm text-slate-500 px-2"></span>
+        <button id="wp-next" type="button"
+                class="px-3 py-1.5 text-sm font-semibold text-slate-600 bg-white border border-slate-200
+                       rounded-lg hover:border-brand/40 hover:text-brand disabled:opacity-40
+                       disabled:pointer-events-none transition-all">Next →</button>
+      </div>
     </div>
   </div>
 
@@ -1788,12 +1792,24 @@ const CSRF_TOKEN = '{{ csrf_token }}';
     runTextSearch(DEFAULT_NEARBY_QUERY);
   }
 
+  // The saved-waypoint list is redundant clutter directly under an active
+  // nearby search — hide it while results are showing, restore it once
+  // they're cleared, so the two lists never stack on top of each other.
+  function syncSavedListVisibility() {
+    const sec = document.getElementById('saved-list-section');
+    const nearby = document.getElementById('nearby-results');
+    if (!sec) return;
+    const nearbyShowing = !!(nearby && !nearby.classList.contains('hidden'));
+    sec.classList.toggle('hidden', nearbyShowing);
+  }
+
   function clearTextResults() {
     lastNearbyQuery = '';
     saveQuery('');                 // forget the remembered search
     document.getElementById('nearby-results')?.classList.add('hidden');
     const list = document.getElementById('nearby-list');
     if (list) list.innerHTML = '';
+    syncSavedListVisibility();
   }
 
   function renderTextResults(query, center, results, status) {
@@ -1801,6 +1817,7 @@ const CSRF_TOKEN = '{{ csrf_token }}';
     const list = document.getElementById('nearby-list');
     if (!wrap || !list) return;
     wrap.classList.remove('hidden');
+    syncSavedListVisibility();
     const qEl = document.getElementById('nearby-query');
     const cEl = document.getElementById('nearby-count');
     if (qEl) qEl.textContent = `"${query}"`;
