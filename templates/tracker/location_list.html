@@ -130,7 +130,10 @@
 
   /* ── Mobile: full-screen map + bottom sheet ──────────────────── */
   @media (max-width: 767px) {
-    main { padding: 0 !important; max-width: none !important; }
+    /* A little breathing room so content doesn't touch the screen edges —
+       #outer-layout.map-mode below is position:fixed with its own left:0/
+       right:0, so it's unaffected by this and still goes fully edge to edge. */
+    main { padding: 0 3px !important; max-width: none !important; }
     /* Only pin #outer-layout to a fixed, non-scrolling app-shell box while
        the map view is active (the map + draggable bottom sheet need to fill
        the exact remaining viewport). In list view (the default) it stays in
@@ -196,7 +199,7 @@
   <div id="search-bar" class="flex flex-wrap gap-2 items-center">
 
     <div class="relative flex-1 min-w-[150px]">
-      <svg class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none"
+      <svg class="hidden sm:block absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none"
            fill="none" stroke="currentColor" viewBox="0 0 24 24">
         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
               d="M21 21l-4.35-4.35M17 11A6 6 0 105 11a6 6 0 0012 0z"/>
@@ -208,13 +211,13 @@
         </svg>
       </span>
       <input type="search" id="name-search" placeholder="Search nearby: restaurant, coffee, park… (press Enter)"
-             class="w-full pl-9 pr-4 py-2 text-sm border border-slate-200 rounded-lg
+             class="w-full pl-3 sm:pl-9 pr-4 py-2 text-sm border border-slate-200 rounded-lg
                     focus:outline-none focus:ring-2 focus:ring-brand/30 focus:border-brand bg-white">
     </div>
 
     <!-- Location search — explicit only (press Enter); no live autocomplete -->
     <div class="relative flex-1 min-w-[150px]">
-      <svg class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none"
+      <svg class="hidden sm:block absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none"
            fill="none" stroke="currentColor" viewBox="0 0 24 24">
         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
               d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"/>
@@ -223,7 +226,7 @@
       </svg>
       <input type="search" id="location-search" placeholder="City, state, or zip… (press Enter)"
              autocomplete="off" spellcheck="true"
-             class="w-full pl-9 pr-9 py-2 text-sm border border-slate-200 rounded-lg
+             class="w-full pl-3 sm:pl-9 pr-9 py-2 text-sm border border-slate-200 rounded-lg
                     focus:outline-none focus:ring-2 focus:ring-brand/30 focus:border-brand bg-white">
       <span id="geo-spinner" class="hidden absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none">
         <svg class="w-4 h-4 text-brand animate-spin" fill="none" viewBox="0 0 24 24">
