@@ -1235,11 +1235,26 @@ const CSRF_TOKEN = '{{ csrf_token }}';
   // re-locating). We keep the location box label, the search/distance centre
   // coordinates, and the last nearby-search term. ──
   const LOC_KEY    = 'wp_last_location';   // location box label text
+  const SRC_KEY    = 'wp_last_location_src'; // 'user' (typed a place) | 'auto' (from a locate)
   const CENTER_KEY = 'wp_last_center';     // {lat,lng} JSON — nearby-search + distance centre
   const QUERY_KEY  = 'wp_last_query';      // last nearby-search term
 
-  function saveLocation(val) { try { localStorage.setItem(LOC_KEY, val); } catch(_){} }
-  function clearLocation()   { try { localStorage.removeItem(LOC_KEY); localStorage.removeItem(CENTER_KEY); } catch(_){} }
+  // Where the text in the location box came from matters. A typed place
+  // ("Oceanside, CA") is a fixed spot worth restoring verbatim. An automatic
+  // label ("Current Location", or the approximate "City, ST" from the IP
+  // lookup) only describes wherever you happened to be last time — restoring
+  // it would show a stale position under a label that claims to be current,
+  // and it must never be fed to the geocoder as if it were a place name.
+  let locationSource = '';
+  function saveLocation(val, source) {
+    locationSource = source || 'user';
+    try { localStorage.setItem(LOC_KEY, val); localStorage.setItem(SRC_KEY, locationSource); } catch(_){}
+  }
+  function loadLocationSource() { try { return localStorage.getItem(SRC_KEY) || ''; } catch(_){ return ''; } }
+  function clearLocation()   {
+    locationSource = '';
+    try { localStorage.removeItem(LOC_KEY); localStorage.removeItem(SRC_KEY); localStorage.removeItem(CENTER_KEY); } catch(_){}
+  }
   function saveCenter(c)     { try { if (c) localStorage.setItem(CENTER_KEY, JSON.stringify(c)); } catch(_){} }
   function loadCenter()      { try { const r = localStorage.getItem(CENTER_KEY); return r ? JSON.parse(r) : null; } catch(_){ return null; } }
   function saveQuery(q)      { try { if (q) localStorage.setItem(QUERY_KEY, q); else localStorage.removeItem(QUERY_KEY); } catch(_){} }
@@ -1283,17 +1298,15 @@ const CSRF_TOKEN = '{{ csrf_token }}';
     // Use the fix as the nearby-search centre only when the user hasn't set an
     // explicit location themselves (an empty box) — a typed location wins and
     // is resolved via geocoding in resolveSearchCenter instead.
-    if (!hasLocationText()) setSearchCenter({ lat, lng });
+    if (!hasUserLocationText()) setSearchCenter({ lat, lng });
     renderList();                       // recompute distances for the list view
     if (updateBox !== false && boxText) {
       // A GPS fix can take up several seconds to resolve (watchPosition
       // keeps waiting for a better reading, see locateUser). If the user
-      // explicitly set a location in the meantime — typed one and pressed
-      // Enter, or used "Locate me" — the box already reflects that; don't let
-      // this now-stale fix silently overwrite it.
-      let alreadySet = null;
-      try { alreadySet = localStorage.getItem(LOC_KEY); } catch (_) {}
-      if (!alreadySet) fillLocationSearch(boxText);
+      // typed a location and pressed Enter in the meantime, that choice wins —
+      // don't let this now-stale fix silently overwrite it. An earlier
+      // AUTOMATIC label carries no such intent, so refreshing it is correct.
+      if (!hasUserLocationText()) fillLocationSearch(boxText, 'auto');
     }
     if (mainMap) placeUserDot(lat, lng, label, zoom);
   }
@@ -1322,11 +1335,20 @@ const CSRF_TOKEN = '{{ csrf_token }}';
   // Always overwrites — this is only ever called right after a successful
   // locate, so the box should reflect the fresh result, not whatever (if
   // anything) was in it before.
-  function fillLocationSearch(value) {
+  // source: 'user' for a place the user chose (typed + geocoded), 'auto' for a
+  // label we generated from a position fix. See locationSource above.
+  function fillLocationSearch(value, source) {
     const input = document.getElementById('location-search');
     if (!input) return;
     input.value = value;
-    saveLocation(value);
+    saveLocation(value, source);
+  }
+
+  // True only when the box holds a place the USER chose. An automatic label
+  // must not block a fresh fix from setting the centre, and must never be
+  // geocoded as a place name.
+  function hasUserLocationText() {
+    return hasLocationText() && locationSource === 'user';
   }
 
   // Free (non-Google) location lookup by IP, used both as the last-resort
@@ -1367,7 +1389,7 @@ const CSRF_TOKEN = '{{ csrf_token }}';
     const data = await fetchGeoIp();
     if (data.status !== 'ok') return;   // leave the box empty — search stays disabled
     const label = [data.city, data.region].filter(Boolean).join(', ');
-    if (label) fillLocationSearch(label);
+    if (label) fillLocationSearch(label, 'auto');
   }
 
   // explicit: true when the user clicked "Locate me" — only then do we pop
@@ -1588,6 +1610,26 @@ const CSRF_TOKEN = '{{ csrf_token }}';
     return !!(el && el.value.trim());
   }
 
+  // ── Reliable Enter handling ─────────────────────────────────────
+  // Mobile keyboards fire keydown with keyCode 229 / key 'Unidentified' while
+  // autocorrect or an IME is still composing, so the real Enter never matched
+  // and the first press appeared to do nothing (you'd have to hit it again).
+  // Listen on keyup as well, and de-duplicate so a normal press runs once.
+  function bindEnter(el, fn) {
+    if (!el) return;
+    let ranOnKeydown = false;
+    const handle = (e) => {
+      if (e.isComposing || e.keyCode === 229) return;   // still composing
+      if (e.key !== 'Enter' && e.keyCode !== 13) return;
+      e.preventDefault();
+      if (e.type === 'keydown') { ranOnKeydown = true; fn(); }
+      else if (ranOnKeydown) { ranOnKeydown = false; }  // already ran; just reset
+      else { fn(); }                                    // keydown was swallowed
+    };
+    el.addEventListener('keydown', handle);
+    el.addEventListener('keyup', handle);
+  }
+
   function flashLocationRequired() {
     const el = document.getElementById('location-search');
     if (!el) return;
@@ -1655,13 +1697,18 @@ const CSRF_TOKEN = '{{ csrf_token }}';
 
   function resolveSearchCenter(cb) {
     if (searchCenter) { cb(searchCenter); return; }
-    const q = (document.getElementById('location-search').value || '').trim();
+    // Only a place the USER typed can be geocoded. Feeding an automatic label
+    // ("Current Location") to the geocoder returns junk or ZERO_RESULTS, which
+    // silently failed the search — fall back to the actual fix instead.
+    const q = hasUserLocationText()
+      ? (document.getElementById('location-search').value || '').trim()
+      : '';
     if (q) {
       textGeocoder.geocode({ address: q }, (results, status) => {
         if (status === 'OK' && results[0]) {
           const loc = results[0].geometry.location;
           setSearchCenter({ lat: loc.lat(), lng: loc.lng() });
-          if (results[0].formatted_address) fillLocationSearch(results[0].formatted_address);
+          if (results[0].formatted_address) fillLocationSearch(results[0].formatted_address, 'user');
           cb(searchCenter);
         } else { cb(null); }
       });
@@ -1819,11 +1866,7 @@ const CSRF_TOKEN = '{{ csrf_token }}';
       if (mainMap) { applyFilters(); if (!nameFilter) clearNearbyResults(); }
       if (MAP_DISABLED && !nameFilter) clearTextResults();
     });
-    nameInput.addEventListener('keydown', e => {
-      if (e.key !== 'Enter') return;
-      e.preventDefault();
-      triggerNearbySearch(nameFilter);
-    });
+    bindEnter(nameInput, () => triggerNearbySearch(nameFilter));
 
     // Quick-search chips (Restaurants, Retail, …) — fill the box and search now.
     document.getElementById('quick-search-chips')?.addEventListener('click', e => {
@@ -1849,9 +1892,7 @@ const CSRF_TOKEN = '{{ csrf_token }}';
 
     // Location box — geocodes to centre the map (a map feature).
     const locInput = document.getElementById('location-search');
-    locInput.addEventListener('keydown', e => {
-      if (e.key !== 'Enter') return;
-      e.preventDefault();
+    bindEnter(locInput, () => {
       const q = locInput.value.trim();
       if (!q) return;
       if (MAP_DISABLED) {
@@ -1865,7 +1906,7 @@ const CSRF_TOKEN = '{{ csrf_token }}';
               const loc = results[0].geometry.location;
               setSearchCenter({ lat: loc.lat(), lng: loc.lng() });
               userPos = { lat: loc.lat(), lng: loc.lng() };   // distance sort follows the typed location
-              if (results[0].formatted_address) fillLocationSearch(results[0].formatted_address);
+              if (results[0].formatted_address) fillLocationSearch(results[0].formatted_address, 'user');
               renderList();
               if (lastNearbyQuery) runTextSearch(lastNearbyQuery);
             } else {
@@ -1881,8 +1922,11 @@ const CSRF_TOKEN = '{{ csrf_token }}';
     locInput.addEventListener('input', () => {
       // Any manual edit invalidates the cached search centre so the next search
       // re-geocodes the current text rather than reusing a stale coordinate.
+      // Typing also makes this the user's own choice of place, so it's no
+      // longer an automatic label and may be geocoded.
       searchCenter = null;
       if (!locInput.value.trim()) clearLocation();
+      else locationSource = 'user';
     });
 
     // Filter popover — both views.
@@ -1922,11 +1966,19 @@ const CSRF_TOKEN = '{{ csrf_token }}';
     // last search instead of re-locating and asking for your location again.
     let remembered = null;
     try { remembered = localStorage.getItem(LOC_KEY); } catch (_) {}
+    locationSource = loadLocationSource();
     if (remembered) locInput.value = remembered;
+
+    // Only a place the USER picked is a genuine "where I left off". An
+    // automatic label ("Current Location" / the approximate city) describes
+    // wherever they were LAST time, so its saved centre is stale — keep the
+    // old text visible to avoid a flash of empty, but re-locate below and let
+    // the fresh fix overwrite both the label and the centre.
+    const staleAutoFix = !!remembered && locationSource === 'auto';
 
     // Restore the saved centre so distance sorting works immediately — and so
     // we don't need to fire geolocation at all when a location is remembered.
-    const savedCenter = loadCenter();
+    const savedCenter = staleAutoFix ? null : loadCenter();
     if (savedCenter) {
       searchCenter = savedCenter;
       if (!userPos) userPos = savedCenter;
@@ -1945,10 +1997,13 @@ const CSRF_TOKEN = '{{ csrf_token }}';
       if (MAP_DISABLED) runTextSearch(savedQuery);
     }
 
-    // Auto-locate ONLY on a truly fresh start — nothing remembered at all.
+    // Auto-locate on a truly fresh start (nothing remembered), and also when
+    // the only thing remembered was an automatic label — otherwise the box
+    // would keep claiming "Current Location" while showing last session's
+    // position. A place the user typed is left exactly as they left it.
     // explicit=false, so this can never pop open the precise-location help
     // modal (that only fires for an explicit "Locate me" click).
-    if (!remembered && !savedCenter) {
+    if ((!remembered && !savedCenter) || staleAutoFix) {
       locateUser(false, true);
     }
   }
@@ -2004,8 +2059,8 @@ const CSRF_TOKEN = '{{ csrf_token }}';
         // Replace whatever the user typed with Google's corrected/canonical
         // address (e.g. "laaguna niguel, cal" -> "Laguna Niguel, CA, USA") so
         // the box reflects what was actually matched, not the raw input.
-        if (place.formatted_address) fillLocationSearch(place.formatted_address);
-        else saveLocation(q);
+        if (place.formatted_address) fillLocationSearch(place.formatted_address, 'user');
+        else saveLocation(q, 'user');
         applyFilters();
         if (nameFilter) { showSearchAreaBtn(false); searchGooglePlaces(nameFilter); }
       });
