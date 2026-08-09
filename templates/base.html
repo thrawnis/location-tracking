@@ -2,7 +2,7 @@
 <html lang="en" class="h-full bg-slate-50">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <meta name="theme-color" content="#6366f1">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-title" content="Waypoint">
@@ -44,11 +44,10 @@
     .text-brand { color: #6366f1; }
     .border-brand { border-color: #6366f1; }
 
-    /* iOS Safari auto-zooms the page on focus when a text input's font-size
-       is under 16px — most of the app's inputs use Tailwind's text-sm (14px).
-       Force 16px on mobile only (desktop keeps text-sm) rather than disabling
-       pinch-zoom via the viewport meta tag, which would be an accessibility
-       regression for anyone who relies on zooming. */
+    /* Belt-and-suspenders alongside the viewport meta tag's maximum-scale/
+       user-scalable=no above: iOS Safari auto-zooms on focus when a text
+       input's font-size is under 16px — most inputs here use Tailwind's
+       text-sm (14px). Mobile only; desktop keeps text-sm. */
     @media (max-width: 767px) {
       input[type="text"], input[type="search"], input[type="email"],
       input[type="password"], input[type="number"], input[type="tel"],
