@@ -43,6 +43,19 @@
     .bg-brand-light { background-color: #e0e7ff; }
     .text-brand { color: #6366f1; }
     .border-brand { border-color: #6366f1; }
+
+    /* iOS Safari auto-zooms the page on focus when a text input's font-size
+       is under 16px — most of the app's inputs use Tailwind's text-sm (14px).
+       Force 16px on mobile only (desktop keeps text-sm) rather than disabling
+       pinch-zoom via the viewport meta tag, which would be an accessibility
+       regression for anyone who relies on zooming. */
+    @media (max-width: 767px) {
+      input[type="text"], input[type="search"], input[type="email"],
+      input[type="password"], input[type="number"], input[type="tel"],
+      input[type="url"], textarea, select {
+        font-size: 16px;
+      }
+    }
   </style>
   {% block extra_head %}{% endblock %}
 </head>
