@@ -649,6 +649,7 @@ def location_list(request):
             "mine": bool(loc.mine),
             "rating": round(float(rating), 1) if rating else None,
             "review_count": loc.user_review_count,
+            "google_place_id": loc.google_place_id or "",
             "group_rating_summary": _group_rating_summary_text(group_breakdowns.get(loc.pk)),
             "lat": float(loc.latitude) if loc.latitude is not None else None,
             "lng": float(loc.longitude) if loc.longitude is not None else None,
