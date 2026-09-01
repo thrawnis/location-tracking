@@ -311,6 +311,31 @@
             <option value="gf-any">🌾 Dedicated or GF options</option>
           </select>
         </div>
+        <div class="pt-1 border-t border-slate-100">
+          <label class="block text-[11px] font-semibold text-slate-500 uppercase tracking-wide mb-1">Waypoint rating</label>
+          <select id="rating-filter" title="Minimum Waypoint rating"
+                  class="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 bg-white
+                         focus:outline-none focus:ring-2 focus:ring-brand/30 focus:border-brand">
+            <option value="0">★ Any rating</option>
+            <option value="3">★ 3.0 &amp; up</option>
+            <option value="3.5">★ 3.5 &amp; up</option>
+            <option value="4">★ 4.0 &amp; up</option>
+            <option value="4.5">★ 4.5 &amp; up</option>
+          </select>
+        </div>
+        <div>
+          <label class="block text-[11px] font-semibold text-slate-500 uppercase tracking-wide mb-1">Google rating</label>
+          <select id="google-rating-filter" title="Minimum Google rating"
+                  class="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 bg-white
+                         focus:outline-none focus:ring-2 focus:ring-brand/30 focus:border-brand">
+            <option value="0">🅖 Any rating</option>
+            <option value="3">🅖 3.0 &amp; up</option>
+            <option value="3.5">🅖 3.5 &amp; up</option>
+            <option value="4">🅖 4.0 &amp; up</option>
+            <option value="4.5">🅖 4.5 &amp; up</option>
+          </select>
+          <p class="text-[11px] text-slate-400 mt-1">Only applies to places with a known Google rating (seen via Nearby search or the map).</p>
+        </div>
         <label class="flex items-center gap-2 cursor-pointer select-none pt-1 border-t border-slate-100">
           <input type="checkbox" id="mine-filter"
                  class="w-4 h-4 rounded border-slate-300 text-brand focus:ring-brand/30">
@@ -470,6 +495,8 @@
              data-address="{{ loc.address|lower }}"
              data-gf="{{ loc.gluten_free }}"
              data-mine="{{ loc.mine|yesno:'1,0' }}"
+             data-rating="{% if loc.user_avg_rating %}{{ loc.user_avg_rating|floatformat:2 }}{% elif loc.overall_rating %}{{ loc.overall_rating|floatformat:2 }}{% endif %}"
+             data-google-place-id="{{ loc.google_place_id|default:'' }}"
              data-lat="{{ loc.latitude|default:'' }}"
              data-lng="{{ loc.longitude|default:'' }}"
              onclick="cardClicked(this)"
@@ -652,6 +679,8 @@ const CSRF_TOKEN = '{{ csrf_token }}';
   let nameFilter     = '';
   let gfFilter       = '';   // '' | 'dedicated' | 'gf-any'
   let mineFilter     = false; // true → only places the current user has reviewed (turned on by ?panel=mine / the filter checkbox)
+  let ratingFilter       = 0; // minimum Waypoint rating (0 = any)
+  let googleRatingFilter = 0; // minimum Google rating (0 = any); only known via googleRatingCache
   let osmEntries     = [];   // { marker, cat, distKm, element }
   let sidebarOpen    = false;
   let distFilter     = 'all';
@@ -963,9 +992,13 @@ const CSRF_TOKEN = '{{ csrf_token }}';
                      || (gfFilter === 'dedicated' && p.gf === 'dedicated')
                      || (gfFilter === 'gf-any'    && (p.gf === 'dedicated' || p.gf === 'options'));
       const mineOk   = !mineFilter || p.mine === '1';
+      const cardRating = p.rating ? parseFloat(p.rating) : null;
+      const ratingOk = !ratingFilter || (cardRating != null && !isNaN(cardRating) && cardRating >= ratingFilter);
+      const gRating  = knownGoogleRating(p.googlePlaceId);
+      const googleRatingOk = !googleRatingFilter || (gRating != null && gRating >= googleRatingFilter);
       const boundsOk = !bounds || (!isNaN(lat) && !isNaN(lng) &&
                         bounds.contains(new google.maps.LatLng(lat, lng)));
-      const show = nameOk && gfOk && mineOk && boundsOk;
+      const show = nameOk && gfOk && mineOk && ratingOk && googleRatingOk && boundsOk;
 
       card.classList.toggle('hidden-card', !show);
       const entry = markerMap[p.id];
@@ -977,7 +1010,7 @@ const CSRF_TOKEN = '{{ csrf_token }}';
 
   // Show a count badge on the filters icon when any filter is active
   function updateFilterBadge() {
-    const active = [gfFilter, mineFilter].filter(Boolean).length;
+    const active = [gfFilter, mineFilter, ratingFilter, googleRatingFilter].filter(Boolean).length;
     const badge = document.getElementById('filter-badge');
     if (!badge) return;
     badge.textContent = active;
@@ -1481,6 +1514,13 @@ const CSRF_TOKEN = '{{ csrf_token }}';
   //  entirely in the browser, with zero Google API calls.
   // ══════════════════════════════════════════════════════════════
 
+  // Google ratings aren't stored server-side — only known once the browser has
+  // seen this place via a Nearby search or the map (see googleRatingCache above).
+  function knownGoogleRating(placeId) {
+    const cached = placeId ? googleRatingCache[placeId] : null;
+    return cached ? cached.rating : null;
+  }
+
   // Shared filters (name box + filter popover) applied to one waypoint.
   function listFilterOk(w) {
     const nameOk   = !nameFilter   || w._name.includes(nameFilter) || w._loc.includes(nameFilter);
@@ -1488,7 +1528,10 @@ const CSRF_TOKEN = '{{ csrf_token }}';
                    || (gfFilter === 'dedicated' && w.gluten_free === 'dedicated')
                    || (gfFilter === 'gf-any'    && (w.gluten_free === 'dedicated' || w.gluten_free === 'options'));
     const mineOk   = !mineFilter || w.mine;
-    return nameOk && gfOk && mineOk;
+    const ratingOk = !ratingFilter || (w.rating != null && w.rating >= ratingFilter);
+    const gRating  = knownGoogleRating(w.google_place_id);
+    const googleRatingOk = !googleRatingFilter || (gRating != null && gRating >= googleRatingFilter);
+    return nameOk && gfOk && mineOk && ratingOk && googleRatingOk;
   }
 
   function waypointDistKm(w) {
@@ -2024,10 +2067,14 @@ const CSRF_TOKEN = '{{ csrf_token }}';
     // Filter popover — both views.
     document.getElementById('gf-filter')?.addEventListener('change',      e => { gfFilter = e.target.value; onFiltersChanged(); });
     document.getElementById('mine-filter')?.addEventListener('change',    e => { mineFilter = e.target.checked; onFiltersChanged(); });
+    document.getElementById('rating-filter')?.addEventListener('change', e => { ratingFilter = parseFloat(e.target.value) || 0; onFiltersChanged(); });
+    document.getElementById('google-rating-filter')?.addEventListener('change', e => { googleRatingFilter = parseFloat(e.target.value) || 0; onFiltersChanged(); });
     document.getElementById('clear-filters')?.addEventListener('click', () => {
-      gfFilter = ''; mineFilter = false;
+      gfFilter = ''; mineFilter = false; ratingFilter = 0; googleRatingFilter = 0;
       const gfEl = document.getElementById('gf-filter'); if (gfEl) gfEl.value = '';
       const mineEl = document.getElementById('mine-filter'); if (mineEl) mineEl.checked = false;
+      const ratingEl = document.getElementById('rating-filter'); if (ratingEl) ratingEl.value = '0';
+      const googleRatingEl = document.getElementById('google-rating-filter'); if (googleRatingEl) googleRatingEl.value = '0';
       onFiltersChanged();
     });
 
