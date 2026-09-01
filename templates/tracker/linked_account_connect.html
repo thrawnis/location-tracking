@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+{% block title %}Connect with {{ target.username }} – Waypoint{% endblock %}
+
+{% block content %}
+<div class="max-w-md mx-auto">
+  <div class="bg-white rounded-2xl border border-slate-200 shadow-sm p-8 text-center">
+    <div class="w-16 h-16 bg-brand/10 rounded-full flex items-center justify-center mx-auto mb-4">
+      <span class="text-2xl font-bold text-brand uppercase">{{ target.username|slice:":1" }}</span>
+    </div>
+    <h1 class="text-xl font-bold text-slate-900 mb-1">Connect with {{ target.username }}?</h1>
+    <p class="text-sm text-slate-500 mb-5">
+      Connecting lets the two of you post waypoint and dish reviews on each other's behalf. Only
+      the person a review belongs to (or an admin) can ever edit or delete it. This is a direct
+      one-to-one connection — it doesn't link you to anyone else {{ target.username }} knows.
+    </p>
+    <form method="post">
+      {% csrf_token %}
+      <button type="submit"
+              class="bg-brand hover:bg-brand-dark text-white font-semibold px-6 py-2.5 rounded-lg transition-colors">
+        Approve &amp; connect
+      </button>
+    </form>
+    <p class="text-xs text-slate-400 mt-3">
+      Not expecting this? You can just close this page — nothing happens until you approve.
+    </p>
+  </div>
+</div>
+{% endblock %}

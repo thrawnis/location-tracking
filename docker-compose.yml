@@ -1,6 +1,7 @@
 services:
   db:
     image: postgres:16-alpine
+    container_name: waypoint-db
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-waypoint}
       POSTGRES_USER: ${POSTGRES_USER:-tracker}
@@ -9,12 +10,18 @@ services:
       - ./data/postgres:/var/lib/postgresql/data
     restart: unless-stopped
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-tracker}"]
+      # -d avoids "database <user> does not exist" FATALs in the log; pg_isready
+      # was defaulting the DB name to the user name (tracker), which isn't a real DB.
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-tracker} -d ${POSTGRES_DB:-waypoint}"]
       interval: 10s
       timeout: 5s
       retries: 5
 
   app:
+    # Pinned explicitly (not Compose's directory-name default) so `up --no-build`
+    # picks up the image rebuild.sh builds with `docker buildx build`. The build:
+    # stanza is kept only as a documented fallback — the deploy script never uses
+    # Compose's own builder (its buildx detection is unreliable on the server).
     image: waypoint:latest
     build: .
     container_name: waypoint
@@ -27,6 +34,19 @@ services:
       ALLOWED_HOSTS: ${ALLOWED_HOSTS:-*}
       CSRF_TRUSTED_ORIGINS: ${CSRF_TRUSTED_ORIGINS:-}
       HTTPS_ENABLED: ${HTTPS_ENABLED:-False}
+      GOOGLE_MAPS_API_KEY: ${GOOGLE_MAPS_API_KEY:-}
+      GCP_PROJECT_ID: ${GCP_PROJECT_ID:-}
+      GCP_CREDENTIALS_FILE: ${GCP_CREDENTIALS_FILE:-}
+      GCP_BILLING_BQ_TABLE: ${GCP_BILLING_BQ_TABLE:-}
+      REQUIRE_EMAIL_VERIFICATION: ${REQUIRE_EMAIL_VERIFICATION:-True}
+      EMAIL_BACKEND: ${EMAIL_BACKEND:-django.core.mail.backends.console.EmailBackend}
+      EMAIL_HOST: ${EMAIL_HOST:-}
+      EMAIL_PORT: ${EMAIL_PORT:-587}
+      EMAIL_HOST_USER: ${EMAIL_HOST_USER:-}
+      EMAIL_HOST_PASSWORD: ${EMAIL_HOST_PASSWORD:-}
+      EMAIL_USE_TLS: ${EMAIL_USE_TLS:-True}
+      DEFAULT_FROM_EMAIL: ${DEFAULT_FROM_EMAIL:-Waypoint <no-reply@example.com>}
+      TERMS_VERSION: ${TERMS_VERSION:-}
     depends_on:
       db:
         condition: service_healthy
@@ -34,3 +54,6 @@ services:
     volumes:
       - ./data/media:/app/data/media
       - ./data/staticfiles:/app/data/staticfiles
+      # For the admin "Maps usage" page: mount a read-only service-account key.
+      # Then set GCP_CREDENTIALS_FILE=/app/data/gcp-credentials.json in .env
+      # - ./data/gcp-credentials.json:/app/data/gcp-credentials.json:ro

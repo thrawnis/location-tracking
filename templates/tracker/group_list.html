@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% block title %}Groups – Waypoint{% endblock %}
+
+{% block content %}
+<div class="max-w-2xl mx-auto space-y-6">
+
+  <div>
+    <h1 class="text-2xl font-bold text-slate-900">Groups</h1>
+    <p class="text-sm text-slate-500 mt-1">
+      Private friend groups — not listed or searchable. Share a group's invite link to bring
+      someone in; an existing member has to approve their request first.
+    </p>
+  </div>
+
+  <!-- Create form -->
+  <form method="post" class="bg-white rounded-xl border border-slate-200 shadow-sm p-4 flex flex-wrap gap-3">
+    {% csrf_token %}
+    <input type="text" name="name" placeholder="Group name, e.g. Road Trip Crew" required
+           class="flex-1 min-w-[200px] text-sm border border-slate-200 rounded-lg px-3 py-2 bg-white
+                  focus:outline-none focus:ring-2 focus:ring-brand/30 focus:border-brand">
+    <button type="submit"
+            class="bg-brand hover:bg-brand-dark text-white text-sm font-semibold px-4 py-2 rounded-lg transition-colors shrink-0">
+      ＋ New Group
+    </button>
+  </form>
+
+  <!-- Groups -->
+  {% for group in groups %}
+  <a href="{% url 'group_detail' group.pk %}"
+     class="block bg-white rounded-xl border border-slate-200 shadow-sm p-4 hover:border-brand/40 transition-all">
+    <h2 class="font-bold text-slate-900">{{ group.name }}</h2>
+    <p class="text-xs text-slate-400 mt-0.5">{{ group.member_count }} member{{ group.member_count|pluralize }}</p>
+  </a>
+  {% empty %}
+  <div class="text-center py-12 text-slate-400">
+    <p class="text-sm">You're not in any groups yet. Create one above, or ask a friend for their invite link.</p>
+  </div>
+  {% endfor %}
+
+</div>
+{% endblock %}

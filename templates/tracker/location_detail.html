@@ -2,14 +2,8 @@
 {% load tracker_tags %}
 {% block title %}{{ location.name }} – Waypoint{% endblock %}
 
-{% block extra_head %}
-<style>
-  #detail-map { height: 280px; }
-</style>
-{% endblock %}
 
 {% block content %}
-{% with cat=location.category %}
 <div class="max-w-4xl mx-auto space-y-6">
 
   <!-- Header card -->
@@ -21,63 +15,43 @@
            class="w-full h-full object-cover" loading="lazy">
       <div class="absolute inset-0 bg-gradient-to-t from-black/50 via-transparent to-transparent"></div>
       <div class="absolute bottom-0 inset-x-0 p-6">
-        <span class="inline-flex items-center gap-1 text-xs font-semibold px-2.5 py-1 rounded-full mb-2
-                     {% if cat == 'restaurant' %}bg-indigo-500/90 text-white
-                     {% elif cat == 'store' %}bg-emerald-500/90 text-white
-                     {% elif cat == 'attraction' %}bg-violet-500/90 text-white
-                     {% else %}bg-slate-500/90 text-white{% endif %}">
-          {{ location.category|category_icon }} {{ location.get_category_display }}
-        </span>
         <h1 class="text-3xl font-bold text-white">{{ location.name }}</h1>
         {% if location.address %}
         <p class="text-sm text-white/80 mt-1">{{ location.address }}</p>
         {% endif %}
+        {% include "tracker/partials/google_maps_link.html" with location=location link_class="text-sm text-white hover:underline inline-block mt-1" %}
       </div>
     </div>
     {% endif %}
     {% endwith %}
     {% if not location.photos.all %}
-    <div class="px-6 pt-6 pb-4
-                {% if cat == 'restaurant' %}bg-gradient-to-br from-indigo-50 to-white
-                {% elif cat == 'store' %}bg-gradient-to-br from-emerald-50 to-white
-                {% elif cat == 'attraction' %}bg-gradient-to-br from-violet-50 to-white
-                {% else %}bg-gradient-to-br from-slate-50 to-white{% endif %}">
-      <span class="inline-flex items-center gap-1 text-xs font-semibold px-2.5 py-1 rounded-full mb-3
-                   {% if cat == 'restaurant' %}bg-indigo-100 text-indigo-700
-                   {% elif cat == 'store' %}bg-emerald-100 text-emerald-700
-                   {% elif cat == 'attraction' %}bg-violet-100 text-violet-700
-                   {% else %}bg-slate-100 text-slate-600{% endif %}">
-        {{ location.category|category_icon }} {{ location.get_category_display }}
-      </span>
+    <div class="px-6 pt-6 pb-4 bg-gradient-to-br from-slate-50 to-white">
       <h1 class="text-3xl font-bold text-slate-900">{{ location.name }}</h1>
       {% if location.address %}
       <p class="text-sm text-slate-500 mt-1">{{ location.address }}</p>
       {% endif %}
+      {% include "tracker/partials/google_maps_link.html" with location=location link_class="text-sm text-brand hover:underline inline-block mt-1" %}
     </div>
     {% endif %}
 
     <!-- Rating + meta -->
     <div class="px-6 py-4 flex flex-wrap items-center justify-between gap-4 border-t border-slate-100">
-      <div class="flex items-center gap-3">
-        <div class="flex items-center gap-2">
-          {% stars_display location.overall_rating "lg" %}
-          {% if location.overall_rating %}
-          <span class="text-lg font-bold text-slate-700">{{ location.overall_rating }}</span>
-          <span class="text-sm text-slate-400">/ 5</span>
-          {% else %}
-          <span class="text-sm text-slate-400">Not yet rated</span>
-          {% endif %}
-        </div>
-        <span class="text-slate-300">·</span>
-        <span class="text-sm text-slate-500">
-          {% with vc=location.visits.all|length %}{{ vc }} visit{{ vc|pluralize }}{% endwith %}
+      <div class="flex items-center gap-2 flex-wrap">
+        <!-- Waypoint community rating (matches the Google badge style).
+             Kept fresh in real time via an HTMX out-of-band swap whenever a
+             review is added/updated/deleted — see partials/location_reviews.html -->
+        {% with avg=location.avg_user_rating %}
+        <span id="waypoint-rating-badge" class="inline-flex items-center gap-1 text-sm font-semibold px-2.5 py-1 rounded-full
+                     bg-violet-50 text-violet-700 border border-violet-200" title="Waypoint community rating">
+          {% if avg %}Waypoint {{ avg }} ★ ({% with rc=location.reviews.all|length %}{{ rc }}{% endwith %})
+          {% else %}Waypoint · Not yet rated{% endif %}
         </span>
-        <span class="text-slate-300">·</span>
-        <span class="text-sm text-slate-500">
-          {% with ic=location.items.all|length %}{{ ic }} item{{ ic|pluralize }}{% endwith %}
-        </span>
+        {% endwith %}
+        <!-- Google rating (filled by JS from Place Details when a place_id is known) -->
+        <span id="google-rating-badge"></span>
+        <span id="open-now-badge"></span>
       </div>
-      {% if user.is_authenticated %}
+      {% if user|is_superuser_role or location.created_by == user %}
       <div class="flex items-center gap-2">
         <a href="{% url 'location_edit' location.pk %}"
            class="flex items-center gap-1.5 text-sm font-medium text-slate-600 hover:text-brand
@@ -88,6 +62,7 @@
           </svg>
           Edit
         </a>
+        {% if user|is_superuser_role or location.created_by == user %}
         <a href="{% url 'location_delete' location.pk %}"
            class="flex items-center gap-1.5 text-sm font-medium text-red-500 hover:text-red-700
                   border border-red-200 hover:border-red-400 px-3 py-1.5 rounded-lg transition-all">
@@ -97,6 +72,7 @@
           </svg>
           Delete
         </a>
+        {% endif %}
       </div>
       {% endif %}
     </div>
@@ -108,51 +84,44 @@
     <!-- Left: notes + map -->
     <div class="lg:col-span-2 space-y-5">
 
-      <!-- Contact / hours card -->
-      {% if location.phone or location.website or location.hours %}
-      <div class="bg-white rounded-xl border border-slate-200 shadow-sm p-5">
-        <h2 class="text-sm font-semibold text-slate-500 uppercase tracking-wide mb-3">Contact &amp; Hours</h2>
-        <dl class="space-y-2">
-          {% if location.phone %}
-          <div class="flex items-center gap-2 text-sm">
-            <dt class="text-slate-400 shrink-0">
-              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                      d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z"/>
-              </svg>
-            </dt>
-            <dd><a href="tel:{{ location.phone }}" class="text-slate-700 hover:text-brand transition-colors">{{ location.phone }}</a></dd>
-          </div>
-          {% endif %}
-          {% if location.website %}
-          <div class="flex items-center gap-2 text-sm">
-            <dt class="text-slate-400 shrink-0">
-              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                      d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"/>
-              </svg>
-            </dt>
-            <dd><a href="{{ location.website }}" target="_blank" rel="noopener"
-                   class="text-brand hover:underline truncate max-w-xs inline-block">{{ location.website }}</a></dd>
-          </div>
-          {% endif %}
-          {% if location.hours %}
-          <div class="flex items-start gap-2 text-sm">
-            <dt class="text-slate-400 shrink-0 mt-0.5">
-              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                      d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
-              </svg>
-            </dt>
-            <dd class="text-slate-700 whitespace-pre-line leading-snug">{{ location.hours }}</dd>
-          </div>
-          {% endif %}
-        </dl>
+      <!-- Dietary / GF card (HTMX-swappable) -->
+      {% include "tracker/partials/gf_card.html" with location=location %}
+
+      <!-- Featured collections — superuser/admin-promoted only (see
+           Collection.is_featured); links back to the collection's own
+           detail page so all its other waypoints are one click away. -->
+      {% if featured_collections %}
+      <div class="bg-amber-50 border border-amber-200 rounded-xl shadow-sm p-4 flex items-center flex-wrap gap-2">
+        {% for coll in featured_collections %}
+        <a href="{% url 'collection_detail' coll.pk %}"
+           class="inline-flex items-center gap-1.5 text-sm font-semibold text-amber-800
+                  bg-white border border-amber-300 hover:border-amber-500 px-3 py-1.5 rounded-lg transition-all">
+          ★ Featured in: {{ coll.name }}
+        </a>
+        {% endfor %}
       </div>
       {% endif %}
 
-      <!-- Dietary / GF card (HTMX-swappable) -->
-      {% include "tracker/partials/gf_card.html" with location=location %}
+      <!-- Ratings & reviews (HTMX-swappable) -->
+      <div class="bg-white rounded-xl border border-slate-200 shadow-sm p-5">
+        {% include "tracker/partials/location_reviews.html" with location=location my_review=my_review show_form=open_review review_form=location_review_form %}
+      </div>
+
+      <!-- Group ratings — only ever a breakdown of YOUR OWN groups; never
+           shown in map popups/list cards (see the compact summary there) -->
+      {% if group_rating_breakdown %}
+      <div class="bg-violet-50 border border-violet-200 rounded-xl shadow-sm p-5">
+        <h2 class="text-sm font-semibold text-violet-700 uppercase tracking-wide mb-2">My Group Ratings</h2>
+        <ul class="space-y-1">
+          {% for b in group_rating_breakdown %}
+          <li class="text-sm text-violet-900">
+            <a href="{% url 'group_detail' b.group.pk %}" class="font-semibold hover:underline">{{ b.group.name }}</a>:
+            ★ {{ b.avg }} <span class="text-violet-500">({{ b.count }} rating{{ b.count|pluralize }})</span>
+          </li>
+          {% endfor %}
+        </ul>
+      </div>
+      {% endif %}
 
       <!-- Public notes -->
       {% if location.public_notes %}
@@ -162,8 +131,8 @@
       </div>
       {% endif %}
 
-      <!-- Private notes (owner or staff only) -->
-      {% if location.private_notes and user == location.created_by or location.private_notes and user.is_staff %}
+      <!-- Private notes (owner or superuser/admin only) -->
+      {% if location.private_notes and user == location.created_by or location.private_notes and user|is_superuser_role %}
       <div class="bg-amber-50 border border-amber-200 rounded-xl shadow-sm p-5">
         <div class="flex items-center gap-2 mb-2">
           <svg class="w-4 h-4 text-amber-500" fill="currentColor" viewBox="0 0 20 20">
@@ -177,29 +146,6 @@
       </div>
       {% endif %}
 
-      <!-- Map -->
-      {% if location.has_coords %}
-      <div class="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
-        <div id="detail-map"></div>
-        <div class="px-4 py-2 border-t border-slate-100 flex items-center gap-2">
-          <svg class="w-4 h-4 text-slate-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                  d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"/>
-          </svg>
-          <p class="text-xs text-slate-500 truncate">
-            {{ location.address|default:"No address" }}
-            &nbsp;·&nbsp;
-            {{ location.latitude }}, {{ location.longitude }}
-          </p>
-          <a href="https://www.google.com/maps/search/?api=1&query={{ location.latitude }},{{ location.longitude }}"
-             target="_blank" rel="noopener"
-             class="ml-auto shrink-0 text-xs text-brand hover:underline">
-            Open in Google Maps →
-          </a>
-        </div>
-      </div>
-      {% endif %}
-
       <!-- Photos section -->
       <div class="bg-white rounded-xl border border-slate-200 shadow-sm p-5">
         {% include "tracker/partials/photos_section.html" with location=location photo_form=photo_form %}
@@ -207,64 +153,252 @@
 
     </div>
 
-    <!-- Right sidebar: items + visits -->
+    <!-- Right sidebar: items + collections -->
     <div class="space-y-5">
       <div class="bg-white rounded-xl border border-slate-200 shadow-sm p-5">
-        {% include "tracker/partials/items_section.html" with location=location item_form=item_form %}
+        {% include "tracker/partials/items_section.html" with location=location item_form=item_form location_rated=my_review %}
       </div>
+      <!-- Collections (HTMX-swappable) -->
       <div class="bg-white rounded-xl border border-slate-200 shadow-sm p-5">
-        {% include "tracker/partials/visits_section.html" with location=location visit_form=visit_form %}
+        {% include "tracker/partials/collections_widget.html" with location=location all_collections=all_collections %}
       </div>
-      <div class="bg-white rounded-xl border border-slate-100 shadow-sm p-4 text-xs text-slate-400 space-y-1">
-        <p>Added {{ location.created_at|date:"N j, Y" }}{% if location.created_by %} by {{ location.created_by.username }}{% endif %}</p>
-        <p>Updated {{ location.updated_at|date:"N j, Y" }}</p>
+
+      <!-- Chain linking: share items/dishes with other branches of the same chain -->
+      {% if chain_linked or can_edit %}
+      <div class="bg-white rounded-xl border border-slate-200 shadow-sm p-5 space-y-3"
+           x-data="{
+             chainModalOpen: false,
+             chainQuery: '',
+             chainResults: [],
+             chainSearching: false,
+             async chainSearch() {
+               const q = this.chainQuery.trim();
+               if (q.length < 2) { this.chainResults = []; return; }
+               this.chainSearching = true;
+               try {
+                 const res = await fetch('{% url "location_chain_search" location.pk %}?q=' + encodeURIComponent(q));
+                 const data = await res.json();
+                 this.chainResults = data.results || [];
+               } catch (e) { this.chainResults = []; }
+               this.chainSearching = false;
+             },
+             async chainLink(targetId) {
+               const res = await fetch('/locations/{{ location.pk }}/link/' + targetId + '/', {
+                 method: 'POST',
+                 headers: { 'X-CSRFToken': '{{ csrf_token }}' },
+               });
+               if (res.ok) window.location.reload();
+             },
+           }">
+        <div class="flex items-center justify-between gap-2">
+          <h2 class="text-sm font-semibold text-slate-500 uppercase tracking-wide">Chain / Branches</h2>
+          {% if can_edit %}
+          <button type="button" @click="chainModalOpen = true; chainQuery = ''; chainResults = []"
+                  class="text-xs font-semibold text-brand hover:text-brand-dark border border-brand/30
+                         hover:border-brand px-2.5 py-1 rounded-lg transition-all">
+            {% if chain_linked %}🔗 Link another branch{% else %}🔗 This is a chain{% endif %}
+          </button>
+          {% endif %}
+        </div>
+
+        {% if chain_linked %}
+        <div class="space-y-2">
+          <p class="text-xs text-slate-400">
+            Linked as the same chain — items/dishes and their reviews are shared across these branches.
+          </p>
+          <ul class="space-y-1.5">
+            {% for other in chain_linked %}
+            <li class="text-sm">
+              <a href="{% url 'location_detail' other.pk %}" class="text-brand hover:underline">
+                {{ other.name }}{% if other.city %} — {{ other.city }}{% if other.state %}, {{ other.state }}{% endif %}{% endif %}
+              </a>
+            </li>
+            {% endfor %}
+          </ul>
+          {% if user|is_superuser_role %}
+          <form method="post" action="{% url 'location_unlink' location.pk %}"
+                onsubmit="return confirm('Unlink this waypoint from its chain group? Items added at other branches will no longer show here.')">
+            {% csrf_token %}
+            <button type="submit"
+                    class="text-xs font-semibold text-red-400 hover:text-red-600 border border-red-200
+                           hover:border-red-400 px-2.5 py-1 rounded-lg transition-all">
+              Unlink from chain
+            </button>
+          </form>
+          {% else %}
+          <p class="text-[11px] text-slate-400">Only a superuser/admin can detach a waypoint from its chain.</p>
+          {% endif %}
+        </div>
+        {% elif can_edit %}
+        <p class="text-xs text-slate-400">
+          Is this waypoint part of a chain (e.g. Burger King, Kohl's)? Linking shares items/dishes and their
+          reviews across branches, but keeps each location's own address, hours, and rating separate.
+        </p>
+        {% endif %}
+
+        <!-- "This is a chain" modal: explains implications, then finds a branch to link -->
+        <div x-show="chainModalOpen" x-cloak
+             class="fixed inset-0 z-[2000] flex items-center justify-center p-4 bg-black/40"
+             @click.self="chainModalOpen = false">
+          <div class="bg-white rounded-2xl shadow-xl max-w-md w-full p-5 space-y-4 text-sm text-slate-600" @click.stop>
+            <div class="flex items-center justify-between">
+              <h3 class="text-base font-bold text-slate-900">Link as a chain branch</h3>
+              <button type="button" @click="chainModalOpen = false" class="text-slate-400 hover:text-slate-700" aria-label="Close">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+                </svg>
+              </button>
+            </div>
+
+            <div class="bg-slate-50 border border-slate-200 rounded-lg p-3 text-xs text-slate-600 space-y-1.5">
+              <p class="font-semibold text-slate-700">What linking does:</p>
+              <ul class="list-disc list-inside space-y-1">
+                <li>Shares this waypoint's <strong>items/dishes and their reviews</strong> with every linked branch.</li>
+                <li>Keeps each branch's own <strong>address, hours, and overall waypoint rating</strong> separate.</li>
+                <li>Items with the same name are merged into one — if a reviewer had rated both copies, only one of those reviews survives.</li>
+                <li>Only a superuser/admin can undo this later (detach a branch from the chain).</li>
+              </ul>
+            </div>
+
+            {% if chain_candidates %}
+            <div class="space-y-1.5">
+              <p class="text-xs font-semibold text-slate-500 uppercase tracking-wide">Same name — quick link</p>
+              <ul class="space-y-1.5">
+                {% for cand in chain_candidates %}
+                <li class="flex items-center justify-between gap-2 text-sm">
+                  <span class="truncate text-slate-600">
+                    {{ cand.name }}{% if cand.city %} — {{ cand.city }}{% if cand.state %}, {{ cand.state }}{% endif %}{% endif %}
+                  </span>
+                  <form method="post" action="{% url 'location_link' location.pk cand.pk %}" class="shrink-0">
+                    {% csrf_token %}
+                    <button type="submit"
+                            class="text-xs font-semibold text-brand hover:text-brand-dark border border-brand/30
+                                   hover:border-brand px-2.5 py-1 rounded-lg transition-all">
+                      Link
+                    </button>
+                  </form>
+                </li>
+                {% endfor %}
+              </ul>
+            </div>
+            {% endif %}
+
+            <div class="space-y-1.5">
+              <p class="text-xs font-semibold text-slate-500 uppercase tracking-wide">Search for a branch</p>
+              <input type="text" x-model="chainQuery" @input.debounce.300ms="chainSearch()"
+                     placeholder="Search waypoints by name…"
+                     class="block w-full text-sm border border-slate-200 rounded-lg px-3 py-2 outline-none
+                            focus:border-brand focus:ring-2 focus:ring-brand/20">
+              <ul class="space-y-1.5 max-h-56 overflow-y-auto" x-show="chainResults.length">
+                <template x-for="r in chainResults" :key="r.id">
+                  <li class="flex items-center justify-between gap-2 text-sm">
+                    <span class="truncate text-slate-600"
+                          x-text="r.name + (r.city ? ' — ' + r.city + (r.state ? ', ' + r.state : '') : '')"></span>
+                    <button type="button" @click="chainLink(r.id)"
+                            class="shrink-0 text-xs font-semibold text-brand hover:text-brand-dark border border-brand/30
+                                   hover:border-brand px-2.5 py-1 rounded-lg transition-all">
+                      Link
+                    </button>
+                  </li>
+                </template>
+              </ul>
+              <p x-show="chainQuery.trim().length >= 2 && !chainSearching && !chainResults.length" class="text-xs text-slate-400">
+                No matches.
+              </p>
+            </div>
+          </div>
+        </div>
       </div>
+      {% endif %}
     </div>
 
   </div>
 </div>
-{% endwith %}
 {% endblock %}
 
 {% block extra_js %}
-{% if location.has_coords %}
 <script>
-window.initDetailMap = function () {
-  const lat = {{ location.latitude }};
-  const lng = {{ location.longitude }};
-
-  const map = new google.maps.Map(document.getElementById('detail-map'), {
-    center:            { lat, lng },
-    zoom:              15,
-    mapId:             'DEMO_MAP_ID',
-    gestureHandling:   'cooperative',
-    mapTypeControl:    false,
-    streetViewControl: false,
-    fullscreenControl: false,
+// ── Clean up "?rate=1" after it's done its job ────────────────────────────
+// Arriving here with ?rate=1 (from the map's "Rate Me!" button) auto-opens
+// the review form for this one visit — see location_detail's open_review.
+// The review is then saved via HTMX, which never changes the URL, so the
+// query param would otherwise stick around and re-trigger "auto-open the
+// form" (now in *edit* mode, since a review exists) on every future refresh.
+// Strip it from the address bar right away so a refresh only ever shows the
+// plain, closed state, keeping the #location-reviews scroll anchor.
+if (window.location.search.includes('rate=1')) {
+  const url = new URL(window.location.href);
+  url.searchParams.delete('rate');
+  window.history.replaceState({}, '', url.pathname + url.search + url.hash);
+}
+</script>
+<script>
+// ── Dish sort (client-side; survives HTMX swaps via localStorage) ────────────
+(function () {
+  function applyDishSort() {
+    const sel  = document.getElementById('dish-sort');
+    const list = document.getElementById('dish-list');
+    if (!sel || !list) return;
+    const saved = localStorage.getItem('dish_sort');
+    if (saved) sel.value = saved;
+    const mode = sel.value;
+    const dishes = Array.from(list.querySelectorAll('.dish'));
+    dishes.sort((a, b) => {
+      const an = a.dataset.name || '', bn = b.dataset.name || '';
+      const ar = parseFloat(a.dataset.rating) || 0, br = parseFloat(b.dataset.rating) || 0;
+      const at = parseInt(a.dataset.recent, 10) || 0, bt = parseInt(b.dataset.recent, 10) || 0;
+      if (mode === 'rating_desc') return br - ar || an.localeCompare(bn);
+      if (mode === 'rating_asc')  return ar - br || an.localeCompare(bn);
+      if (mode === 'recent')      return bt - at || an.localeCompare(bn);
+      return an.localeCompare(bn);
+    });
+    dishes.forEach(d => list.appendChild(d));
+  }
+  document.addEventListener('change', (e) => {
+    if (e.target && e.target.id === 'dish-sort') {
+      localStorage.setItem('dish_sort', e.target.value);
+      applyDishSort();
+    }
   });
+  // Re-apply after the items section is re-rendered by HTMX
+  document.body.addEventListener('htmx:afterSwap', applyDishSort);
+  document.addEventListener('DOMContentLoaded', applyDishSort);
+  applyDishSort();
+})();
+</script>
+{% if location.google_place_id %}
+<script>
+// No map on the detail page — use a detached PlacesService just to fetch the
+// live Google rating and open/closed status via Place Details.
+window.initDetailData = function () {
+  const svc = new google.maps.places.PlacesService(document.createElement('div'));
+  svc.getDetails({
+    placeId: '{{ location.google_place_id|escapejs }}',
+    fields: ['opening_hours', 'rating', 'user_ratings_total'],
+  }, (place, status) => {
+    if (status !== google.maps.places.PlacesServiceStatus.OK || !place) return;
 
-  const infoWindow = new google.maps.InfoWindow({
-    content: '<strong>{{ location.name|escapejs }}</strong>',
+    // Google rating badge — shown next to the Waypoint rating
+    const gBadge = document.getElementById('google-rating-badge');
+    if (gBadge && place.rating) {
+      gBadge.innerHTML =
+        '<span class="inline-flex items-center gap-1 text-sm font-semibold px-2.5 py-1 rounded-full '
+        + 'bg-amber-50 text-amber-700 border border-amber-200" title="Google rating">'
+        + 'Google ' + place.rating.toFixed(1) + ' ★ (' + (place.user_ratings_total || 0) + ')</span>';
+    }
+
+    // Open / closed status
+    const oh = place.opening_hours;
+    const open = oh && oh.isOpen ? oh.isOpen() : undefined;
+    const badge = document.getElementById('open-now-badge');
+    if (badge && open !== undefined) {
+      badge.innerHTML = open
+        ? '<span class="inline-flex items-center gap-1 text-xs font-semibold px-2.5 py-1 rounded-full bg-emerald-100 text-emerald-700 border border-emerald-200">✓ Open now</span>'
+        : '<span class="inline-flex items-center gap-1 text-xs font-semibold px-2.5 py-1 rounded-full bg-red-100 text-red-700 border border-red-200">✗ Closed</span>';
+    }
   });
-
-  const pinEl = document.createElement('div');
-  pinEl.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="32" viewBox="0 0 24 32"
-      style="filter:drop-shadow(0 2px 4px rgba(0,0,0,.4))">
-    <path d="M12 0C5.37 0 0 5.37 0 12c0 9 12 20 12 20s12-11 12-20C24 5.37 18.63 0 12 0z" fill="#6366f1"/>
-    <circle cx="12" cy="12" r="5" fill="white"/>
-  </svg>`;
-
-  const marker = new google.maps.marker.AdvancedMarkerElement({
-    map,
-    position: { lat, lng },
-    content:  pinEl,
-    title:    '{{ location.name|escapejs }}',
-  });
-
-  marker.addListener('click', () => infoWindow.open({ map, anchor: marker }));
-  infoWindow.open({ map, anchor: marker });
 };
 </script>
-<script src="https://maps.googleapis.com/maps/api/js?key={{ GOOGLE_MAPS_KEY }}&libraries=marker&v=beta&callback=initDetailMap" async defer></script>
+<script src="https://maps.googleapis.com/maps/api/js?key={{ GOOGLE_MAPS_KEY }}&libraries=places&callback=initDetailData" async defer></script>
 {% endif %}
 {% endblock %}

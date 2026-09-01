@@ -2,7 +2,16 @@
 <html lang="en" class="h-full bg-slate-50">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="theme-color" content="#6366f1">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="Waypoint">
+  {% load static %}
+  <link rel="manifest" href="{% static 'manifest.webmanifest' %}">
+  <link rel="icon" type="image/svg+xml" href="{% static 'icons/favicon.svg' %}">
+  <link rel="icon" type="image/png" sizes="32x32" href="{% static 'icons/favicon-32.png' %}">
+  <link rel="icon" type="image/png" sizes="16x16" href="{% static 'icons/favicon-16.png' %}">
+  <link rel="apple-touch-icon" href="{% static 'icons/icon-192.png' %}">
   <title>{% block title %}Waypoint{% endblock %}</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <script>
@@ -23,6 +32,29 @@
     .htmx-indicator { opacity: 0; transition: opacity 200ms ease-in; }
     .htmx-request .htmx-indicator { opacity: 1; }
     .htmx-request.htmx-indicator { opacity: 1; }
+    /* Instant "working" feedback on any in-flight HTMX action */
+    .htmx-request { opacity: 0.55; pointer-events: none; transition: opacity 150ms; }
+    /* Static fallback for the custom brand utilities. The Tailwind CDN
+       generates these at runtime; if that ever misses (e.g. classes arriving
+       via an HTMX swap), buttons would render white-on-white and disappear.
+       These plain rules guarantee brand elements stay visible. */
+    .bg-brand { background-color: #6366f1; }
+    .bg-brand-dark, .hover\:bg-brand-dark:hover { background-color: #4f46e5; }
+    .bg-brand-light { background-color: #e0e7ff; }
+    .text-brand { color: #6366f1; }
+    .border-brand { border-color: #6366f1; }
+
+    /* Belt-and-suspenders alongside the viewport meta tag's maximum-scale/
+       user-scalable=no above: iOS Safari auto-zooms on focus when a text
+       input's font-size is under 16px — most inputs here use Tailwind's
+       text-sm (14px). Mobile only; desktop keeps text-sm. */
+    @media (max-width: 767px) {
+      input[type="text"], input[type="search"], input[type="email"],
+      input[type="password"], input[type="number"], input[type="tel"],
+      input[type="url"], textarea, select {
+        font-size: 16px;
+      }
+    }
   </style>
   {% block extra_head %}{% endblock %}
 </head>
@@ -46,13 +78,6 @@
         <!-- Right side -->
         <div class="flex items-center gap-3">
           {% if user.is_authenticated %}
-            <a href="{% url 'location_create' %}"
-               class="hidden sm:inline-flex items-center gap-1.5 bg-brand text-white text-sm font-medium px-3 py-1.5 rounded-lg hover:bg-brand-dark transition-colors">
-              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
-              </svg>
-              Add Waypoint
-            </a>
             <div class="relative" x-data="{ open: false }">
               <button @click="open = !open" @keydown.escape="open = false"
                       class="flex items-center gap-2 text-sm text-slate-600 hover:text-slate-900 transition-colors">
@@ -66,7 +91,7 @@
               </button>
               <div x-show="open" x-cloak @click.outside="open = false"
                    class="absolute right-0 mt-2 w-48 bg-white rounded-xl shadow-lg border border-slate-100 py-1 z-50">
-                <a href="{% url 'location_list' %}"
+                <a href="{% url 'location_list' %}?panel=mine"
                    class="flex items-center gap-2 px-4 py-2 text-sm text-slate-700 hover:bg-slate-50">
                   <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
                     <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/>
@@ -80,8 +105,73 @@
                   </svg>
                   Add Waypoint
                 </a>
+                <a href="{% url 'collection_list' %}"
+                   class="flex items-center gap-2 px-4 py-2 text-sm text-slate-700 hover:bg-slate-50">
+                  <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                          d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"/>
+                  </svg>
+                  Collections
+                </a>
+                <a href="{% url 'group_list' %}"
+                   class="flex items-center gap-2 px-4 py-2 text-sm text-slate-700 hover:bg-slate-50">
+                  <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                          d="M17 20h5v-2a4 4 0 00-3-3.87M9 20H4v-2a4 4 0 013-3.87m6-1.13a4 4 0 10-4-4 4 4 0 004 4zm6 0a4 4 0 10-3.24-6.32"/>
+                  </svg>
+                  Groups
+                </a>
+                <a href="{% url 'linked_accounts' %}"
+                   class="flex items-center gap-2 px-4 py-2 text-sm text-slate-700 hover:bg-slate-50">
+                  <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                          d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"/>
+                  </svg>
+                  Linked Accounts
+                </a>
+                <a href="{% url 'activity_feed' %}"
+                   class="flex items-center gap-2 px-4 py-2 text-sm text-slate-700 hover:bg-slate-50">
+                  <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                          d="M13 10V3L4 14h7v7l9-11h-7z"/>
+                  </svg>
+                  Activity
+                </a>
+                <a href="{% url 'import_locations' %}"
+                   class="flex items-center gap-2 px-4 py-2 text-sm text-slate-700 hover:bg-slate-50">
+                  <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                          d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/>
+                  </svg>
+                  Import / Export
+                </a>
+                <a href="{% url 'two_factor_settings' %}"
+                   class="flex items-center gap-2 px-4 py-2 text-sm text-slate-700 hover:bg-slate-50">
+                  <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                          d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"/>
+                  </svg>
+                  Two-factor auth
+                </a>
+                <a href="{% url 'help_page' %}"
+                   class="flex items-center gap-2 px-4 py-2 text-sm text-slate-700 hover:bg-slate-50">
+                  <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                          d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                  </svg>
+                  Help &amp; glossary
+                </a>
                 <hr class="my-1 border-slate-100">
                 {% if user.is_staff %}
+                <a href="{% url 'admin_dashboard' %}"
+                   class="flex items-center gap-2 px-4 py-2 text-sm font-medium text-amber-700 hover:bg-amber-50">
+                  <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                          d="M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 3.674 3.966.316c.969.077 1.362 1.286.622 1.916l-3.02 2.585.923 3.87c.226.944-.799 1.69-1.63 1.185L12 18.13l-3.383 2.043c-.83.505-1.856-.24-1.63-1.184l.924-3.871-3.02-2.585c-.74-.63-.347-1.839.622-1.916l3.966-.316 1.519-3.674z"/>
+                    <circle cx="12" cy="11" r="2.2" stroke-width="2"/>
+                  </svg>
+                  Admin
+                </a>
                 <a href="{% url 'audit_log' %}"
                    class="flex items-center gap-2 px-4 py-2 text-sm text-slate-700 hover:bg-slate-50">
                   <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -126,11 +216,30 @@
     </div>
   </nav>
 
+  <!-- Linked-account review notification banner (shown until the subject views them) -->
+  {% if user.is_authenticated and onbehalf_pending_count %}
+  <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 w-full mt-4">
+    <a href="{% url 'on_behalf_reviews' %}"
+       class="flex items-center gap-3 px-4 py-3 rounded-lg bg-violet-50 border border-violet-200
+              text-violet-800 hover:border-violet-400 transition-all">
+      <svg class="w-5 h-5 shrink-0 text-violet-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+              d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"/>
+      </svg>
+      <span class="text-sm font-medium">
+        {{ onbehalf_pending_count }} review{{ onbehalf_pending_count|pluralize }} {{ onbehalf_pending_count|pluralize:"was,were" }} added on your behalf.
+        <span class="font-semibold underline">View {{ onbehalf_pending_count|pluralize:"it,them" }} →</span>
+      </span>
+    </a>
+  </div>
+  {% endif %}
+
   <!-- Flash messages -->
   {% if messages %}
   <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 w-full mt-4" x-data>
     {% for message in messages %}
     <div x-data="{ show: true }" x-show="show" x-transition
+         {% if message.tags != 'error' %}x-init="setTimeout(() => show = false, 5000)"{% endif %}
          class="flex items-center justify-between gap-3 mb-2 px-4 py-3 rounded-lg text-sm font-medium
                 {% if message.tags == 'success' %}bg-emerald-50 text-emerald-800 border border-emerald-200
                 {% elif message.tags == 'error' %}bg-red-50 text-red-800 border border-red-200
@@ -154,6 +263,7 @@
   <footer class="text-center text-xs text-slate-400 py-4 border-t border-slate-100 mt-auto">
     Waypoint &mdash; self-hosted &mdash;
     <span class="font-mono" title="git commit">{{ APP_VERSION }}</span>
+    &mdash; <a href="{% url 'terms' %}" class="hover:text-brand">Terms</a>
   </footer>
 
   <!-- HTMX CSRF setup -->
@@ -161,6 +271,47 @@
     document.body.addEventListener("htmx:configRequest", (e) => {
       e.detail.headers["X-CSRFToken"] = "{{ csrf_token }}";
     });
+
+    // ── Deletions require a reason (recorded in the audit log) ─────────
+    // Plain <form onsubmit="return confirmWithReason('...', this)">: prompts
+    // for a reason, stuffs it into a hidden "reason" input, and only lets
+    // the (real) submit through once one is given.
+    window.confirmWithReason = function (message, formEl) {
+      const reason = window.prompt(
+        (message || 'Please confirm this action') +
+        '\n\nPlease provide a reason (required — recorded in the audit log):'
+      );
+      if (reason === null || !reason.trim()) return false;
+      let hidden = formEl.querySelector('input[name="reason"]');
+      if (!hidden) {
+        hidden = document.createElement('input');
+        hidden.type = 'hidden';
+        hidden.name = 'reason';
+        formEl.appendChild(hidden);
+      }
+      hidden.value = reason.trim();
+      return true;
+    };
+
+    // HTMX-triggered deletes: put the confirmation message in
+    // data-reason-prompt instead of hx-confirm. htmx's own confirm dialog is
+    // replaced by our prompt(), and the answer is sent along as "reason".
+    document.body.addEventListener('htmx:confirm', (e) => {
+      const el = e.detail.elt;
+      const msg = el.getAttribute('data-reason-prompt');
+      if (!msg) return;   // not one of ours — let htmx's normal hx-confirm run
+      e.preventDefault();
+      const reason = window.prompt(
+        msg + '\n\nPlease provide a reason (required — recorded in the audit log):'
+      );
+      if (reason === null || !reason.trim()) return;   // cancelled/empty → no request
+      el.setAttribute('hx-vals', JSON.stringify({ reason: reason.trim() }));
+      e.detail.issueRequest(true);
+    });
+    // PWA: register service worker so Waypoint can be installed to home screen
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register("{% static 'sw.js' %}").catch(() => {});
+    }
   </script>
   {% block extra_js %}{% endblock %}
 </body>

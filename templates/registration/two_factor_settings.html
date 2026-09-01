@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+{% block title %}Two-factor auth – Waypoint{% endblock %}
+
+{% block content %}
+<div class="max-w-md mx-auto">
+  <div class="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+    <div class="px-6 py-5 border-b border-slate-100">
+      <h1 class="text-xl font-bold text-slate-900">Two-factor authentication</h1>
+    </div>
+    <div class="px-6 py-5 space-y-4 text-sm text-slate-600">
+      {% if enabled %}
+      <p class="flex items-center gap-2">
+        <span class="inline-flex items-center gap-1 text-xs font-semibold px-2.5 py-1 rounded-full bg-emerald-100 text-emerald-700 border border-emerald-200">✓ Enabled</span>
+        Your account is protected with an authenticator app.
+      </p>
+      {% if required %}
+      <p class="text-xs text-slate-400">Two-factor authentication is required for admin accounts and can't be turned off.</p>
+      {% else %}
+      <form method="post" action="{% url 'two_factor_disable' %}"
+            onsubmit="return confirm('Turn off two-factor authentication?');">
+        {% csrf_token %}
+        <button type="submit"
+                class="text-sm font-medium text-red-600 hover:text-red-700 border border-red-200 hover:border-red-400 px-4 py-2 rounded-lg transition-colors">
+          Turn off
+        </button>
+      </form>
+      {% endif %}
+      {% else %}
+      <p>Add a second layer of security by requiring a code from an authenticator app when you sign in.</p>
+      <a href="{% url 'two_factor_setup' %}"
+         class="inline-block bg-brand hover:bg-brand-dark text-white font-semibold px-5 py-2.5 rounded-lg transition-colors">
+        Set up two-factor auth
+      </a>
+      {% endif %}
+    </div>
+  </div>
+</div>
+{% endblock %}

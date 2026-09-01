@@ -4,3 +4,13 @@ gunicorn==23.0.0
 dj-database-url==2.3.0
 whitenoise==6.8.2
 Pillow==11.2.1
+# Admin "Maps usage" page: Cloud Monitoring + BigQuery billing export (REST via AuthorizedSession)
+google-auth==2.38.0
+requests==2.32.3
+# TOTP two-factor auth + QR codes (qrcode uses the already-present Pillow)
+pyotp==2.9.0
+qrcode==7.4.2
+# Shared cache for rate-limit / throttle counters across gunicorn workers.
+# Only used when REDIS_URL is set (see CACHES in settings); the app runs
+# without it, falling back to a per-process in-memory cache.
+redis==5.2.1

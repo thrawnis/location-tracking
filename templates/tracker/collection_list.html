@@ -1,0 +1,174 @@
+{% extends "base.html" %}
+{% load tracker_tags %}
+{% block title %}Collections – Waypoint{% endblock %}
+
+{% block content %}
+<div class="max-w-4xl mx-auto space-y-6">
+
+  <div class="flex items-center justify-between">
+    <h1 class="text-2xl font-bold text-slate-900">Collections</h1>
+    <a href="{% url 'user_profile' request.user.username %}" class="text-sm text-brand hover:underline">
+      View my public profile →
+    </a>
+  </div>
+  <p class="text-sm text-slate-500 -mt-4">
+    Group waypoints into trips, themes, or wishlists — e.g. "Austin 2026" or "GF-safe spots".
+    Collections are private to you by default; mark one public to show it on your profile page.
+  </p>
+
+  <!-- Create form -->
+  <form method="post" class="bg-white rounded-xl border border-slate-200 shadow-sm p-4
+                             flex flex-wrap items-start gap-3">
+    {% csrf_token %}
+    <div class="flex-1 min-w-[200px]">
+      {{ form.name }}
+      {% if form.name.errors %}
+      <p class="text-red-500 text-xs mt-1">{{ form.name.errors|join:", " }}</p>
+      {% endif %}
+    </div>
+    <div class="flex-1 min-w-[200px]">
+      {{ form.description }}
+    </div>
+    <label class="flex items-center gap-1.5 text-sm text-slate-600 shrink-0 py-2 cursor-pointer select-none">
+      {{ form.is_public }}
+      Public
+    </label>
+    <button type="submit"
+            class="bg-brand hover:bg-brand-dark text-white text-sm font-semibold px-4 py-2 rounded-lg transition-colors shrink-0">
+      ＋ New Collection
+    </button>
+  </form>
+
+  <!-- Collections -->
+  {% for coll in collections %}
+  <div class="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden" x-data="{ editing: false }">
+    <div class="px-5 py-4 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between border-b border-slate-100">
+      <div class="min-w-0 flex-1" x-show="!editing">
+        <div class="flex items-center gap-2 flex-wrap">
+          {% if coll.is_public %}
+          <a href="{% url 'collection_detail' coll.pk %}" class="font-bold text-slate-900 hover:text-brand">{{ coll.name }}</a>
+          <span class="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-emerald-100 text-emerald-700">🌐 Public</span>
+          {% else %}
+          <h2 class="font-bold text-slate-900">{{ coll.name }}</h2>
+          <span class="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-slate-100 text-slate-500">🔒 Private</span>
+          {% endif %}
+          {% if coll.is_featured %}
+          <span class="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700"
+                title="A superuser/admin has featured this collection — its waypoints link back to it.">★ Featured</span>
+          {% endif %}
+        </div>
+        {% if coll.description %}
+        <p class="text-sm text-slate-500 mt-0.5">{{ coll.description }}</p>
+        {% endif %}
+        <p class="text-xs text-slate-400 mt-1">
+          {{ coll.loc_count }} waypoint{{ coll.loc_count|pluralize }}
+        </p>
+      </div>
+
+      <!-- Inline rename/redescribe (owner, superuser, or admin) -->
+      <div class="flex-1 min-w-0" x-show="editing" x-cloak>
+        <form method="post" action="{% url 'collection_edit' coll.pk %}" class="space-y-2">
+          {% csrf_token %}
+          <input type="text" name="name" value="{{ coll.name }}" required maxlength="120"
+                 class="block w-full text-sm font-semibold border border-slate-200 rounded-lg px-3 py-1.5
+                        focus:outline-none focus:ring-2 focus:ring-brand/30 focus:border-brand">
+          <textarea name="description" rows="2" placeholder="Description (optional)"
+                     class="block w-full text-sm border border-slate-200 rounded-lg px-3 py-1.5 resize-none
+                            focus:outline-none focus:ring-2 focus:ring-brand/30 focus:border-brand">{{ coll.description }}</textarea>
+          <div class="flex gap-2">
+            <button type="submit"
+                    class="bg-brand hover:bg-brand-dark text-white text-xs font-semibold px-3 py-1.5 rounded-lg transition-colors">
+              Save
+            </button>
+            <button type="button" @click="editing = false"
+                    class="text-xs text-slate-500 hover:text-slate-700 px-2 py-1.5">
+              Cancel
+            </button>
+          </div>
+        </form>
+      </div>
+
+      <div class="flex items-center gap-2 shrink-0 flex-wrap justify-start sm:justify-end" x-show="!editing">
+        {% if coll.created_by_id == request.user.pk or user|is_superuser_role %}
+        <button type="button" @click="editing = true"
+                class="text-xs font-semibold text-slate-500 hover:text-brand border border-slate-200
+                       hover:border-brand/40 px-2.5 py-1 rounded-lg transition-all">
+          Edit
+        </button>
+        {% endif %}
+        <form method="post" action="{% url 'collection_toggle_public' coll.pk %}">
+          {% csrf_token %}
+          <button type="submit"
+                  class="text-xs font-semibold text-slate-500 hover:text-brand border border-slate-200
+                         hover:border-brand/40 px-2.5 py-1 rounded-lg transition-all">
+            {% if coll.is_public %}Make private{% else %}Make public{% endif %}
+          </button>
+        </form>
+        {% if user|is_superuser_role and coll.is_public %}
+        <form method="post" action="{% url 'collection_toggle_featured' coll.pk %}">
+          {% csrf_token %}
+          <button type="submit"
+                  class="text-xs font-semibold px-2.5 py-1 rounded-lg border transition-all
+                         {% if coll.is_featured %}text-amber-700 border-amber-300 bg-amber-50 hover:border-amber-500
+                         {% else %}text-slate-500 border-slate-200 hover:border-brand/40 hover:text-brand{% endif %}">
+            {% if coll.is_featured %}★ Unfeature{% else %}Feature{% endif %}
+          </button>
+        </form>
+        {% endif %}
+        <form method="post" action="{% url 'collection_delete' coll.pk %}"
+              onsubmit="return confirmWithReason('Delete collection “{{ coll.name|escapejs }}”? Waypoints themselves are kept.', this)">
+          {% csrf_token %}
+          <button type="submit"
+                  class="text-xs text-red-400 hover:text-red-600 border border-red-200 hover:border-red-400
+                         px-2.5 py-1 rounded-lg transition-all">
+            Delete
+          </button>
+        </form>
+      </div>
+    </div>
+    {% if user|is_superuser_role %}
+    <p class="px-5 pt-2 text-[11px] text-slate-400 {% if not coll.locations.all %}border-b border-slate-100 pb-2{% endif %}">
+      {% if coll.is_public %}
+      Superuser/admin only: featuring adds a "★ Featured in" link to every waypoint in this
+      collection, pointing back to its page{% if not coll.is_featured %} — not on yet{% endif %}.
+      {% else %}
+      Featuring is superuser/admin only and requires the collection to be public first.
+      {% endif %}
+    </p>
+    {% endif %}
+    {% if coll.locations.all %}
+    <ul class="divide-y divide-slate-50">
+      {% for loc in coll.locations.all %}
+      <li>
+        <a href="{% url 'location_detail' loc.pk %}"
+           class="flex items-center gap-3 px-5 py-2.5 hover:bg-slate-50 transition-colors">
+          <span class="text-lg">📍</span>
+          <span class="text-sm font-medium text-slate-700">{{ loc.name }}</span>
+          <span class="text-xs text-slate-400 ml-auto">
+            {{ loc.city }}{% if loc.city and loc.state %}, {% endif %}{{ loc.state }}
+          </span>
+        </a>
+      </li>
+      {% endfor %}
+    </ul>
+    {% else %}
+    <p class="px-5 py-4 text-xs text-slate-400">
+      Empty — add waypoints from their detail pages.
+    </p>
+    {% endif %}
+  </div>
+  {% empty %}
+  <div class="text-center py-12 text-slate-400">
+    <p class="text-sm">No collections yet. Create your first one above.</p>
+  </div>
+  {% endfor %}
+
+</div>
+
+<script>
+  document.querySelectorAll('form input[type="text"], form textarea').forEach(el => {
+    el.classList.add('w-full','border','border-slate-200','rounded-lg','px-3','py-2','text-sm',
+                     'focus:outline-none','focus:ring-2','focus:ring-brand/30','focus:border-brand');
+  });
+</script>
+{% endblock %}

@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+{% load tracker_tags %}
+{% block title %}{{ profile_user.username }} – Waypoint{% endblock %}
+
+{% block content %}
+<div class="max-w-4xl mx-auto space-y-6">
+
+  <div class="flex items-center gap-4">
+    <div class="w-14 h-14 rounded-full bg-brand/10 text-brand flex items-center justify-center text-2xl font-bold shrink-0">
+      {{ profile_user.username|slice:":1"|upper }}
+    </div>
+    <div>
+      <h1 class="text-2xl font-bold text-slate-900">{{ profile_user.username }}</h1>
+      <p class="text-sm text-slate-500">Member since {{ profile_user.date_joined|date:"Y" }}</p>
+    </div>
+  </div>
+
+  {% for coll in collections %}
+  <div class="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+    <div class="px-5 py-4 border-b border-slate-100">
+      <div class="flex items-center gap-2 flex-wrap">
+        <a href="{% url 'collection_detail' coll.pk %}" class="font-bold text-slate-900 hover:text-brand">{{ coll.name }}</a>
+        {% if coll.is_featured %}
+        <span class="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700">★ Featured</span>
+        {% endif %}
+      </div>
+      {% if coll.description %}
+      <p class="text-sm text-slate-500 mt-0.5">{{ coll.description }}</p>
+      {% endif %}
+    </div>
+    {% if coll.locations.all %}
+    <ul class="divide-y divide-slate-50">
+      {% for loc in coll.locations.all %}
+      <li>
+        <a href="{% url 'location_detail' loc.pk %}"
+           class="flex items-center gap-3 px-5 py-2.5 hover:bg-slate-50 transition-colors">
+          <span class="text-lg">📍</span>
+          <span class="text-sm font-medium text-slate-700">{{ loc.name }}</span>
+          <span class="text-xs text-slate-400 ml-auto">
+            {{ loc.city }}{% if loc.city and loc.state %}, {% endif %}{{ loc.state }}
+          </span>
+        </a>
+      </li>
+      {% endfor %}
+    </ul>
+    {% else %}
+    <p class="px-5 py-4 text-xs text-slate-400">Empty.</p>
+    {% endif %}
+  </div>
+  {% empty %}
+  <div class="text-center py-12 text-slate-400">
+    <p class="text-sm">{{ profile_user.username }} hasn't made any collections public yet.</p>
+  </div>
+  {% endfor %}
+
+</div>
+{% endblock %}

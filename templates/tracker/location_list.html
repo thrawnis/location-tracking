@@ -11,6 +11,11 @@
   .search-layout { height: calc(100vh - 130px); min-height: 540px; }
   #main-map      { height: 100%; border-radius: 0.75rem; }
 
+  /* Keep the .hidden toggle authoritative even against the mobile
+     `#content-area { display:block !important }` rule below (higher
+     specificity via the id+class selector). */
+  #content-area.hidden { display: none !important; }
+
   /* ── Cards ──────────────────────────────────────────────────── */
   .loc-card {
     display: flex; gap: 10px;
@@ -59,14 +64,25 @@
   .osm-item:hover { border-color: #a5b4fc; }
   .osm-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; margin-top: 4px; }
 
-  /* ── Category filter chips ────────────────────────────────────── */
-  .filter-chip {
-    display: inline-flex; align-items: center; gap: 4px;
-    font-size: 11px; font-weight: 600; padding: 3px 9px; border-radius: 20px;
-    border: 1.5px solid currentColor; cursor: pointer; transition: opacity 150ms, background 150ms;
-    background: transparent; white-space: nowrap;
+  /* ── Quick nearby-search chips (Restaurants, Retail, …) ───────
+     Only whole chips that fit on one line are shown — extras are
+     hidden by JS (fitQuickChips), not clipped by CSS overflow. */
+  #quick-search-chips { display: flex; gap: 6px; overflow: hidden; }
+  .qs-chip {
+    display: inline-flex; align-items: center; gap: 4px; flex-shrink: 0;
+    font-size: 11px; font-weight: 600; color: #475569;
+    padding: 3px 9px; border-radius: 20px; border: 1.5px solid #e2e8f0;
+    background: #f8fafc; cursor: pointer; white-space: nowrap;
+    transition: background 120ms, border-color 120ms, color 120ms;
   }
-  .filter-chip.chip-off { opacity: 0.35; background: #f1f5f9; }
+  .qs-chip:hover { background: #eef2ff; border-color: #a5b4fc; color: #4338ca; }
+
+  /* ── "Set a location first" feedback (no Tailwind dependency, so it
+     always renders even if the CDN's runtime JIT hasn't caught up) ── */
+  .loc-required-flash {
+    border-color: #f43f5e !important;
+    box-shadow: 0 0 0 3px rgba(244,63,94,.25) !important;
+  }
 
   /* ── Distance filter chips ───────────────────────────────────── */
   .dist-chip {
@@ -114,8 +130,20 @@
 
   /* ── Mobile: full-screen map + bottom sheet ──────────────────── */
   @media (max-width: 767px) {
-    main { padding: 0 !important; max-width: none !important; }
-    #outer-layout {
+    /* A little breathing room so content doesn't touch the screen edges —
+       #outer-layout.map-mode below is position:fixed with its own left:0/
+       right:0, so it's unaffected by this and still goes fully edge to edge. */
+    main { padding: 0 3px !important; max-width: none !important; }
+    /* Only pin #outer-layout to a fixed, non-scrolling app-shell box while
+       the map view is active (the map + draggable bottom sheet need to fill
+       the exact remaining viewport). In list view (the default) it stays in
+       normal document flow so the page scrolls like every other page —
+       applying this unconditionally used to trap the waypoint list inside a
+       fixed, overflow:hidden box with no scroll container of its own
+       (#list-view had no overflow-y set), so it silently clipped instead of
+       scrolling, and the resulting rubber-band bounce also made the sticky
+       header appear to drift instead of staying pinned. */
+    #outer-layout.map-mode {
       position: fixed;
       top: 56px; left: 0; right: 0; bottom: 0;
       display: flex; flex-direction: column;
@@ -150,13 +178,16 @@
       overflow-y: auto;
       transform: translateY(calc(100% - 62px));
       transition: transform 0.3s cubic-bezier(0.32,0.72,0,1);
-      z-index: 100;
+      /* Sit above the map overlays (legend, buttons are z-[1000]) so the
+         expanded panel covers them instead of the legend showing through. */
+      z-index: 1200;
       padding-right: 0 !important;
     }
     #side-list.sheet-open { transform: translateY(0); }
     #result-count { display: none !important; }
     .loc-card { padding: 14px; }
-    #category-filter, #mobile-toggle { display: none !important; }
+    /* Lift the legend clear of the collapsed bottom-sheet peek (62px) */
+    #map-legend { bottom: 74px !important; }
   }
 </style>
 {% endblock %}
@@ -168,7 +199,7 @@
   <div id="search-bar" class="flex flex-wrap gap-2 items-center">
 
     <div class="relative flex-1 min-w-[150px]">
-      <svg class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none"
+      <svg class="hidden sm:block absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none"
            fill="none" stroke="currentColor" viewBox="0 0 24 24">
         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
               d="M21 21l-4.35-4.35M17 11A6 6 0 105 11a6 6 0 0012 0z"/>
@@ -179,33 +210,23 @@
           <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/>
         </svg>
       </span>
-      <input type="search" id="name-search" placeholder="Search nearby: restaurant, coffee, park…"
-             class="w-full pl-9 pr-4 py-2 text-sm border border-slate-200 rounded-lg
+      <input type="search" id="name-search" placeholder="Search nearby: restaurant, coffee, park… (press Enter)"
+             class="w-full pl-3 sm:pl-9 pr-4 py-2 text-sm border border-slate-200 rounded-lg
                     focus:outline-none focus:ring-2 focus:ring-brand/30 focus:border-brand bg-white">
     </div>
 
-    <!-- Radius selector -->
-    <select id="radius-select" title="Search radius"
-            class="shrink-0 text-sm border border-slate-200 rounded-lg px-2 py-2 bg-white
-                   focus:outline-none focus:ring-2 focus:ring-brand/30 focus:border-brand">
-      <option value="3219">2 mi</option>
-      <option value="8047" selected>5 mi</option>
-      <option value="16093">10 mi</option>
-      <option value="40234">25 mi</option>
-    </select>
-
-    <!-- Location search — Google Places Autocomplete attaches here -->
+    <!-- Location search — explicit only (press Enter); no live autocomplete -->
     <div class="relative flex-1 min-w-[150px]">
-      <svg class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none"
+      <svg class="hidden sm:block absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none"
            fill="none" stroke="currentColor" viewBox="0 0 24 24">
         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
               d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"/>
         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
               d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"/>
       </svg>
-      <input type="search" id="location-search" placeholder="City, state, or zip…"
+      <input type="search" id="location-search" placeholder="City, state, or zip… (press Enter)"
              autocomplete="off" spellcheck="true"
-             class="w-full pl-9 pr-9 py-2 text-sm border border-slate-200 rounded-lg
+             class="w-full pl-3 sm:pl-9 pr-9 py-2 text-sm border border-slate-200 rounded-lg
                     focus:outline-none focus:ring-2 focus:ring-brand/30 focus:border-brand bg-white">
       <span id="geo-spinner" class="hidden absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none">
         <svg class="w-4 h-4 text-brand animate-spin" fill="none" viewBox="0 0 24 24">
@@ -215,46 +236,222 @@
       </span>
     </div>
 
-    <button id="locate-btn" type="button" title="Use my location"
-            class="shrink-0 flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium
-                   border border-brand/30 bg-brand/5 text-brand hover:bg-brand/10
-                   transition-all min-h-[36px]"
-            aria-label="Locate me">
-      <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-              d="M12 8a4 4 0 100 8 4 4 0 000-8zM12 2v2m0 16v2M2 12h2m16 0h2"/>
-      </svg>
-      <span class="hidden sm:inline">Locate</span>
-    </button>
+    <!-- Locate, sitting next to the city/state input. The help modal is no
+         longer a manual "?" button — it opens itself when an explicit locate
+         click fails to get a precise (GPS) fix. -->
+    <div class="shrink-0 flex items-center gap-1">
+      <button id="locate-btn" type="button" title="Use my location"
+              class="flex items-center justify-center w-9 h-9 rounded-lg
+                     border border-brand/30 bg-brand/5 text-brand hover:bg-brand/10 transition-all"
+              aria-label="Use my location">
+        <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                d="M12 8a4 4 0 100 8 4 4 0 000-8zM12 2v2m0 16v2M2 12h2m16 0h2"/>
+        </svg>
+      </button>
+    </div>
 
-    <button id="sidebar-toggle"
-            class="hidden md:flex items-center gap-1.5 text-sm font-medium px-3 py-2 rounded-lg
-                   border border-slate-200 bg-white hover:border-brand/40 hover:text-brand
-                   transition-all shrink-0 min-h-[36px] whitespace-nowrap">
-      <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-              d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z"/>
-      </svg>
-      Saved (<span id="sidebar-count">0</span>)
-      <svg id="sidebar-chevron" class="w-3.5 h-3.5 shrink-0 transition-transform duration-300"
-           fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
-      </svg>
-    </button>
+    <!-- Precise-location help modal — opened by locateUser() (see extra_js)
+         when an explicit "Locate me" click doesn't land a precise GPS fix. -->
+    <div id="precise-help-modal" class="fixed inset-0 z-[2000] items-center justify-center p-4 bg-black/40"
+         style="display:none" onclick="if (event.target === this) window.closePreciseHelp()">
+      <div class="bg-white rounded-2xl shadow-xl max-w-sm w-full p-5 space-y-3 text-sm text-slate-600"
+           onclick="event.stopPropagation()">
+        <div class="flex items-center justify-between">
+          <h3 class="text-base font-bold text-slate-900">Getting a precise location</h3>
+          <button onclick="window.closePreciseHelp()" class="text-slate-400 hover:text-slate-700" aria-label="Close">
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+          </button>
+        </div>
+        <p>Precise location comes from your phone's GPS and needs the browser's permission:</p>
+        <ul class="list-disc list-inside space-y-1 text-slate-600">
+          <li>Tap <strong>Locate</strong> (the ◎ button), then <strong>Allow</strong> when prompted.</li>
+          <li><strong>iPhone:</strong> Settings → Privacy &amp; Security → <strong>Location Services → On</strong>, and set your browser to <strong>While Using</strong>.</li>
+          <li><strong>Brave:</strong> tap the shield/lock icon in the address bar → Site settings → <strong>Location → Allow</strong>, then reload. Brave blocks location by default. If it still fails in Brave, try <strong>Safari</strong>.</li>
+          <li><strong>On a computer</strong> there's no GPS, so location is only city-level — that's a hardware limit, not a bug.</li>
+          <li>Any time it can't get a precise fix, just type your <strong>city, state, or zip</strong> in the box.</li>
+        </ul>
+        <button onclick="window.closePreciseHelp()"
+                class="w-full mt-1 bg-brand hover:bg-brand-dark text-white font-semibold px-4 py-2 rounded-lg transition-colors">
+          Got it
+        </button>
+      </div>
+    </div>
 
-    <select id="category-filter"
-            class="text-sm border border-slate-200 rounded-lg px-3 py-2 bg-white
-                   focus:outline-none focus:ring-2 focus:ring-brand/30 focus:border-brand shrink-0">
-      <option value="">All categories</option>
-      {% for val, label in category_choices %}
-      <option value="{{ val }}">{{ label }}</option>
-      {% endfor %}
-    </select>
+    <!-- Filters: collapsible popover behind a vertical-sliders (DJ fader) icon -->
+    <div class="relative shrink-0" x-data="{ open: false }">
+      <button @click="open = !open" @keydown.escape="open = false" type="button"
+              title="Filters" aria-label="Filters"
+              class="relative flex items-center justify-center w-9 h-9 rounded-lg
+                     border border-slate-200 bg-white hover:border-brand/40 hover:text-brand transition-all">
+        <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2"
+             stroke-linecap="round" viewBox="0 0 24 24">
+          <line x1="6" y1="4" x2="6" y2="20"/>
+          <line x1="12" y1="4" x2="12" y2="20"/>
+          <line x1="18" y1="4" x2="18" y2="20"/>
+          <circle cx="6" cy="9" r="2.2" fill="currentColor"/>
+          <circle cx="12" cy="15" r="2.2" fill="currentColor"/>
+          <circle cx="18" cy="7" r="2.2" fill="currentColor"/>
+        </svg>
+        <span id="filter-badge"
+              class="hidden absolute -top-1.5 -right-1.5 min-w-[16px] h-4 px-1 rounded-full
+                     bg-brand text-white text-[10px] font-bold flex items-center justify-center"></span>
+      </button>
+
+      <div x-show="open" x-cloak @click.outside="open = false" x-transition
+           class="absolute right-0 mt-2 w-64 bg-white rounded-xl shadow-lg border border-slate-100
+                  p-3 z-[1100] space-y-3">
+        <div>
+          <label class="block text-[11px] font-semibold text-slate-500 uppercase tracking-wide mb-1">Gluten-free</label>
+          <select id="gf-filter" title="Gluten-free level"
+                  class="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 bg-white
+                         focus:outline-none focus:ring-2 focus:ring-brand/30 focus:border-brand">
+            <option value="">🌾 Any GF status</option>
+            <option value="dedicated">🌾 Dedicated GF kitchen only</option>
+            <option value="gf-any">🌾 Dedicated or GF options</option>
+          </select>
+        </div>
+        <div class="pt-1 border-t border-slate-100">
+          <label class="block text-[11px] font-semibold text-slate-500 uppercase tracking-wide mb-1">Waypoint rating</label>
+          <select id="rating-filter" title="Minimum Waypoint rating"
+                  class="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 bg-white
+                         focus:outline-none focus:ring-2 focus:ring-brand/30 focus:border-brand">
+            <option value="0">★ Any rating</option>
+            <option value="3">★ 3.0 &amp; up</option>
+            <option value="3.5">★ 3.5 &amp; up</option>
+            <option value="4">★ 4.0 &amp; up</option>
+            <option value="4.5">★ 4.5 &amp; up</option>
+          </select>
+        </div>
+        <div>
+          <label class="block text-[11px] font-semibold text-slate-500 uppercase tracking-wide mb-1">Google rating</label>
+          <select id="google-rating-filter" title="Minimum Google rating"
+                  class="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 bg-white
+                         focus:outline-none focus:ring-2 focus:ring-brand/30 focus:border-brand">
+            <option value="0">🅖 Any rating</option>
+            <option value="3">🅖 3.0 &amp; up</option>
+            <option value="3.5">🅖 3.5 &amp; up</option>
+            <option value="4">🅖 4.0 &amp; up</option>
+            <option value="4.5">🅖 4.5 &amp; up</option>
+          </select>
+          <p class="text-[11px] text-slate-400 mt-1">Only applies to places with a known Google rating (seen via Nearby search or the map).</p>
+        </div>
+        <label class="flex items-center gap-2 cursor-pointer select-none pt-1 border-t border-slate-100">
+          <input type="checkbox" id="mine-filter"
+                 class="w-4 h-4 rounded border-slate-300 text-brand focus:ring-brand/30">
+          <span class="text-sm text-slate-700">Only places I've rated or noted</span>
+        </label>
+        <button id="clear-filters" type="button"
+                class="w-full text-xs font-semibold text-slate-500 hover:text-brand
+                       border border-slate-200 rounded-lg py-1.5 transition-colors">
+          Clear all filters
+        </button>
+      </div>
+    </div>
+
+    <!-- List / Map view toggle (list is the default) -->
+    <div id="view-toggle" class="shrink-0 flex items-center rounded-lg border border-slate-200 bg-white overflow-hidden">
+      <button id="view-list-btn" type="button" title="List view" aria-label="List view"
+              class="flex items-center gap-1 px-2.5 h-9 text-xs font-semibold text-white bg-brand transition-colors">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+          <line x1="8" y1="6" x2="20" y2="6"/><line x1="8" y1="12" x2="20" y2="12"/><line x1="8" y1="18" x2="20" y2="18"/>
+          <circle cx="4" cy="6" r="1" fill="currentColor" stroke="none"/><circle cx="4" cy="12" r="1" fill="currentColor" stroke="none"/><circle cx="4" cy="18" r="1" fill="currentColor" stroke="none"/>
+        </svg>
+        <span class="hidden sm:inline">List</span>
+      </button>
+      <button id="view-map-btn" type="button" title="Map view" aria-label="Map view"
+              class="flex items-center gap-1 px-2.5 h-9 text-xs font-semibold text-slate-500 hover:text-brand transition-colors">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+          <polygon points="9 3 3 6 3 21 9 18 15 21 21 18 21 3 15 6 9 3"/><line x1="9" y1="3" x2="9" y2="18"/><line x1="15" y1="6" x2="15" y2="21"/>
+        </svg>
+        <span class="hidden sm:inline">Map</span>
+      </button>
+    </div>
 
   </div>
 
-  <!-- ── Content: list (left/bottom) + map (right/full) ────────── -->
-  <div id="content-area" class="flex gap-3 search-layout">
+  <!-- Quick nearby-search touch targets — click fills the name box above and
+       searches immediately. Only as many as fit on one line are shown. -->
+  <div id="quick-search-chips" class="mt-2">
+    <button type="button" class="qs-chip" data-q="restaurant">🍽️ Restaurants</button>
+    <button type="button" class="qs-chip" data-q="retail store">🛍️ Retail</button>
+    <button type="button" class="qs-chip" data-q="lodging">🏨 Lodging</button>
+    <button type="button" class="qs-chip" data-q="coffee">☕ Coffee</button>
+    <button type="button" class="qs-chip" data-q="bar">🍸 Bars</button>
+    <button type="button" class="qs-chip" data-q="grocery store">🛒 Groceries</button>
+    <button type="button" class="qs-chip" data-q="gas station">⛽ Gas</button>
+    <button type="button" class="qs-chip" data-q="park">🌳 Parks</button>
+  </div>
+
+  {{ waypoints|json_script:"wp-data" }}
+
+  <!-- ── List view (default) ───────────────────────────────────── -->
+  <div id="list-view">
+
+    <!-- Nearby (Google Places) search results — text only, shown when a
+         nearby search runs while the map view is temporarily disabled. -->
+    <div id="nearby-results" class="hidden mb-5">
+      <div class="flex items-center justify-between gap-2 mb-2">
+        <h2 class="text-sm font-semibold text-slate-700">
+          Nearby: <span id="nearby-query" class="text-brand"></span>
+          <span id="nearby-count" class="text-slate-400 font-normal"></span>
+        </h2>
+        <button id="nearby-clear" type="button"
+                class="text-xs font-semibold text-slate-500 hover:text-brand border border-slate-200
+                       hover:border-brand/40 px-2.5 py-1 rounded-lg transition-all shrink-0">
+          Clear
+        </button>
+      </div>
+      <div id="nearby-list" class="space-y-1.5"></div>
+    </div>
+
+    <!-- Saved-waypoint list — hidden while a nearby search is showing above it
+         (see syncSavedListVisibility), so the two lists never stack. -->
+    <div id="saved-list-section">
+      <!-- Sort / paging controls -->
+      <div class="flex flex-wrap items-center gap-2 mb-3">
+        <span id="wp-list-count" class="text-sm font-semibold text-slate-600 mr-auto">Loading…</span>
+
+        <label class="text-[11px] font-semibold text-slate-400 uppercase tracking-wide">Sort</label>
+        <select id="wp-sort"
+                class="text-sm border border-slate-200 rounded-lg pl-3 pr-8 py-1.5 bg-white
+                       focus:outline-none focus:ring-2 focus:ring-brand/30 focus:border-brand">
+          <option value="name">Name</option>
+          <option value="rating">Waypoint rating</option>
+          <option value="reviews">Number of reviews</option>
+          <option value="recent">Recently added</option>
+          <option value="distance" selected>Distance</option>
+        </select>
+        <button id="wp-sort-dir" type="button" title="Reverse sort order"
+                aria-label="Reverse sort order"
+                class="flex items-center justify-center w-9 h-9 rounded-lg border border-slate-200
+                       bg-white text-slate-500 hover:text-brand hover:border-brand/40 transition-all">
+          <svg id="wp-sort-dir-icon" class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2"
+               stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24">
+            <path d="M3 6h11M3 12h7M3 18h5M17 5v14M17 19l3-3M17 19l-3-3"/>
+          </svg>
+        </button>
+      </div>
+
+      <div id="wp-list" class="space-y-2"></div>
+
+      <!-- Pagination -->
+      <div id="wp-pagination" class="hidden items-center justify-center gap-2 mt-5">
+        <button id="wp-prev" type="button"
+                class="px-3 py-1.5 text-sm font-semibold text-slate-600 bg-white border border-slate-200
+                       rounded-lg hover:border-brand/40 hover:text-brand disabled:opacity-40
+                       disabled:pointer-events-none transition-all">← Prev</button>
+        <span id="wp-page-info" class="text-sm text-slate-500 px-2"></span>
+        <button id="wp-next" type="button"
+                class="px-3 py-1.5 text-sm font-semibold text-slate-600 bg-white border border-slate-200
+                       rounded-lg hover:border-brand/40 hover:text-brand disabled:opacity-40
+                       disabled:pointer-events-none transition-all">Next →</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Map view (hidden until the user toggles to it) ────────── -->
+  <div id="content-area" class="hidden md:flex gap-3 search-layout">
 
     <!-- Sidebar / bottom sheet ─────────────────────────────────── -->
     <div id="side-list"
@@ -270,12 +467,18 @@
       </div>
 
       <!-- Desktop tab bar -->
-      <div class="hidden md:flex shrink-0 border-b border-slate-100">
+      <div class="hidden md:flex shrink-0 border-b border-slate-100 items-stretch">
         <button id="tab-saved" class="tab-btn tab-active">
           ♥ Saved&nbsp;<span id="tab-saved-count">0</span>
         </button>
         <button id="tab-nearby" class="tab-btn">
           📍 Nearby&nbsp;<span id="osm-result-count">0</span>
+        </button>
+        <button id="sidebar-close" title="Close panel" aria-label="Close panel"
+                class="shrink-0 px-3 text-slate-400 hover:text-slate-700 transition-colors">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+          </svg>
         </button>
       </div>
 
@@ -290,26 +493,25 @@
              data-city="{{ loc.city|lower }}"
              data-state="{{ loc.state|lower }}"
              data-address="{{ loc.address|lower }}"
-             data-category="{{ loc.category }}"
+             data-gf="{{ loc.gluten_free }}"
+             data-mine="{{ loc.mine|yesno:'1,0' }}"
+             data-rating="{% if loc.user_avg_rating %}{{ loc.user_avg_rating|floatformat:2 }}{% elif loc.overall_rating %}{{ loc.overall_rating|floatformat:2 }}{% endif %}"
+             data-google-place-id="{{ loc.google_place_id|default:'' }}"
              data-lat="{{ loc.latitude|default:'' }}"
              data-lng="{{ loc.longitude|default:'' }}"
              onclick="cardClicked(this)"
              onmouseenter="cardHovered(this)"
              onmouseleave="cardLeft(this)">
 
-          {% with first_photo=loc.photos.all|first cat=loc.category %}
+          {% with first_photo=loc.photos.all|first %}
           {% if first_photo %}
           <div class="w-16 h-16 shrink-0 rounded-lg overflow-hidden">
             <img src="{{ first_photo.image.url }}" alt="{{ loc.name }}"
                  class="w-full h-full object-cover" loading="lazy">
           </div>
           {% else %}
-          <div class="w-16 h-16 shrink-0 rounded-lg flex items-center justify-center text-2xl
-                      {% if cat == 'restaurant' %}bg-indigo-50
-                      {% elif cat == 'store' %}bg-emerald-50
-                      {% elif cat == 'attraction' %}bg-violet-50
-                      {% else %}bg-slate-100{% endif %}">
-            {{ loc.category|category_icon }}
+          <div class="w-16 h-16 shrink-0 rounded-lg flex items-center justify-center text-2xl bg-slate-100">
+            📍
           </div>
           {% endif %}
           {% endwith %}
@@ -317,15 +519,6 @@
           <div class="min-w-0 flex-1">
             <div class="flex items-start gap-1 justify-between">
               <p class="font-semibold text-slate-900 text-sm leading-tight truncate">{{ loc.name }}</p>
-              <span class="shrink-0 text-[10px] font-medium px-1.5 py-0.5 rounded-full ml-1
-                           {% with cat=loc.category %}
-                           {% if cat == 'restaurant' %}bg-indigo-100 text-indigo-700
-                           {% elif cat == 'store' %}bg-emerald-100 text-emerald-700
-                           {% elif cat == 'attraction' %}bg-violet-100 text-violet-700
-                           {% else %}bg-slate-100 text-slate-600{% endif %}
-                           {% endwith %}">
-                {{ loc.get_category_display }}
-              </span>
             </div>
             {% if loc.city or loc.state %}
             <p class="text-xs text-slate-500 mt-0.5">
@@ -334,11 +527,17 @@
             {% elif loc.address %}
             <p class="text-xs text-slate-400 mt-0.5 truncate">{{ loc.address }}</p>
             {% endif %}
-            <div class="flex items-center gap-2 mt-1">
-              {% stars_display loc.overall_rating "sm" %}
-              <span class="text-[10px] text-slate-400">
-                {% with vc=loc.visits.all|length %}{{ vc }} visit{{ vc|pluralize }}{% endwith %}
-              </span>
+            <div class="flex items-center gap-2 mt-1 flex-wrap">
+              {% if loc.user_avg_rating %}{% stars_display loc.user_avg_rating "sm" %}
+              {% else %}{% stars_display loc.overall_rating "sm" %}{% endif %}
+              {% if loc.mine %}
+              <span class="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-violet-100 text-violet-700">✓ You reviewed</span>
+              {% endif %}
+              {% if loc.gluten_free == 'dedicated' %}
+              <span class="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-emerald-100 text-emerald-700">🌾 GF kitchen</span>
+              {% elif loc.gluten_free == 'options' %}
+              <span class="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700">🌾 GF options</span>
+              {% endif %}
             </div>
             <a href="{% url 'location_detail' loc.pk %}"
                onclick="event.stopPropagation()"
@@ -348,8 +547,14 @@
           </div>
         </div>
         {% empty %}
-        <div class="text-center py-16 text-slate-400 px-4">
+        <div class="text-center py-16 text-slate-400 px-4 space-y-2">
+          <p class="text-3xl">🗺️</p>
           <p class="text-sm font-medium text-slate-500">No waypoints yet.</p>
+          <p class="text-xs text-slate-400 leading-relaxed">
+            Search for a place in the box above (e.g. “coffee” or “tacos”),
+            tap a result on the map, and hit <strong class="text-pink-500">⭐ Rate Me!</strong>
+            to save your first waypoint.
+          </p>
         </div>
         {% endfor %}
       </div><!-- /panel-saved -->
@@ -359,13 +564,6 @@
 
         <!-- Filter bar -->
         <div class="shrink-0 px-3 pt-2.5 pb-2 border-b border-slate-100 space-y-2">
-          <div class="flex flex-wrap gap-1.5 items-center">
-            <span class="text-[10px] font-semibold text-slate-400 uppercase tracking-wide mr-1">Type</span>
-            <button class="filter-chip" data-cat="food" style="color:#3b82f6">🍴 Food</button>
-            <button class="filter-chip" data-cat="shop" style="color:#f97316">🛒 Shops</button>
-            <button class="filter-chip" data-cat="fuel" style="color:#78350f">⛽ Gas/EV</button>
-            <button class="filter-chip" data-cat="poi"  style="color:#22c55e">🏛 POI</button>
-          </div>
           <div class="flex flex-wrap gap-1.5 items-center">
             <span class="text-[10px] font-semibold text-slate-400 uppercase tracking-wide mr-1">Distance</span>
             <button class="dist-chip dist-active" data-dist="all">All</button>
@@ -385,19 +583,6 @@
           <p class="text-xs text-slate-400 text-center py-8">Search for a place above to see nearby results</p>
         </div>
 
-        <div id="expand-search-bar" class="hidden shrink-0 border-t border-slate-100 p-3">
-          <button id="expand-search-btn"
-                  class="w-full flex items-center justify-center gap-2 text-sm font-semibold
-                         text-brand bg-brand/5 hover:bg-brand/10 border border-brand/30
-                         rounded-xl py-2.5 transition-all">
-            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                    d="M21 21l-4.35-4.35M17 11A6 6 0 105 11a6 6 0 0012 0z"/>
-            </svg>
-            <span id="expand-search-label">Expand search area</span>
-          </button>
-        </div>
-
       </div><!-- /panel-nearby -->
 
     </div><!-- /side-list -->
@@ -407,7 +592,7 @@
       <div id="main-map"></div>
 
       <!-- Rating legend -->
-      <div class="absolute bottom-14 left-3 z-[1000] bg-white/90 backdrop-blur-sm
+      <div id="map-legend" class="absolute bottom-14 left-3 z-[1000] bg-white/90 backdrop-blur-sm
                   rounded-xl border border-slate-200 shadow px-3 py-2 text-[11px] space-y-1">
         <p class="font-semibold text-slate-500 uppercase tracking-wide text-[10px] mb-1">Rating</p>
         <div class="flex items-center gap-1.5"><span class="w-3 h-3 rounded-full bg-[#22c55e] inline-block border border-white"></span><span class="text-slate-600">4.0 – 5.0</span></div>
@@ -427,14 +612,6 @@
       <p id="geo-error"
          class="hidden absolute bottom-14 left-1/2 -translate-x-1/2 bg-white/90
                 text-slate-600 text-xs px-3 py-1.5 rounded-full shadow z-[1000] whitespace-nowrap"></p>
-
-      {% if user.is_authenticated %}
-      <a id="add-waypoint-btn" href="{% url 'location_create' %}"
-         class="absolute bottom-4 right-4 z-[1000] bg-brand hover:bg-brand-dark text-white
-                w-11 h-11 rounded-full shadow-lg flex items-center justify-center
-                text-2xl font-light transition-colors"
-         title="Add Waypoint at map center">+</a>
-      {% endif %}
     </div>
 
   </div>
@@ -444,6 +621,7 @@
 {% block extra_js %}
 <script>
 const IS_AUTH = {% if user.is_authenticated %}true{% else %}false{% endif %};
+const CSRF_TOKEN = '{{ csrf_token }}';
 </script>
 <script>
 (function () {
@@ -455,26 +633,191 @@ const IS_AUTH = {% if user.is_authenticated %}true{% else %}false{% endif %};
     poi:  { color: '#22c55e', label: 'Points of Interest', emoji: '🏛' },
   };
 
+  // ── TEMPORARY: map view disabled — nearby search shows text-only results ──
+  // Set to false to restore the full Google-map view + on-map search pins.
+  // While true, the Map toggle is hidden and nearby searches render as a plain
+  // text list (see runTextSearch/renderTextResults) instead of switching into
+  // the map's bottom-sheet UI.
+  const MAP_DISABLED = true;
+  const TEXT_SEARCH_RADIUS_M = 16093;   // ~10 mi bias for the map-less text search
+  let textPlaces     = null;   // detached PlacesService (no map needed)
+  let textGeocoder   = null;
+  let placesLibReady = false, placesLibLoading = false;
+  let placesLibCbs   = [];
+  let savedIndexReady = false, savedIndexLoading = false;
+  let savedIndexCbs  = [];
+  let searchCenter   = null;   // {lat,lng} centre for the text search + distances
+  let lastNearbyQuery = '';
+  // Opening the app lands on what's around you rather than your own saved
+  // list: once a position is known, run this search automatically. The
+  // nearby-search term itself isn't persisted between sessions (only the
+  // location is), so this is what actually runs on every reopen with a
+  // known location — it just doesn't fire if the user starts typing first.
+  const DEFAULT_NEARBY_QUERY = 'restaurant';
+  let defaultSearchDone = false;
+
   let mainMap        = null;
   let geocoder       = null;
   let placesService  = null;
   let mainInfoWindow = null;
   let markerMap      = {};   // id → { marker, popupContent }
+  let savedByPlaceId = {};   // google_place_id → { rating, count } for saved waypoints
+  // In-memory cache of Google ratings we've seen (from POI search results, mostly).
+  // Popups will show a Google rating ONLY if we've already seen it here — never
+  // spending an API call just for the popup.
+  let googleRatingCache = {};   // google_place_id → { rating, count }
+  try {
+    const raw = sessionStorage.getItem('wp_google_ratings');
+    if (raw) googleRatingCache = JSON.parse(raw) || {};
+  } catch (_) {}
+  function cacheGoogleRating(pid, rating, count) {
+    if (!pid || rating == null) return;
+    googleRatingCache[pid] = { rating: Number(rating), count: Number(count || 0) };
+    try { sessionStorage.setItem('wp_google_ratings', JSON.stringify(googleRatingCache)); } catch (_) {}
+  }
   let activeId       = null;
   let nameFilter     = '';
-  let boundsFilter   = null; // google.maps.LatLngBounds or null
-  let catFilter      = '';
+  let gfFilter       = '';   // '' | 'dedicated' | 'gf-any'
+  let mineFilter     = false; // true → only places the current user has reviewed (turned on by ?panel=mine / the filter checkbox)
+  let ratingFilter       = 0; // minimum Waypoint rating (0 = any)
+  let googleRatingFilter = 0; // minimum Google rating (0 = any); only known via googleRatingCache
   let osmEntries     = [];   // { marker, cat, distKm, element }
-  let osmDebounce    = null;
   let sidebarOpen    = false;
-  let osmCatFilters  = { food: true, shop: true, fuel: true, poi: true };
   let distFilter     = 'all';
   let ignoreNextIdle = false;
+
+  // ── List-view state (the default home view) ───────────────────
+  let userPos        = null;      // { lat, lng } reference point for distance sort
+  let mapLoaded      = false;     // has the Google Maps library been requested?
+  let currentView    = 'list';    // 'list' | 'map'
+  let listSort       = 'distance'; // sort key for the list view
+  let listSortDir    = 1;         // 1 = ascending, -1 = descending
+  let listPage       = 1;
+  const LIST_PAGE_SIZE = 10;
+  let pendingLocationQuery = null; // location typed in list view, geocoded once the map loads
+  let pendingNearbyQuery   = null; // nearby search requested from the list, run once the map loads
+  let runLocationSearch    = null; // set by initMap → runs a geocode on the map
+  const WAYPOINTS = (() => {
+    try { return JSON.parse(document.getElementById('wp-data').textContent) || []; }
+    catch (_) { return []; }
+  })();
+  WAYPOINTS.forEach(w => { w._name = (w.name || '').toLowerCase();
+                           w._loc  = [w.city, w.state, w.address].filter(Boolean).join(' ').toLowerCase(); });
+
+  const MAX_RADIUS_M = 16093;   // 10 miles — the widest area the user may view/search
 
   // ── Helpers ──────────────────────────────────────────────────
   function escapeHtml(str) {
     if (!str) return '';
     return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  }
+
+  // "Rate Me!" POSTs the POI to rate_poi, which get-or-creates the waypoint and
+  // opens its rating form. params: {name, latitude, longitude, address, google_place_id}
+  function rateMeForm(params, btnStyle) {
+    const hidden = Object.entries(params)
+      .filter(([, v]) => v != null && v !== '')
+      .map(([k, v]) => `<input type="hidden" name="${k}" value="${escapeHtml(String(v))}">`)
+      .join('');
+    return `<form method="post" action="/locations/rate/" style="display:inline;margin:0">
+      <input type="hidden" name="csrfmiddlewaretoken" value="${CSRF_TOKEN}">
+      ${hidden}
+      <button type="submit" style="${btnStyle}">⭐ Rate Me!</button>
+    </form>`;
+  }
+
+  // Build the Waypoint POI popup (Google + Waypoint ratings + Rate Me!) from a
+  // Places result. Used for nearby-search pins AND clicks on Google's built-in
+  // base-map POI icons. distKm may be null (distance line is then omitted).
+  function poiPopupHtml(place, distKm) {
+    const name      = place.name || '';
+    const types     = place.types || [];
+    const cat       = classifyPlace(types);
+    const info      = OSM_CATS[cat];
+    const dist      = (distKm != null && !isNaN(distKm)) ? formatDist(distKm) : '';
+    const addr      = place.vicinity || place.formatted_address || '';
+    const gRating   = place.rating;
+    const numRat    = place.user_ratings_total || 0;
+    const oh        = place.opening_hours;
+    const openNow   = oh
+      ? (typeof oh.open_now === 'boolean' ? oh.open_now : (oh.isOpen ? oh.isOpen() : undefined))
+      : undefined;
+    const typeLabel = types[0] ? types[0].replace(/_/g, ' ') : info.label;
+    const placeId   = place.place_id;
+    const lat       = place.geometry.location.lat();
+    const lng       = place.geometry.location.lng();
+    const gmapsUrl  = `https://www.google.com/maps/place/?q=place_id:${placeId}`;
+    const rateParams = {
+      name, latitude: lat.toFixed(6), longitude: lng.toFixed(6),
+      address: addr || '', google_place_id: placeId || '',
+    };
+    const saved = placeId ? savedByPlaceId[placeId] : null;
+
+    // Google rating: prefer the value we already have (search result or cached
+    // from a previous search). Never fetch a new one just for the popup.
+    if (placeId && gRating) cacheGoogleRating(placeId, gRating, numRat);
+    const gCached = placeId ? googleRatingCache[placeId] : null;
+    const gShow = gRating != null ? { rating: gRating, count: numRat } : gCached;
+    const googleRatingLine = gShow
+      ? `Google Rating: <strong>${gShow.rating.toFixed(1)}/5</strong> (${gShow.count})`
+      : '';   // no local data → skip the line entirely per user's request
+
+    const wpRatingLine = (saved && saved.rating)
+      ? `Waypoint Rating: <strong>${saved.rating}/5</strong> (${saved.count})`
+      : 'Waypoint Rating: <span style="color:#94a3b8">not yet rated</span>';
+    const groupRatingLine = (saved && saved.groupSummary)
+      ? `<p style="font-size:12px;color:#6d28d9;margin:1px 0 0;font-weight:600">${escapeHtml(saved.groupSummary)}</p>` : '';
+    const openHtml = openNow !== undefined
+      ? `<span style="font-size:11px;font-weight:600;color:${openNow ? '#059669' : '#dc2626'}">${openNow ? '✓ Open' : '✗ Closed'}</span>`
+      : '';
+    const rateBtnStyle = 'font-size:12px;color:white;background:#ec4899;border:none;'
+      + 'padding:4px 12px;border-radius:6px;font-weight:700;cursor:pointer';
+    return `<div style="min-width:220px;font-family:inherit;padding:2px">
+      <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:4px">
+        <span style="font-size:11px;background:${info.color}22;color:${info.color};padding:1px 7px;border-radius:4px;font-weight:600">${info.emoji} ${typeLabel}</span>
+        ${dist ? `<span style="font-size:11px;color:#64748b;font-weight:600">📍 ${dist}</span>` : ''}
+      </div>
+      ${addr ? `<p style="font-size:12px;color:#475569;margin:2px 0">${escapeHtml(addr)}</p>` : ''}
+      ${googleRatingLine ? `<p style="font-size:12px;color:#334155;margin:3px 0 0">${googleRatingLine}</p>` : ''}
+      <p style="font-size:12px;color:#334155;margin:1px 0 0">${wpRatingLine}</p>
+      ${groupRatingLine}
+      ${openHtml ? `<p style="margin:4px 0 0">${openHtml}</p>` : ''}
+      <div style="display:flex;gap:10px;margin-top:8px;flex-wrap:wrap;align-items:center">
+        <a href="${gmapsUrl}" target="_blank" rel="noopener"
+           style="font-size:12px;color:#6366f1;font-weight:600">Google Maps →</a>
+        ${IS_AUTH ? rateMeForm(rateParams, rateBtnStyle) : ''}
+      </div>
+    </div>`;
+  }
+
+  // Open the shared InfoWindow with the name in the header, so Google renders
+  // the close (X) button inline next to the name instead of floating above.
+  function nameHeaderEl(name) {
+    const header = document.createElement('span');
+    header.textContent = name || '';
+    header.style.cssText = 'font-weight:700;font-size:14px;color:#0f172a';
+    return header;
+  }
+  function openInfo(anchor, bodyHtml, name) {
+    mainInfoWindow.setOptions({ headerContent: nameHeaderEl(name) });
+    mainInfoWindow.setContent(bodyHtml);
+    mainInfoWindow.open({ map: mainMap, anchor });
+  }
+  function openInfoAt(position, bodyHtml, name) {
+    mainInfoWindow.setOptions({ headerContent: nameHeaderEl(name) });
+    mainInfoWindow.setContent(bodyHtml);
+    mainInfoWindow.setPosition(position);
+    mainInfoWindow.open(mainMap);
+  }
+
+  // Split a stored address into [street, city/state/zip/country] for two lines.
+  function addressLines(address, cityState) {
+    const a = (address || '').trim();
+    if (a.includes(',')) {
+      const i = a.indexOf(',');
+      return [a.slice(0, i).trim(), a.slice(i + 1).trim()];
+    }
+    return [a, (cityState || '').trim()];
   }
 
   function haversineKm(lat1, lon1, lat2, lon2) {
@@ -493,6 +836,34 @@ const IS_AUTH = {% if user.is_authenticated %}true{% else %}false{% endif %};
     return `${Math.round(mi)} mi`;
   }
 
+  // Search radius follows the current map viewport (center → visible edge),
+  // so the zoom level IS the radius. Capped to the 25-mile max area.
+  function currentRadiusM() {
+    if (!mainMap) return 8047;
+    const b = mainMap.getBounds();
+    const c = mainMap.getCenter();
+    if (!b || !c) return 8047;
+    const ne = b.getNorthEast();
+    const km = haversineKm(c.lat(), c.lng(), ne.lat(), ne.lng());
+    return Math.min(Math.max(Math.round(km * 1000), 500), MAX_RADIUS_M);
+  }
+
+  // Enforce the 10-mile cap natively via minZoom. minZoom depends on the map's
+  // pixel size and latitude, so recompute as the user pans. Applied from the
+  // start so the map can never be zoomed out past the cap.
+  function updateMinZoom() {
+    if (!mainMap) return;
+    const div = document.getElementById('main-map');
+    const c   = mainMap.getCenter();
+    if (!div || !c) return;
+    const w = div.offsetWidth || 800, h = div.offsetHeight || 600;
+    const diagPx = Math.sqrt(w * w + h * h);
+    const base = 156543.03392 * Math.cos(c.lat() * Math.PI / 180);
+    // radius(center→corner) = 0.5 * (base / 2^z) * diagPx; solve z at MAX_RADIUS_M
+    const minZ = Math.max(0, Math.ceil(Math.log2(0.5 * base * diagPx / MAX_RADIUS_M)));
+    if (mainMap.get('minZoom') !== minZ) mainMap.setOptions({ minZoom: minZ });
+  }
+
   // ── Rating colour ────────────────────────────────────────────
   function ratingColor(rating) {
     if (rating === null || rating === undefined || rating === '') return '#94a3b8';
@@ -504,28 +875,9 @@ const IS_AUTH = {% if user.is_authenticated %}true{% else %}false{% endif %};
   }
 
   // ── SVG icon factories ────────────────────────────────────────
-  function savedMarkerSvg(category, rating) {
+  function savedMarkerSvg(rating) {
     const bg = ratingColor(rating);
     const sh = 'filter:drop-shadow(0 1px 4px rgba(0,0,0,.45))';
-    if (category === 'restaurant') {
-      return `<svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 28 28" style="${sh}">
-        <circle cx="14" cy="14" r="13" fill="${bg}" stroke="white" stroke-width="2"/>
-        <line x1="8"  y1="7"  x2="8"  y2="11" stroke="white" stroke-width="1.4" stroke-linecap="round"/>
-        <line x1="10" y1="7"  x2="10" y2="11" stroke="white" stroke-width="1.4" stroke-linecap="round"/>
-        <line x1="12" y1="7"  x2="12" y2="11" stroke="white" stroke-width="1.4" stroke-linecap="round"/>
-        <line x1="8"  y1="11" x2="12" y2="11" stroke="white" stroke-width="1.2"/>
-        <line x1="10" y1="11" x2="10" y2="21" stroke="white" stroke-width="1.8" stroke-linecap="round"/>
-        <path d="M16 7 C18.5 8.5 18.5 11 16 12 V21" fill="none" stroke="white" stroke-width="1.8" stroke-linecap="round"/>
-      </svg>`;
-    }
-    if (category === 'store') {
-      return `<svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 28 28" style="${sh}">
-        <circle cx="14" cy="14" r="13" fill="${bg}" stroke="white" stroke-width="2"/>
-        <path d="M6 13 L14 7 L22 13" fill="none" stroke="white" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round"/>
-        <rect x="7" y="13" width="14" height="9" fill="none" stroke="white" stroke-width="1.6" rx="0.5"/>
-        <rect x="11.5" y="17" width="5" height="5" fill="white" opacity="0.9"/>
-      </svg>`;
-    }
     return `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16" style="${sh}">
       <circle cx="8" cy="8" r="7" fill="${bg}" stroke="white" stroke-width="2"/>
     </svg>`;
@@ -554,7 +906,9 @@ const IS_AUTH = {% if user.is_authenticated %}true{% else %}false{% endif %};
   }
 
   // ── Card helpers ─────────────────────────────────────────────
-  const allCards = () => [...document.querySelectorAll('.loc-card')];
+  // Scope to the map sidebar so the list view's own .loc-card anchors
+  // (in #wp-list) are never touched by the map's filter/highlight logic.
+  const allCards = () => [...document.querySelectorAll('#panel-saved .loc-card')];
 
   function highlightCard(id, scroll) {
     allCards().forEach(c => c.classList.toggle('active', c.dataset.id === String(id)));
@@ -602,8 +956,7 @@ const IS_AUTH = {% if user.is_authenticated %}true{% else %}false{% endif %};
       mainMap.setZoom(Math.max(mainMap.getZoom(), 15));
       const entry = markerMap[id];
       if (entry) {
-        mainInfoWindow.setContent(entry.popupContent);
-        mainInfoWindow.open({ map: mainMap, anchor: entry.marker });
+        openInfo(entry.marker, entry.popupContent, entry.name);
       }
     }
   };
@@ -627,15 +980,25 @@ const IS_AUTH = {% if user.is_authenticated %}true{% else %}false{% endif %};
 
   function applyFilters() {
     if (!mainMap) return;
+    // Filter against the CURRENT map viewport so the list/markers always show
+    // exactly the waypoints within the field of view (re-run on every pan/zoom).
+    const bounds = mainMap.getBounds();
     let visible = 0;
     allCards().forEach(card => {
       const p   = card.dataset;
       const lat = parseFloat(p.lat), lng = parseFloat(p.lng);
       const nameOk   = !nameFilter   || p.name.includes(nameFilter);
-      const catOk    = !catFilter    || p.category === catFilter;
-      const boundsOk = !boundsFilter || (!isNaN(lat) && !isNaN(lng) &&
-                        boundsFilter.contains(new google.maps.LatLng(lat, lng)));
-      const show = nameOk && catOk && boundsOk;
+      const gfOk     = !gfFilter
+                     || (gfFilter === 'dedicated' && p.gf === 'dedicated')
+                     || (gfFilter === 'gf-any'    && (p.gf === 'dedicated' || p.gf === 'options'));
+      const mineOk   = !mineFilter || p.mine === '1';
+      const cardRating = p.rating ? parseFloat(p.rating) : null;
+      const ratingOk = !ratingFilter || (cardRating != null && !isNaN(cardRating) && cardRating >= ratingFilter);
+      const gRating  = knownGoogleRating(p.googlePlaceId);
+      const googleRatingOk = !googleRatingFilter || (gRating != null && gRating >= googleRatingFilter);
+      const boundsOk = !bounds || (!isNaN(lat) && !isNaN(lng) &&
+                        bounds.contains(new google.maps.LatLng(lat, lng)));
+      const show = nameOk && gfOk && mineOk && ratingOk && googleRatingOk && boundsOk;
 
       card.classList.toggle('hidden-card', !show);
       const entry = markerMap[p.id];
@@ -645,9 +1008,17 @@ const IS_AUTH = {% if user.is_authenticated %}true{% else %}false{% endif %};
     updateCount(visible);
   }
 
+  // Show a count badge on the filters icon when any filter is active
+  function updateFilterBadge() {
+    const active = [gfFilter, mineFilter, ratingFilter, googleRatingFilter].filter(Boolean).length;
+    const badge = document.getElementById('filter-badge');
+    if (!badge) return;
+    badge.textContent = active;
+    badge.classList.toggle('hidden', active === 0);
+  }
+
   // ── OSM/Nearby filter helpers ─────────────────────────────────
-  function entryVisible({ cat, distKm }) {
-    if (osmCatFilters[cat] === false) return false;
+  function entryVisible({ distKm }) {
     if (distFilter === 'all') return true;
     const mi = distKm * 0.621371;
     if (distFilter === '1')  return mi < 1;
@@ -702,9 +1073,13 @@ const IS_AUTH = {% if user.is_authenticated %}true{% else %}false{% endif %};
   function setSidebarOpen(open) {
     sidebarOpen = open;
     applyFilters();
-    const chevron = document.getElementById('sidebar-chevron');
-    if (chevron) chevron.style.transform = open ? 'rotate(180deg)' : '';
     if (open && mainMap) setTimeout(() => google.maps.event.trigger(mainMap, 'resize'), 300);
+  }
+
+  function setSidebarClosed() {
+    const sheet = document.getElementById('side-list');
+    sheet.classList.remove('sidebar-open', 'sheet-open');
+    setSidebarOpen(false);
   }
 
   function toggleSidebar() {
@@ -753,7 +1128,7 @@ const IS_AUTH = {% if user.is_authenticated %}true{% else %}false{% endif %};
     if (!query || !mainMap) { osmSpinner(false); return; }
 
     const center  = mainMap.getCenter();
-    const radiusM = parseInt(document.getElementById('radius-select')?.value || '8047');
+    const radiusM = currentRadiusM();
 
     ignoreNextIdle = true;
 
@@ -808,53 +1183,33 @@ const IS_AUTH = {% if user.is_authenticated %}true{% else %}false{% endif %};
         const openNow   = place.opening_hours?.open_now;
         const typeLabel = types[0] ? types[0].replace(/_/g, ' ') : info.label;
         const placeId   = place.place_id;
-        const gmapsUrl  = `https://www.google.com/maps/place/?q=place_id:${placeId}`;
 
-        const saveParams = new URLSearchParams({
+        const rateParams = {
           name,
           latitude:  lat.toFixed(6),
           longitude: lng.toFixed(6),
-          ...(addr ? { address: addr } : {}),
-        });
+          address:   addr || '',
+          google_place_id: placeId || '',
+        };
+
+        // Waypoint rating for this POI, if it's already a saved waypoint
+        const saved = placeId ? savedByPlaceId[placeId] : null;
 
         // Map marker
         const pinEl = document.createElement('div');
         pinEl.innerHTML = pinSvg(info.color);
         const marker = new google.maps.marker.AdvancedMarkerElement({
-          map:      osmCatFilters[cat] !== false ? mainMap : null,
+          map:      mainMap,
           position: { lat, lng },
           content:  pinEl,
           title:    name,
           zIndex:   0,
         });
 
-        const ratingHtml = gRating
-          ? `<span style="font-size:11px;color:#f59e0b;font-weight:600">★ ${gRating.toFixed(1)} (${numRat})</span>`
-          : '';
-        const openHtml = openNow !== undefined
-          ? `<span style="font-size:11px;font-weight:600;color:${openNow ? '#059669' : '#dc2626'}">${openNow ? '✓ Open' : '✗ Closed'}</span>`
-          : '';
-
-        const popupHtml = `<div style="min-width:220px;font-family:inherit;padding:2px">
-          <p style="font-weight:700;font-size:14px;margin:0 0 4px">${escapeHtml(name)}</p>
-          <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:4px">
-            <span style="font-size:11px;background:${info.color}22;color:${info.color};padding:1px 7px;border-radius:4px;font-weight:600">${info.emoji} ${typeLabel}</span>
-            <span style="font-size:11px;color:#64748b;font-weight:600">📍 ${dist}</span>
-            ${ratingHtml}
-          </div>
-          ${openHtml ? `<p style="margin:2px 0">${openHtml}</p>` : ''}
-          ${addr ? `<p style="font-size:12px;color:#475569;margin:2px 0">${escapeHtml(addr)}</p>` : ''}
-          <div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap">
-            <a href="${gmapsUrl}" target="_blank" rel="noopener"
-               style="font-size:12px;color:#6366f1;font-weight:600">Google Maps →</a>
-            ${IS_AUTH ? `<a href="/locations/new/?${saveParams}"
-               style="font-size:12px;color:#ec4899;font-weight:700">♥ Save Waypoint</a>` : ''}
-          </div>
-        </div>`;
+        const popupHtml = poiPopupHtml(place, distKm);
 
         marker.addListener('click', () => {
-          mainInfoWindow.setContent(popupHtml);
-          mainInfoWindow.open({ map: mainMap, anchor: marker });
+          openInfo(marker, popupHtml, name);
         });
 
         // List item
@@ -874,18 +1229,18 @@ const IS_AUTH = {% if user.is_authenticated %}true{% else %}false{% endif %};
               </span>
               ${addr ? `<span class="text-xs text-slate-400 truncate">${escapeHtml(addr)}</span>` : ''}
             </div>
-            ${gRating ? `<p class="text-xs text-amber-500 font-semibold mt-0.5">★ ${gRating.toFixed(1)} (${numRat} reviews)</p>` : ''}
+            ${gRating ? `<p class="text-xs text-amber-500 font-semibold mt-0.5">Google: ${gRating.toFixed(1)}/5 (${numRat})</p>` : ''}
+            ${(saved && saved.rating) ? `<p class="text-xs text-violet-600 font-semibold mt-0.5">Waypoint: ${saved.rating}/5 (${saved.count})</p>` : ''}
             ${openNow !== undefined ? `<p class="text-xs font-medium mt-0.5" style="color:${openNow ? '#059669' : '#dc2626'}">${openNow ? '✓ Open now' : '✗ Closed'}</p>` : ''}
-            ${IS_AUTH ? `<a href="/locations/new/?${saveParams}" onclick="event.stopPropagation()"
-                          class="text-[11px] text-pink-500 font-semibold hover:text-pink-700 mt-1 inline-block">♥ Save Waypoint</a>` : ''}
+            ${IS_AUTH ? `<div class="mt-1.5" onclick="event.stopPropagation()">${rateMeForm(rateParams,
+              'font-size:11px;color:white;background:#ec4899;border:none;padding:3px 10px;border-radius:6px;font-weight:700;cursor:pointer')}</div>` : ''}
           </div>`;
 
         item.addEventListener('click', () => {
           ignoreNextIdle = true;
           mainMap.setCenter({ lat, lng });
           mainMap.setZoom(Math.max(mainMap.getZoom(), 16));
-          mainInfoWindow.setContent(popupHtml);
-          mainInfoWindow.open({ map: mainMap, anchor: marker });
+          openInfo(marker, popupHtml, name);
         });
 
         if (list) list.appendChild(item);
@@ -903,65 +1258,116 @@ const IS_AUTH = {% if user.is_authenticated %}true{% else %}false{% endif %};
 
       applyOsmFilters();
 
-      // "Expand search area" button
-      const TIERS = [
-        { val: '3219',  label: '2 mi' },
-        { val: '8047',  label: '5 mi' },
-        { val: '16093', label: '10 mi' },
-        { val: '40234', label: '25 mi' },
-      ];
-      const sel      = document.getElementById('radius-select');
-      const curIdx   = TIERS.findIndex(t => t.val === sel?.value);
-      const nextTier = TIERS[curIdx + 1];
-      const expandBar = document.getElementById('expand-search-bar');
-      const expandLbl = document.getElementById('expand-search-label');
-      if (nextTier && expandBar && expandLbl) {
-        expandLbl.textContent = `Expand search to ${nextTier.label}`;
-        expandBar.classList.remove('hidden');
-      } else if (expandBar) {
-        expandBar.classList.add('hidden');
-      }
-
       openSidebar();
       switchTab('nearby');
     });
   }
 
-  function triggerSearch() {
-    clearTimeout(osmDebounce);
-    if (nameFilter) {
-      osmDebounce = setTimeout(() => searchGooglePlaces(nameFilter), 700);
-    } else {
-      osmEntries.forEach(e => { if (e.marker) e.marker.map = null; });
-      osmEntries = [];
-      showSearchAreaBtn(false);
-      document.getElementById('expand-search-bar')?.classList.add('hidden');
-      const list = document.getElementById('osm-list');
-      if (list) list.innerHTML = '<p class="text-xs text-slate-400 text-center py-6">Search for a place above to see nearby results</p>';
-      const cnt = document.getElementById('osm-result-count');
-      if (cnt) cnt.textContent = '0';
-      const fc = document.getElementById('osm-filter-count');
-      if (fc) fc.textContent = '';
-    }
+  // Nearby search is explicit-only (Enter key) — no auto-search-as-you-type,
+  // so a Google Places Text Search only fires when the user asks for it.
+  function clearNearbyResults() {
+    osmEntries.forEach(e => { if (e.marker) e.marker.map = null; });
+    osmEntries = [];
+    showSearchAreaBtn(false);
+    const list = document.getElementById('osm-list');
+    if (list) list.innerHTML = '<p class="text-xs text-slate-400 text-center py-6">Type a place above and press Enter to search nearby</p>';
+    const cnt = document.getElementById('osm-result-count');
+    if (cnt) cnt.textContent = '0';
+    const fc = document.getElementById('osm-filter-count');
+    if (fc) fc.textContent = '';
   }
 
-  // ── localStorage ─────────────────────────────────────────────
-  const LOC_KEY = 'wp_last_location';
-  function saveLocation(val) { try { localStorage.setItem(LOC_KEY, val); } catch(_){} }
-  function loadLocation()    { try { return localStorage.getItem(LOC_KEY) || ''; } catch(_){ return ''; } }
+  // ── Persisted session state (localStorage, so it survives closing/reopening
+  // the app after it's been idle — you continue where you left off instead of
+  // re-locating). Only the location box label + search/distance centre
+  // persist — deliberately NOT the nearby-search term (POI name field):
+  // that's a one-off "what am I looking for right now" query, not something
+  // that should reappear unasked next time the app opens.
+  const LOC_KEY    = 'wp_last_location';   // location box label text
+  const SRC_KEY    = 'wp_last_location_src'; // 'user' (typed a place) | 'auto' (from a locate)
+  const CENTER_KEY = 'wp_last_center';     // {lat,lng} JSON — nearby-search + distance centre
 
-  // ── Geo error ─────────────────────────────────────────────────
-  function showGeoError(msg) {
+  // Where the text in the location box came from matters. A typed place
+  // ("Oceanside, CA") is a fixed spot worth restoring verbatim. An automatic
+  // label ("Current Location", or the approximate "City, ST" from the IP
+  // lookup) only describes wherever you happened to be last time — restoring
+  // it would show a stale position under a label that claims to be current,
+  // and it must never be fed to the geocoder as if it were a place name.
+  let locationSource = '';
+  function saveLocation(val, source) {
+    locationSource = source || 'user';
+    try { localStorage.setItem(LOC_KEY, val); localStorage.setItem(SRC_KEY, locationSource); } catch(_){}
+  }
+  function loadLocationSource() { try { return localStorage.getItem(SRC_KEY) || ''; } catch(_){ return ''; } }
+  function clearLocation()   {
+    locationSource = '';
+    try { localStorage.removeItem(LOC_KEY); localStorage.removeItem(SRC_KEY); localStorage.removeItem(CENTER_KEY); } catch(_){}
+  }
+  function saveCenter(c)     { try { if (c) localStorage.setItem(CENTER_KEY, JSON.stringify(c)); } catch(_){} }
+  function loadCenter()      { try { const r = localStorage.getItem(CENTER_KEY); return r ? JSON.parse(r) : null; } catch(_){ return null; } }
+
+  // Set the search/distance centre and persist it so a reopen doesn't re-locate.
+  function setSearchCenter(c) { searchCenter = c; saveCenter(c); }
+
+  // ── Precise-location help modal ─────────────────────────────────
+  // Opened automatically by an explicit "Locate me" click that doesn't land
+  // a precise GPS fix (see locateUser/ipFallback below) — there's no more
+  // manual "?" trigger.
+  window.openPreciseHelp = function () {
+    const el = document.getElementById('precise-help-modal');
+    if (el) el.style.display = 'flex';
+  };
+  window.closePreciseHelp = function () {
+    const el = document.getElementById('precise-help-modal');
+    if (el) el.style.display = 'none';
+  };
+
+  // ── Geo status toast ──────────────────────────────────────────
+  function showGeoError(msg, ms) {
     const el = document.getElementById('geo-error');
     if (!el) return;
     el.textContent = msg;
     el.classList.remove('hidden');
     clearTimeout(el._t);
-    el._t = setTimeout(() => el.classList.add('hidden'), 6000);
+    if (ms !== 0) el._t = setTimeout(() => el.classList.add('hidden'), ms || 6000);
   }
 
-  // ── User location dot ─────────────────────────────────────────
+  // ── User location ─────────────────────────────────────────────
+  // A fix is useful to BOTH views: the list uses it as the distance-sort
+  // reference (free — no API call), the map drops a "you are here" dot.
+  // boxText: 'Current Location' for a precise fix, an approximate "City, ST"
+  // label for a coarse one, or falsy to leave the location box untouched.
+  // updateBox=false suppresses writing boxText into the box entirely — used
+  // for the silent startup locate so it doesn't clobber a remembered value.
+  function onLocated(lat, lng, label, zoom, boxText, updateBox) {
+    userPos = { lat, lng };
+    // Use the fix as the nearby-search centre only when the user hasn't set an
+    // explicit location themselves (an empty box) — a typed location wins and
+    // is resolved via geocoding in resolveSearchCenter instead.
+    const centreMoved = !hasUserLocationText();
+    if (centreMoved) setSearchCenter({ lat, lng });
+    renderList();                       // recompute distances for the list view
+    if (updateBox !== false && boxText) {
+      // A GPS fix can take up several seconds to resolve (watchPosition
+      // keeps waiting for a better reading, see locateUser). If the user
+      // typed a location and pressed Enter in the meantime, that choice wins —
+      // don't let this now-stale fix silently overwrite it. An earlier
+      // AUTOMATIC label carries no such intent, so refreshing it is correct.
+      if (!hasUserLocationText()) fillLocationSearch(boxText, 'auto');
+    }
+    if (mainMap) placeUserDot(lat, lng, label, zoom);
+    if (centreMoved && MAP_DISABLED && lastNearbyQuery) {
+      // A search was already showing (e.g. re-checking "Current Location"
+      // with results on screen) — refresh it around the new fix instead of
+      // silently moving the centre while stale results stay on screen.
+      runTextSearch(lastNearbyQuery);
+    }
+    maybeRunDefaultSearch();            // fresh open, nothing active yet → show what's nearby
+  }
+
+  // ── User location dot (map only) ──────────────────────────────
   function placeUserDot(lat, lng, label, zoom) {
+    if (!mainMap) return;
     ignoreNextIdle = true;
     mainMap.setCenter({ lat, lng });
     mainMap.setZoom(zoom);
@@ -976,65 +1382,774 @@ const IS_AUTH = {% if user.is_authenticated %}true{% else %}false{% endif %};
     });
     google.maps.event.addListenerOnce(mainMap, 'idle', () => {
       ignoreNextIdle = false;
-      boundsFilter = mainMap.getBounds();
       applyFilters();
     });
   }
 
-  function fillLocationSearch(value) {
+  // Always overwrites — this is only ever called right after a successful
+  // locate, so the box should reflect the fresh result, not whatever (if
+  // anything) was in it before.
+  // source: 'user' for a place the user chose (typed + geocoded), 'auto' for a
+  // label we generated from a position fix. See locationSource above.
+  function fillLocationSearch(value, source) {
     const input = document.getElementById('location-search');
-    if (input && !input.value) {
-      input.value = value;
-      saveLocation(value);
-    }
+    if (!input) return;
+    input.value = value;
+    saveLocation(value, source);
   }
 
-  async function ipFallback() {
+  // True only when the box holds a place the USER chose. An automatic label
+  // must not block a fresh fix from setting the centre, and must never be
+  // geocoded as a place name.
+  function hasUserLocationText() {
+    return hasLocationText() && locationSource === 'user';
+  }
+
+  // Free (non-Google) location lookup by IP, used both as the last-resort
+  // position source and to label the location box for approximate fixes.
+  async function fetchGeoIp() {
     try {
-      const res  = await fetch('/api/geoip/');
-      const data = await res.json();
-      if (data.status === 'ok') {
-        placeUserDot(data.lat, data.lng, `Approx. location: ${data.city}, ${data.region}`, 10);
-        const label = [data.city, data.region].filter(Boolean).join(', ');
-        if (label) fillLocationSearch(label);
-      } else if (data.status === 'rate_limited') {
-        showGeoError('Location lookup rate-limited — try again in a minute');
-      } else if (data.status === 'private') {
-        showGeoError('Private network — enter a location manually');
-      } else {
-        showGeoError('Could not determine location automatically');
-      }
+      const res = await fetch('/api/geoip/');
+      return await res.json();
     } catch (_) {
-      showGeoError('Location service unavailable');
+      return { status: 'network_error' };
     }
   }
 
-  function locateUser() {
-    try { localStorage.removeItem(LOC_KEY); } catch(_) {}
-    const input = document.getElementById('location-search');
-    if (input) input.value = '';
-    if (!navigator.geolocation) { ipFallback(); return; }
-    navigator.geolocation.getCurrentPosition(
+  async function ipFallback(explicit, updateBox) {
+    const data = await fetchGeoIp();
+    if (data.status === 'ok') {
+      const label = [data.city, data.region].filter(Boolean).join(', ');
+      onLocated(data.lat, data.lng, `Approx. location: ${data.city}, ${data.region}`, 10, label || null, updateBox);
+    } else if (data.status === 'rate_limited') {
+      showGeoError('Location lookup rate-limited — try again in a minute');
+    } else if (data.status === 'private') {
+      showGeoError('Private network — enter a location manually');
+    } else if (data.status === 'network_error') {
+      showGeoError('Location service unavailable');
+    } else {
+      showGeoError('Could not determine location automatically');
+    }
+    // ipFallback only ever runs because a precise GPS fix wasn't available.
+    if (explicit) openPreciseHelp();
+  }
+
+  // A coarse GPS fix already gives us a good enough position (better than
+  // IP), so it's used as-is for placement/distance — this just labels the
+  // location box for the user, via the free IP lookup rather than a
+  // (billable) Google reverse-geocode.
+  async function fillApproxLocationLabel(updateBox) {
+    if (updateBox === false) return;
+    const data = await fetchGeoIp();
+    if (data.status !== 'ok') return;   // leave the box empty — search stays disabled
+    const label = [data.city, data.region].filter(Boolean).join(', ');
+    if (label) fillLocationSearch(label, 'auto');
+  }
+
+  // explicit: true when the user clicked "Locate me" — only then do we pop
+  // open the precise-location help on a non-precise result. Silent/automatic
+  // locates (page load, distance sort) never interrupt the user with it.
+  // updateBox: false keeps the location box untouched (used on the silent
+  // startup locate when a remembered value is already showing there) while
+  // still updating userPos in the background for distance sorting/the dot.
+  function locateUser(explicit, updateBox) {
+    if (updateBox === undefined) updateBox = true;
+    // Leave the box's current text alone until we actually have a fresh
+    // result — clearing it up front meant a failed/slow lookup left the box
+    // empty (and searches blocked) even if it already had a valid location.
+    if (updateBox) clearLocation();
+    if (!navigator.geolocation) { ipFallback(explicit, updateBox); return; }
+    // Precise geolocation requires a secure context (HTTPS). Over plain HTTP
+    // the browser blocks it, so we fall back to coarse IP location.
+    if (!window.isSecureContext) {
+      showGeoError('Precise location needs HTTPS — using approximate (IP) location');
+      ipFallback(explicit, updateBox);
+      return;
+    }
+
+    // getCurrentPosition often returns a fast COARSE (wifi/cell) fix. Watch for
+    // readings and settle on the best-accuracy one, stopping early on a solid
+    // GPS lock. The accuracy is surfaced so it's clear what kind of fix it is.
+    showGeoError('Locating you…', 0);
+    let best = null, settled = false, watchId = null, timer = null;
+    const stop = () => { if (watchId != null) navigator.geolocation.clearWatch(watchId); clearTimeout(timer); };
+    const settle = () => {
+      if (settled) return;
+      settled = true; stop();
+      if (!best) { showGeoError('Couldn’t get a GPS fix — using approximate (IP) location'); ipFallback(explicit, updateBox); return; }
+      const acc = Math.round(best.coords.accuracy);
+      const zoom = acc <= 100 ? 16 : (acc <= 800 ? 14 : 12);
+      const precise = acc <= 150;
+      // Precise fix → "Current Location" (no API call needed). Coarse fix →
+      // labelled via the free IP lookup rather than a billable reverse-geocode.
+      onLocated(best.coords.latitude, best.coords.longitude, 'You are here', zoom,
+                precise ? 'Current Location' : null, updateBox);
+      if (!precise) fillApproxLocationLabel(updateBox);
+      if (explicit && !precise) openPreciseHelp();
+      showGeoError(precise
+        ? `📍 Located to ±${acc} m`
+        : `📍 Approx. ±${acc} m — for a precise fix, allow location & go outdoors`);
+    };
+    watchId = navigator.geolocation.watchPosition(
       pos => {
-        const { latitude: lat, longitude: lng } = pos.coords;
-        placeUserDot(lat, lng, 'You are here', 12);
-        geocoder.geocode({ location: { lat, lng } }, (results, status) => {
-          if (status === 'OK' && results[0]) {
-            const comps = results[0].address_components;
-            const city  = comps.find(c => c.types.includes('locality'))?.long_name ||
-                          comps.find(c => c.types.includes('administrative_area_level_2'))?.long_name || '';
-            const state = comps.find(c => c.types.includes('administrative_area_level_1'))?.short_name || '';
-            const label = [city, state].filter(Boolean).join(', ');
-            if (label) fillLocationSearch(label);
-          }
-        });
+        if (!best || pos.coords.accuracy < best.coords.accuracy) best = pos;
+        if (pos.coords.accuracy <= 50) settle();   // solid GPS lock → done early
       },
       err => {
-        if (err.code === 1) showGeoError('Location access denied — using IP approximation');
-        ipFallback();
+        if (best) { settle(); return; }
+        settled = true; stop();
+        showGeoError(err.code === 1
+          ? 'Location blocked by your browser — allow it for this site (Brave/iOS: tap the shield or lock icon), or type your location above.'
+          : 'GPS unavailable — showing approximate location. You can type your location above.', 9000);
+        ipFallback(explicit, updateBox);
       },
-      { timeout: 8000 }
+      { enableHighAccuracy: true, timeout: 20000, maximumAge: 0 }
     );
+    timer = setTimeout(settle, 12000);   // otherwise settle on the best fix so far
+  }
+
+  // ══════════════════════════════════════════════════════════════
+  //  List view — the default home view. Renders the saved waypoints
+  //  from the embedded JSON (#wp-data): filtered, sorted and paged
+  //  entirely in the browser, with zero Google API calls.
+  // ══════════════════════════════════════════════════════════════
+
+  // Google ratings aren't stored server-side — only known once the browser has
+  // seen this place via a Nearby search or the map (see googleRatingCache above).
+  function knownGoogleRating(placeId) {
+    const cached = placeId ? googleRatingCache[placeId] : null;
+    return cached ? cached.rating : null;
+  }
+
+  // Shared filters (name box + filter popover) applied to one waypoint.
+  function listFilterOk(w) {
+    const nameOk   = !nameFilter   || w._name.includes(nameFilter) || w._loc.includes(nameFilter);
+    const gfOk     = !gfFilter
+                   || (gfFilter === 'dedicated' && w.gluten_free === 'dedicated')
+                   || (gfFilter === 'gf-any'    && (w.gluten_free === 'dedicated' || w.gluten_free === 'options'));
+    const mineOk   = !mineFilter || w.mine;
+    const ratingOk = !ratingFilter || (w.rating != null && w.rating >= ratingFilter);
+    const gRating  = knownGoogleRating(w.google_place_id);
+    const googleRatingOk = !googleRatingFilter || (gRating != null && gRating >= googleRatingFilter);
+    return nameOk && gfOk && mineOk && ratingOk && googleRatingOk;
+  }
+
+  function waypointDistKm(w) {
+    if (!userPos || w.lat == null || w.lng == null) return Infinity;
+    return haversineKm(userPos.lat, userPos.lng, w.lat, w.lng);
+  }
+
+  // Each comparator sorts into its most useful *natural* order first (best
+  // rating first, nearest first, newest first); the reverse button flips it.
+  const LIST_COMPARATORS = {
+    name:     (a, b) => a._name.localeCompare(b._name),
+    rating:   (a, b) => (b.rating || 0) - (a.rating || 0),
+    reviews:  (a, b) => (b.review_count || 0) - (a.review_count || 0),
+    recent:   (a, b) => (b.created || 0) - (a.created || 0),
+    distance: (a, b) => waypointDistKm(a) - waypointDistKm(b),
+  };
+
+  function sortedFilteredWaypoints() {
+    const rows = WAYPOINTS.filter(listFilterOk);
+    const cmp = LIST_COMPARATORS[listSort] || LIST_COMPARATORS.name;
+    rows.sort((a, b) => cmp(a, b) * listSortDir);
+    return rows;
+  }
+
+  function listCardHtml(w) {
+    const thumb = w.photo
+      ? `<div class="w-16 h-16 shrink-0 rounded-lg overflow-hidden">
+           <img src="${w.photo}" alt="" class="w-full h-full object-cover" loading="lazy"></div>`
+      : `<div class="w-16 h-16 shrink-0 rounded-lg flex items-center justify-center text-2xl bg-slate-100">📍</div>`;
+    const loc = [w.city, w.state].filter(Boolean).join(', ') || w.address || '';
+    const dist = (userPos && w.lat != null && w.lng != null)
+      ? `<span class="text-xs font-semibold text-slate-500 whitespace-nowrap">📍 ${formatDist(waypointDistKm(w))}</span>` : '';
+    const rating = w.rating
+      ? `<span class="inline-flex items-center gap-0.5 text-amber-500 text-sm font-semibold">★ ${w.rating.toFixed(1)}</span>
+         <span class="text-xs text-slate-400">(${w.review_count})</span>`
+      : `<span class="text-xs text-slate-400">Not yet rated</span>`;
+    const groupLine = w.group_rating_summary
+      ? `<p class="text-xs font-semibold text-violet-600 mt-0.5">${escapeHtml(w.group_rating_summary)}</p>` : '';
+    const badges = [
+      w.mine ? '<span class="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-violet-100 text-violet-700">✓ You reviewed</span>' : '',
+      w.gluten_free === 'dedicated' ? '<span class="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-emerald-100 text-emerald-700">🌾 GF kitchen</span>'
+        : w.gluten_free === 'options' ? '<span class="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700">🌾 GF options</span>' : '',
+    ].join('');
+    return `<a href="${w.url}" class="loc-card">
+      ${thumb}
+      <div class="min-w-0 flex-1">
+        <div class="flex items-start gap-1 justify-between">
+          <p class="font-semibold text-slate-900 text-sm leading-tight truncate">${escapeHtml(w.name)}</p>
+        </div>
+        ${loc ? `<p class="text-xs text-slate-500 mt-0.5 truncate">${escapeHtml(loc)}</p>` : ''}
+        <div class="flex items-center gap-2 mt-1 flex-wrap">${rating}${dist}</div>
+        ${groupLine}
+        ${badges ? `<div class="flex items-center gap-1.5 mt-1 flex-wrap">${badges}</div>` : ''}
+      </div>
+    </a>`;
+  }
+
+  function renderList() {
+    const listEl = document.getElementById('wp-list');
+    if (!listEl) return;
+    const rows  = sortedFilteredWaypoints();
+    const total = rows.length;
+    const pages = Math.max(1, Math.ceil(total / LIST_PAGE_SIZE));
+    if (listPage > pages) listPage = pages;
+    const start = (listPage - 1) * LIST_PAGE_SIZE;
+    const slice = rows.slice(start, start + LIST_PAGE_SIZE);
+
+    const label = mineFilter ? 'My Waypoints' : 'Waypoints';
+    const countEl = document.getElementById('wp-list-count');
+    if (countEl) countEl.textContent = total ? `${label} — ${total}` : (total === 0 && WAYPOINTS.length ? label : 'No waypoints');
+
+    // No results → just leave the list area empty (no placeholder message).
+    listEl.innerHTML = total ? slice.map(listCardHtml).join('') : '';
+
+    const pag  = document.getElementById('wp-pagination');
+    const info = document.getElementById('wp-page-info');
+    const prev = document.getElementById('wp-prev');
+    const next = document.getElementById('wp-next');
+    if (pag)  { pag.classList.toggle('hidden', pages <= 1); pag.classList.toggle('flex', pages > 1); }
+    if (info) info.textContent = `Page ${listPage} of ${pages}`;
+    if (prev) prev.disabled = listPage <= 1;
+    if (next) next.disabled = listPage >= pages;
+  }
+
+  function setSortDirIcon() {
+    const icon = document.getElementById('wp-sort-dir-icon');
+    if (icon) icon.style.transform = listSortDir === 1 ? '' : 'scaleY(-1)';
+  }
+
+  // ── View toggle + lazy map loading ────────────────────────────
+  function showView(view) {
+    currentView = view;
+    document.getElementById('list-view').classList.toggle('hidden', view !== 'list');
+    document.getElementById('content-area').classList.toggle('hidden', view !== 'map');
+    // Only trap the page in the fixed, non-scrolling full-screen "app shell"
+    // (see the #outer-layout.map-mode mobile CSS) while the map is actually
+    // shown — the list view needs normal document scrolling instead.
+    document.getElementById('outer-layout').classList.toggle('map-mode', view === 'map');
+
+    const lb = document.getElementById('view-list-btn');
+    const mb = document.getElementById('view-map-btn');
+    lb.classList.toggle('bg-brand',      view === 'list');
+    lb.classList.toggle('text-white',    view === 'list');
+    lb.classList.toggle('text-slate-500', view !== 'list');
+    mb.classList.toggle('bg-brand',      view === 'map');
+    mb.classList.toggle('text-white',    view === 'map');
+    mb.classList.toggle('text-slate-500', view !== 'map');
+
+    if (view === 'map') {
+      if (!mapLoaded) loadMapsScript();
+      else if (mainMap) setTimeout(() => google.maps.event.trigger(mainMap, 'resize'), 60);
+    }
+  }
+
+  // Load the Google Maps JS library only when the map is first opened, so the
+  // default list view never instantiates a (billable) map or spends a call.
+  function loadMapsScript() {
+    if (mapLoaded) return;
+    mapLoaded = true;
+    const s = document.createElement('script');
+    s.src = 'https://maps.googleapis.com/maps/api/js?key={{ GOOGLE_MAPS_KEY }}&libraries=places,marker&v=beta&callback=initMap';
+    s.async = true; s.defer = true;
+    document.head.appendChild(s);
+  }
+
+  function onFiltersChanged() {
+    listPage = 1;
+    renderList();
+    updateFilterBadge();
+    if (mainMap) applyFilters();
+  }
+
+  // ── "Location required" gate ────────────────────────────────────
+  // A nearby search needs a location as its centre. Rather than silently
+  // searching around whatever the map happens to be centred on, require the
+  // location box to have text (typed, "Current Location", or an approximate
+  // label) before any search — Google or otherwise — is allowed to run.
+  function hasLocationText() {
+    const el = document.getElementById('location-search');
+    return !!(el && el.value.trim());
+  }
+
+  // ── Reliable Enter handling ─────────────────────────────────────
+  // Mobile keyboards fire keydown with keyCode 229 / key 'Unidentified' while
+  // autocorrect or an IME is still composing, so the real Enter never matched
+  // and the first press appeared to do nothing (you'd have to hit it again).
+  // Listen on keyup as well, and de-duplicate so a normal press runs once.
+  function bindEnter(el, fn) {
+    if (!el) return;
+    let ranOnKeydown = false;
+    const handle = (e) => {
+      if (e.isComposing || e.keyCode === 229) return;   // still composing
+      if (e.key !== 'Enter' && e.keyCode !== 13) return;
+      e.preventDefault();
+      if (e.type === 'keydown') { ranOnKeydown = true; fn(); }
+      else if (ranOnKeydown) { ranOnKeydown = false; }  // already ran; just reset
+      else { fn(); }                                    // keydown was swallowed
+    };
+    el.addEventListener('keydown', handle);
+    el.addEventListener('keyup', handle);
+  }
+
+  function flashLocationRequired() {
+    const el = document.getElementById('location-search');
+    if (!el) return;
+    el.classList.add('loc-required-flash');
+    el.focus();
+    clearTimeout(el._flashT);
+    el._flashT = setTimeout(() => el.classList.remove('loc-required-flash'), 1200);
+  }
+
+  function triggerNearbySearch(query) {
+    if (!query) return;
+    if (MAP_DISABLED) { runTextSearch(query); return; }
+    if (!hasLocationText()) { flashLocationRequired(); return; }
+    // A "nearby" Google search is a map feature; run it there (switching if needed).
+    if (currentView !== 'map') showView('map');
+    if (mainMap) { showSearchAreaBtn(false); searchGooglePlaces(query); }
+    else pendingNearbyQuery = query;
+  }
+
+  // ── Text-only nearby search (used while MAP_DISABLED) ─────────────────────
+  // Runs a Google Places Text Search WITHOUT instantiating a map — a detached
+  // PlacesService + Geocoder are enough — and renders the results as a plain
+  // list in the list view (#nearby-results), never switching to map mode.
+  function ensurePlacesLib(cb) {
+    if (placesLibReady) { cb(); return; }
+    placesLibCbs.push(cb);
+    if (placesLibLoading) return;
+    placesLibLoading = true;
+    window.__initPlacesLib = function () {
+      textPlaces   = new google.maps.places.PlacesService(document.createElement('div'));
+      textGeocoder = new google.maps.Geocoder();
+      placesLibReady = true;
+      placesLibCbs.splice(0).forEach(fn => fn());
+    };
+    const s = document.createElement('script');
+    s.src = 'https://maps.googleapis.com/maps/api/js?key={{ GOOGLE_MAPS_KEY }}&libraries=places&callback=__initPlacesLib';
+    s.async = true; s.defer = true;
+    document.head.appendChild(s);
+  }
+
+  // Populate savedByPlaceId (Waypoint rating enrichment for search results)
+  // from the same geojson endpoint the map used — so a Places result that's
+  // already a saved waypoint can show its Waypoint rating, map or no map.
+  function ensureSavedIndex(cb) {
+    if (savedIndexReady) { cb(); return; }
+    savedIndexCbs.push(cb);
+    if (savedIndexLoading) return;
+    savedIndexLoading = true;
+    fetch('/locations/geojson/')
+      .then(r => r.json())
+      .then(data => {
+        (data.features || []).forEach(f => {
+          const p = f.properties || {};
+          if (p.google_place_id) {
+            savedByPlaceId[p.google_place_id] = {
+              rating: p.rating, count: p.review_count || 0,
+              groupSummary: p.group_rating_summary || null,
+              url: p.url || null,
+            };
+          }
+        });
+      })
+      .catch(() => {})
+      .finally(() => { savedIndexReady = true; savedIndexCbs.splice(0).forEach(fn => fn()); });
+  }
+
+  function resolveSearchCenter(cb) {
+    if (searchCenter) { cb(searchCenter); return; }
+    // Only a place the USER typed can be geocoded. Feeding an automatic label
+    // ("Current Location") to the geocoder returns junk or ZERO_RESULTS, which
+    // silently failed the search — fall back to the actual fix instead.
+    const q = hasUserLocationText()
+      ? (document.getElementById('location-search').value || '').trim()
+      : '';
+    if (q) {
+      textGeocoder.geocode({ address: q }, (results, status) => {
+        if (status === 'OK' && results[0]) {
+          const loc = results[0].geometry.location;
+          setSearchCenter({ lat: loc.lat(), lng: loc.lng() });
+          if (results[0].formatted_address) fillLocationSearch(results[0].formatted_address, 'user');
+          cb(searchCenter);
+        } else { cb(null); }
+      });
+      return;
+    }
+    cb(userPos || null);
+  }
+
+  // Bumped on every call so a superseded search's still-pending callbacks
+  // (waiting on the async Maps-script load, or on Places itself) can tell
+  // they're stale and bail instead of firing a duplicate request or
+  // rendering results for a query/centre nobody's looking at any more —
+  // e.g. re-checking "Current Location" while the restored search from
+  // reopening was still waiting on the script to finish loading.
+  let searchToken = 0;
+
+  function runTextSearch(query) {
+    query = (query || '').trim();
+    if (!query) { clearTextResults(); return; }
+    if (!searchCenter && !userPos && !hasLocationText()) { flashLocationRequired(); return; }
+    lastNearbyQuery = query;
+    const token = ++searchToken;
+    osmSpinner(true);
+    ensurePlacesLib(() => {
+      if (token !== searchToken) return;   // superseded before the script even loaded
+      resolveSearchCenter((center) => {
+        if (token !== searchToken) { osmSpinner(false); return; }
+        if (!center) { osmSpinner(false); flashLocationRequired(); return; }
+        ensureSavedIndex(() => {
+          if (token !== searchToken) { osmSpinner(false); return; }
+          textPlaces.textSearch({
+            query,
+            location: new google.maps.LatLng(center.lat, center.lng),
+            radius: TEXT_SEARCH_RADIUS_M,
+          }, (results, status) => {
+            osmSpinner(false);
+            if (token !== searchToken) return;   // a newer search already replaced this one
+            renderTextResults(query, center, results, status);
+          });
+        });
+      });
+    });
+  }
+
+  // Run the opening "what's nearby" search as soon as a position is known.
+  // Deliberately skipped when anything was restored or the user is already
+  // searching, so it can never clobber what they left off with — and it runs
+  // at most once per page load (one Places call, same as tapping the chip).
+  function maybeRunDefaultSearch() {
+    if (defaultSearchDone || !MAP_DISABLED) return;
+    if (lastNearbyQuery || nameFilter) return;      // a search is already active
+    if (!searchCenter && !userPos) return;          // no position to search around yet
+    defaultSearchDone = true;
+    const ni = document.getElementById('name-search');
+    if (ni) ni.value = DEFAULT_NEARBY_QUERY;
+    nameFilter = DEFAULT_NEARBY_QUERY;
+    listPage = 1;
+    renderList();
+    runTextSearch(DEFAULT_NEARBY_QUERY);
+  }
+
+  // The saved-waypoint list is redundant clutter directly under an active
+  // nearby search — hide it while results are showing, restore it once
+  // they're cleared, so the two lists never stack on top of each other.
+  function syncSavedListVisibility() {
+    const sec = document.getElementById('saved-list-section');
+    const nearby = document.getElementById('nearby-results');
+    if (!sec) return;
+    const nearbyShowing = !!(nearby && !nearby.classList.contains('hidden'));
+    sec.classList.toggle('hidden', nearbyShowing);
+  }
+
+  function clearTextResults() {
+    lastNearbyQuery = '';
+    document.getElementById('nearby-results')?.classList.add('hidden');
+    const list = document.getElementById('nearby-list');
+    if (list) list.innerHTML = '';
+    syncSavedListVisibility();
+  }
+
+  function renderTextResults(query, center, results, status) {
+    const wrap = document.getElementById('nearby-results');
+    const list = document.getElementById('nearby-list');
+    if (!wrap || !list) return;
+    wrap.classList.remove('hidden');
+    syncSavedListVisibility();
+    const qEl = document.getElementById('nearby-query');
+    const cEl = document.getElementById('nearby-count');
+    if (qEl) qEl.textContent = `"${query}"`;
+    const PS = google.maps.places.PlacesServiceStatus;
+    if (status === PS.ZERO_RESULTS || !results || !results.length) {
+      if (cEl) cEl.textContent = '';
+      list.innerHTML = `<p class="text-sm text-slate-500 py-4">😕 No results for "${escapeHtml(query)}". Try a different term or location.</p>`;
+      return;
+    }
+    if (status !== PS.OK) {
+      if (cEl) cEl.textContent = '';
+      list.innerHTML = `<p class="text-sm text-slate-400 py-4">Search failed — please try again.</p>`;
+      return;
+    }
+    const sorted = results.map(place => {
+      const plat = place.geometry.location.lat(), plng = place.geometry.location.lng();
+      return { place, lat: plat, lng: plng, distKm: haversineKm(center.lat, center.lng, plat, plng) };
+    }).sort((a, b) => a.distKm - b.distKm);
+    if (cEl) cEl.textContent = `(${sorted.length})`;
+    list.innerHTML = sorted.map(({ place, lat, lng, distKm }) => {
+      const name    = place.name || '';
+      const types   = place.types || [];
+      const info    = OSM_CATS[classifyPlace(types)];
+      const addr    = place.vicinity || place.formatted_address || '';
+      const gRating = place.rating;
+      const numRat  = place.user_ratings_total || 0;
+      const openNow = place.opening_hours && place.opening_hours.open_now;
+      const typeLabel = types[0] ? types[0].replace(/_/g, ' ') : info.label;
+      const placeId = place.place_id;
+      const saved   = placeId ? savedByPlaceId[placeId] : null;
+      const rateParams = { name, latitude: lat.toFixed(6), longitude: lng.toFixed(6),
+                           address: addr || '', google_place_id: placeId || '' };
+      // Already a tracked waypoint → the whole card opens its detail page
+      // (see the delegated click/keydown handler below, not a plain <a>: this
+      // card also contains the "Rate Me!" form, and an <a> wrapping a <form>
+      // would race the form's own submit navigation).
+      const detailUrl = saved && saved.url ? saved.url : '';
+      const cardAttrs = detailUrl
+        ? `data-href="${escapeHtml(detailUrl)}" role="link" tabindex="0"`
+        : '';
+      const cardClass = 'flex items-start gap-2.5 bg-white border border-slate-200 rounded-lg p-3'
+        + (detailUrl ? ' cursor-pointer hover:border-brand/40 hover:shadow-sm transition-shadow' : '');
+      return `<div class="${cardClass}" ${cardAttrs}>
+        <div class="w-2.5 h-2.5 rounded-full shrink-0 mt-1.5" style="background:${info.color}"></div>
+        <div class="min-w-0 flex-1">
+          <div class="flex items-start justify-between gap-2">
+            <p class="text-sm font-semibold text-slate-800 leading-tight">${escapeHtml(name)}</p>
+            <span class="text-xs font-semibold text-slate-500 shrink-0 whitespace-nowrap">${formatDist(distKm)}</span>
+          </div>
+          <div class="flex items-center gap-1.5 mt-0.5 flex-wrap">
+            <span style="font-size:10px;background:${info.color}18;color:${info.color};padding:1px 5px;border-radius:3px;font-weight:600;white-space:nowrap">${info.emoji} ${typeLabel}</span>
+            ${addr ? `<span class="text-xs text-slate-400 truncate">${escapeHtml(addr)}</span>` : ''}
+          </div>
+          ${gRating ? `<p class="text-xs text-amber-500 font-semibold mt-0.5">Google: ${gRating.toFixed(1)}/5 (${numRat})</p>` : ''}
+          ${(saved && saved.rating) ? `<p class="text-xs text-violet-600 font-semibold mt-0.5">Waypoint: ${saved.rating}/5 (${saved.count})</p>` : ''}
+          ${openNow !== undefined ? `<p class="text-xs font-medium mt-0.5" style="color:${openNow ? '#059669' : '#dc2626'}">${openNow ? '✓ Open now' : '✗ Closed'}</p>` : ''}
+          ${IS_AUTH ? `<div class="mt-1.5">${rateMeForm(rateParams, 'font-size:11px;color:white;background:#ec4899;border:none;padding:3px 10px;border-radius:6px;font-weight:700;cursor:pointer')}</div>` : ''}
+        </div>
+      </div>`;
+    }).join('');
+  }
+
+  // ── Quick nearby-search chips (Restaurants, Retail, …) ────────
+  // Populate the name box and search immediately; only show as many chips
+  // as fit on one line under it (no wrapping to a second line).
+  function fitQuickChips() {
+    const container = document.getElementById('quick-search-chips');
+    if (!container) return;
+    const chips = [...container.children];
+    const max = container.clientWidth;
+    const gapPx = 6;
+    let used = 0;
+    chips.forEach((chip, i) => {
+      chip.style.display = '';               // show to measure its natural width
+      const w = chip.offsetWidth;
+      const need = used + w + (i > 0 ? gapPx : 0);
+      if (need <= max) { used = need; }
+      else { chip.style.display = 'none'; }
+    });
+  }
+
+  // ── Wire up the always-on UI (works before the map ever loads) ─
+  function initCommonUI() {
+    document.getElementById('view-list-btn').addEventListener('click', () => showView('list'));
+    document.getElementById('view-map-btn').addEventListener('click',  () => showView('map'));
+    // TEMP: map view disabled — hide its toggle so only the text list is used.
+    if (MAP_DISABLED) document.getElementById('view-toggle')?.classList.add('hidden');
+
+    const sortSel = document.getElementById('wp-sort');
+    sortSel.addEventListener('change', () => {
+      listSort = sortSel.value;
+      listSortDir = 1;                                  // reset to the sort's natural order
+      listPage = 1;
+      setSortDirIcon();
+      // Need a fix to sort by distance; never explicit and never allowed to
+      // touch the search box (updateBox=false) — see the matching comment
+      // where the default-sort case triggers the same silent locate below.
+      if (listSort === 'distance' && !userPos) locateUser(false, false);
+      renderList();
+    });
+    document.getElementById('wp-sort-dir').addEventListener('click', () => {
+      listSortDir = -listSortDir;
+      setSortDirIcon();
+      renderList();
+    });
+
+    document.getElementById('wp-prev').addEventListener('click', () => {
+      if (listPage > 1) { listPage--; renderList(); window.scrollTo({ top: 0, behavior: 'smooth' }); }
+    });
+    document.getElementById('wp-next').addEventListener('click', () => {
+      listPage++; renderList(); window.scrollTo({ top: 0, behavior: 'smooth' });
+    });
+
+    // Name box — live, free filter for both views.
+    const nameInput = document.getElementById('name-search');
+    nameInput.addEventListener('input', e => {
+      nameFilter = e.target.value.trim().toLowerCase();
+      listPage = 1;
+      renderList();
+      if (mainMap) { applyFilters(); if (!nameFilter) clearNearbyResults(); }
+      if (MAP_DISABLED && !nameFilter) clearTextResults();
+    });
+    bindEnter(nameInput, () => triggerNearbySearch(nameFilter));
+
+    // Quick-search chips (Restaurants, Retail, …) — fill the box and search now.
+    document.getElementById('quick-search-chips')?.addEventListener('click', e => {
+      const chip = e.target.closest('.qs-chip');
+      if (!chip) return;
+      const q = chip.dataset.q;
+      nameInput.value = q;
+      nameFilter = q.trim().toLowerCase();
+      listPage = 1;
+      renderList();
+      if (mainMap) applyFilters();
+      triggerNearbySearch(nameFilter);
+    });
+    document.getElementById('nearby-clear')?.addEventListener('click', () => {
+      clearTextResults();
+      const ni = document.getElementById('name-search');
+      if (ni) { ni.value = ''; nameFilter = ''; listPage = 1; renderList(); }
+    });
+
+    // Tapping anywhere on an already-tracked result opens its detail page —
+    // not just the "Rate Me!" pill. Delegated (cards are rebuilt on every
+    // search) and deliberately NOT a plain <a> wrapping the card, since the
+    // card also contains the Rate Me <form> and a wrapping <a>'s own
+    // navigation would race that form's submit.
+    const nearbyList = document.getElementById('nearby-list');
+    nearbyList?.addEventListener('click', e => {
+      if (e.target.closest('form, button, a')) return;   // let Rate Me! work normally
+      const card = e.target.closest('[data-href]');
+      if (card) window.location.href = card.dataset.href;
+    });
+    nearbyList?.addEventListener('keydown', e => {
+      if (e.key !== 'Enter' && e.key !== ' ') return;
+      const card = e.target.closest('[data-href]');
+      if (!card) return;
+      e.preventDefault();
+      window.location.href = card.dataset.href;
+    });
+
+    fitQuickChips();
+    let chipResizeT;
+    window.addEventListener('resize', () => { clearTimeout(chipResizeT); chipResizeT = setTimeout(fitQuickChips, 120); });
+
+    // Location box — geocodes to centre the map (a map feature).
+    const locInput = document.getElementById('location-search');
+    bindEnter(locInput, () => {
+      const q = locInput.value.trim();
+      if (!q) return;
+      if (MAP_DISABLED) {
+        // Map-less: geocode to update the box with Google's corrected address
+        // and set the search centre, then re-run any active nearby search.
+        osmSpinner(true);
+        ensurePlacesLib(() => {
+          textGeocoder.geocode({ address: q }, (results, status) => {
+            osmSpinner(false);
+            if (status === 'OK' && results[0]) {
+              const loc = results[0].geometry.location;
+              setSearchCenter({ lat: loc.lat(), lng: loc.lng() });
+              userPos = { lat: loc.lat(), lng: loc.lng() };   // distance sort follows the typed location
+              if (results[0].formatted_address) fillLocationSearch(results[0].formatted_address, 'user');
+              renderList();
+              if (lastNearbyQuery) runTextSearch(lastNearbyQuery);
+            } else {
+              showGeoError(`Couldn't find "${q}"`);
+            }
+          });
+        });
+        return;
+      }
+      if (runLocationSearch) runLocationSearch();
+      else { pendingLocationQuery = q; showView('map'); }
+    });
+    locInput.addEventListener('input', () => {
+      // Any manual edit invalidates the cached search centre so the next search
+      // re-geocodes the current text rather than reusing a stale coordinate.
+      // Typing also makes this the user's own choice of place, so it's no
+      // longer an automatic label and may be geocoded.
+      searchCenter = null;
+      if (!locInput.value.trim()) clearLocation();
+      else locationSource = 'user';
+    });
+
+    // Filter popover — both views.
+    document.getElementById('gf-filter')?.addEventListener('change',      e => { gfFilter = e.target.value; onFiltersChanged(); });
+    document.getElementById('mine-filter')?.addEventListener('change',    e => { mineFilter = e.target.checked; onFiltersChanged(); });
+    document.getElementById('rating-filter')?.addEventListener('change', e => { ratingFilter = parseFloat(e.target.value) || 0; onFiltersChanged(); });
+    document.getElementById('google-rating-filter')?.addEventListener('change', e => { googleRatingFilter = parseFloat(e.target.value) || 0; onFiltersChanged(); });
+    document.getElementById('clear-filters')?.addEventListener('click', () => {
+      gfFilter = ''; mineFilter = false; ratingFilter = 0; googleRatingFilter = 0;
+      const gfEl = document.getElementById('gf-filter'); if (gfEl) gfEl.value = '';
+      const mineEl = document.getElementById('mine-filter'); if (mineEl) mineEl.checked = false;
+      const ratingEl = document.getElementById('rating-filter'); if (ratingEl) ratingEl.value = '0';
+      const googleRatingEl = document.getElementById('google-rating-filter'); if (googleRatingEl) googleRatingEl.value = '0';
+      onFiltersChanged();
+    });
+
+    // Precise geolocation is only ever possible with the Geolocation API in a
+    // secure (HTTPS) context — see the same checks at the top of locateUser().
+    // Without either, a click could only ever fall back to an approximate IP
+    // location, which isn't what this button promises — hide it entirely.
+    const locateBtn = document.getElementById('locate-btn');
+    if (locateBtn) {
+      if (navigator.geolocation && window.isSecureContext) {
+        locateBtn.addEventListener('click', () => locateUser(true));
+      } else {
+        locateBtn.remove();
+      }
+    }
+
+    setSortDirIcon();
+    renderList();
+
+    // The home view now opens on what's nearby rather than the user's own
+    // list, so the "My Waypoints" dropdown link (?panel=mine) has to switch
+    // that filter on explicitly. ?view=map opens straight into the map view.
+    const params = new URLSearchParams(window.location.search);
+    if (!MAP_DISABLED && params.get('view') === 'map') showView('map');
+    const wantsMine = params.get('panel') === 'mine';
+    if (wantsMine) {
+      mineFilter = true;
+      const mineEl = document.getElementById('mine-filter');
+      if (mineEl) mineEl.checked = true;
+      updateFilterBadge();
+      renderList();
+      // They asked for their own list — don't let the opening nearby search
+      // run, since its name filter would hide the very waypoints they came for.
+      defaultSearchDone = true;
+    }
+
+    // Continue where you left off. These persist across app restarts
+    // (localStorage), so reopening after being idle restores your location and
+    // last search instead of re-locating and asking for your location again.
+    let remembered = null;
+    try { remembered = localStorage.getItem(LOC_KEY); } catch (_) {}
+    locationSource = loadLocationSource();
+    if (remembered) locInput.value = remembered;
+
+    // Only a place the USER picked is a genuine "where I left off". An
+    // automatic label ("Current Location" / the approximate city) describes
+    // wherever they were LAST time, so its saved centre is stale — keep the
+    // old text visible to avoid a flash of empty, but re-locate below and let
+    // the fresh fix overwrite both the label and the centre.
+    const staleAutoFix = !!remembered && locationSource === 'auto';
+
+    // Restore the saved centre so distance sorting works immediately — and so
+    // we don't need to fire geolocation at all when a location is remembered.
+    const savedCenter = staleAutoFix ? null : loadCenter();
+    if (savedCenter) {
+      searchCenter = savedCenter;
+      if (!userPos) userPos = savedCenter;
+      renderList();
+    }
+
+    // The nearby-search term (POI name field) is deliberately NOT persisted —
+    // only the location. If a location is already known, open on what's
+    // nearby right away; when we still have to locate, onLocated fires this
+    // instead as soon as the fix lands.
+    if (savedCenter) maybeRunDefaultSearch();
+
+    // Auto-locate on a truly fresh start (nothing remembered), and also when
+    // the only thing remembered was an automatic label — otherwise the box
+    // would keep claiming "Current Location" while showing last session's
+    // position. A place the user typed is left exactly as they left it.
+    // explicit=false, so this can never pop open the precise-location help
+    // modal (that only fires for an explicit "Locate me" click).
+    if ((!remembered && !savedCenter) || staleAutoFix) {
+      locateUser(false, true);
+    }
   }
 
   // ── Map initialisation (Google Maps callback) ─────────────────
@@ -1047,45 +2162,80 @@ const IS_AUTH = {% if user.is_authenticated %}true{% else %}false{% endif %};
       mapTypeControl:      false,
       streetViewControl:   false,
       fullscreenControl:   false,
+      scaleControl:        true,   // shows a distance scale bar so the viewed area is legible
     });
 
     mainInfoWindow = new google.maps.InfoWindow();
     geocoder       = new google.maps.Geocoder();
     placesService  = new google.maps.places.PlacesService(mainMap);
 
-    // ── Location search autocomplete ────────────────────────────
+    // Apply the 10-mile zoom-out cap immediately (Google clamps the initial
+    // country-wide zoom up to the cap); the idle handler keeps it current on pan.
+    updateMinZoom();
+
+    // ── Location search — explicit only, no live autocomplete dropdown ──
+    // Typing here never calls the Places Autocomplete API; the typed text is
+    // geocoded only when the user presses Enter.
     const locInput = document.getElementById('location-search');
-    const autocomplete = new google.maps.places.Autocomplete(locInput, {
-      types: ['geocode'],
-    });
-    autocomplete.addListener('place_changed', () => {
-      const place = autocomplete.getPlace();
-      if (!place.geometry?.location) return;
-      ignoreNextIdle = true;
-      if (place.geometry.viewport) {
-        boundsFilter = place.geometry.viewport;
-        mainMap.fitBounds(boundsFilter);
-      } else {
-        boundsFilter = null;
-        mainMap.setCenter(place.geometry.location);
-        mainMap.setZoom(12);
-      }
-      saveLocation(place.name || locInput.value);
-      applyFilters();
-      if (nameFilter) { showSearchAreaBtn(false); searchGooglePlaces(nameFilter); }
-    });
 
-    // Clear bounds when location input is cleared
-    locInput.addEventListener('input', () => {
-      if (!locInput.value.trim()) {
-        boundsFilter = null;
+    function geoSpinner(on) {
+      document.getElementById('geo-spinner')?.classList.toggle('hidden', !on);
+    }
+
+    function submitLocationSearch() {
+      const q = locInput.value.trim();
+      if (!q) return;
+      geoSpinner(true);
+      geocoder.geocode({ address: q }, (results, status) => {
+        geoSpinner(false);
+        if (status !== 'OK' || !results[0]) {
+          showGeoError(`Couldn't find "${q}"`);
+          return;
+        }
+        const place = results[0];
+        ignoreNextIdle = true;
+        if (place.geometry.viewport) {
+          mainMap.fitBounds(place.geometry.viewport);
+        } else {
+          mainMap.setCenter(place.geometry.location);
+          mainMap.setZoom(12);
+        }
+        // Replace whatever the user typed with Google's corrected/canonical
+        // address (e.g. "laaguna niguel, cal" -> "Laguna Niguel, CA, USA") so
+        // the box reflects what was actually matched, not the raw input.
+        if (place.formatted_address) fillLocationSearch(place.formatted_address, 'user');
+        else saveLocation(q, 'user');
         applyFilters();
-        try { localStorage.removeItem(LOC_KEY); } catch(_) {}
-      }
+        if (nameFilter) { showSearchAreaBtn(false); searchGooglePlaces(nameFilter); }
+      });
+    }
+
+    // Expose the geocode-and-centre action so the always-on location box
+    // handler (wired in initCommonUI) can run it once the map exists. The
+    // keydown/input listeners themselves live in initCommonUI.
+    runLocationSearch = submitLocationSearch;
+
+    // ── Clicking Google's built-in POI icons → show the Waypoint popup ──
+    mainMap.addListener('click', (e) => {
+      if (!e.placeId) return;             // not one of Google's base-map POIs
+      e.stop();                           // suppress Google's default info window
+      placesService.getDetails({
+        placeId: e.placeId,
+        fields: ['name', 'geometry', 'formatted_address', 'vicinity', 'types',
+                 'rating', 'user_ratings_total', 'opening_hours', 'place_id'],
+      }, (place, status) => {
+        if (status !== google.maps.places.PlacesServiceStatus.OK || !place || !place.geometry) return;
+        const c = mainMap.getCenter();
+        const pos = place.geometry.location;
+        const distKm = c ? haversineKm(c.lat(), c.lng(), pos.lat(), pos.lng()) : null;
+        openInfoAt(pos, poiPopupHtml(place, distKm), place.name);
+      });
     });
 
-    // ── Map idle → show "Search this area" ─────────────────────
+    // ── Map idle → keep the list/markers matched to the view ───
     mainMap.addListener('idle', () => {
+      updateMinZoom();
+      applyFilters();   // the field of view changed → re-filter waypoints to it
       if (ignoreNextIdle) { ignoreNextIdle = false; return; }
       if (nameFilter) showSearchAreaBtn(true);
     });
@@ -1098,6 +2248,17 @@ const IS_AUTH = {% if user.is_authenticated %}true{% else %}false{% endif %};
           const [lng, lat] = feature.geometry.coordinates;
           const p = feature.properties;
 
+          // Index saved waypoints by Google Place ID so POI popups can show
+          // the Waypoint rating (and a compact group-rating summary, if any
+          // of the current user's own groups have rated it) alongside the
+          // Google rating.
+          if (p.google_place_id) {
+            savedByPlaceId[p.google_place_id] = {
+              rating: p.rating, count: p.review_count || 0,
+              groupSummary: p.group_rating_summary || null,
+            };
+          }
+
           const wrapEl = document.createElement('div');
           wrapEl.style.cssText = 'display:flex;flex-direction:column;align-items:center;cursor:pointer;transition:transform 150ms;';
 
@@ -1106,19 +2267,35 @@ const IS_AUTH = {% if user.is_authenticated %}true{% else %}false{% endif %};
           labelEl.textContent = p.name;
 
           const iconEl = document.createElement('div');
-          iconEl.innerHTML = savedMarkerSvg(p.category, p.rating);
+          iconEl.innerHTML = savedMarkerSvg(p.rating);
 
           wrapEl.appendChild(labelEl);
           wrapEl.appendChild(iconEl);
 
-          const stars = p.rating ? `★ ${p.rating}` : 'No rating';
-          const place = p.city_state || p.address || '';
+          const rc = p.review_count || 0;
+          const stars = p.rating
+            ? `★ ${p.rating}${rc ? ` · ${rc} review${rc === 1 ? '' : 's'}` : ''}`
+            : 'No rating';
+          const groupLine = p.group_rating_summary
+            ? `<p style="font-size:12px;color:#6d28d9;margin:0 0 5px;font-weight:600">${escapeHtml(p.group_rating_summary)}</p>` : '';
+          const [addrLine1, addrLine2] = addressLines(p.address, p.city_state);
+          const gfBadge = p.gluten_free === 'dedicated'
+            ? '<span style="font-size:10px;background:#d1fae5;color:#047857;padding:1px 6px;border-radius:8px;font-weight:600">🌾 GF kitchen</span>'
+            : p.gluten_free === 'options'
+            ? '<span style="font-size:10px;background:#fef3c7;color:#b45309;padding:1px 6px;border-radius:8px;font-weight:600">🌾 GF options</span>'
+            : '';
+          const mineBadge = p.mine
+            ? '<span style="font-size:10px;background:#ede9fe;color:#6d28d9;padding:1px 6px;border-radius:8px;font-weight:600">✓ You reviewed</span>'
+            : '';
 
-          const popupContent = `<div style="min-width:190px;font-family:inherit;padding:2px">
-            <p style="font-weight:700;font-size:14px;margin:0 0 3px">${escapeHtml(p.name)}</p>
-            <p style="font-size:11px;color:#64748b;margin:0 0 3px">${escapeHtml(p.category_display)}</p>
-            ${place ? `<p style="font-size:12px;color:#475569;margin:0 0 3px">📍 ${escapeHtml(place)}</p>` : ''}
-            <p style="font-size:12px;color:#ec4899;margin:0 0 8px">${stars}</p>
+          const popupContent = `<div style="min-width:190px;max-width:250px;font-family:inherit;padding:2px">
+            ${p.photo ? `<img src="${p.photo}" alt="" style="width:100%;height:110px;object-fit:cover;border-radius:8px;margin-bottom:6px">` : ''}
+            ${mineBadge ? `<p style="margin:0 0 4px;display:flex;gap:4px;flex-wrap:wrap">${mineBadge}</p>` : ''}
+            ${addrLine1 ? `<p style="font-size:12px;color:#475569;margin:0">📍 ${escapeHtml(addrLine1)}</p>` : ''}
+            ${addrLine2 ? `<p style="font-size:12px;color:#475569;margin:0;padding-left:15px">${escapeHtml(addrLine2)}</p>` : ''}
+            ${gfBadge ? `<p style="margin:4px 0 0;display:flex;gap:4px;flex-wrap:wrap">${gfBadge}</p>` : ''}
+            <p style="font-size:12px;color:#ec4899;margin:5px 0 3px">${stars}</p>
+            ${groupLine}
             <a href="${p.url}" style="font-size:12px;color:#6366f1;font-weight:600">View details →</a>
           </div>`;
 
@@ -1134,94 +2311,42 @@ const IS_AUTH = {% if user.is_authenticated %}true{% else %}false{% endif %};
             activeId = String(p.id);
             highlightCard(p.id, true);
             highlightMarker(p.id);
-            mainInfoWindow.setContent(popupContent);
-            mainInfoWindow.open({ map: mainMap, anchor: marker });
+            openInfo(marker, popupContent, p.name);
             openSheetOnMobile();
           });
 
-          markerMap[p.id] = { marker, popupContent };
+          markerMap[p.id] = { marker, popupContent, name: p.name };
         });
 
         const total = data.features.length;
-        document.querySelectorAll('#sidebar-count, #tab-saved-count').forEach(el => el.textContent = total);
+        const savedCountEl = document.getElementById('tab-saved-count');
+        if (savedCountEl) savedCountEl.textContent = total;
         applyFilters();
       });
 
-    // ── Restore or geolocate ────────────────────────────────────
-    const saved = loadLocation();
-    if (saved) {
-      locInput.value = saved;
-      geocoder.geocode({ address: saved }, (results, status) => {
-        if (status === 'OK' && results[0]) {
-          const vp = results[0].geometry.viewport;
-          if (vp) {
-            boundsFilter = vp;
-            ignoreNextIdle = true;
-            mainMap.fitBounds(vp);
-            google.maps.event.addListenerOnce(mainMap, 'idle', () => {
-              ignoreNextIdle = false;
-              applyFilters();
-            });
-          }
-        }
-      });
-    } else {
-      locateUser();
-    }
+    // Drop the "you are here" dot if we already have a fix from the list view's
+    // auto-locate; otherwise locate now. Either way, no new Google API call.
+    // Never explicit and never allowed to touch the search box (updateBox=
+    // false) — this can resolve up to ~12s later (GPS watch/IP fallback), by
+    // which point the user may have already typed and submitted their own
+    // location (e.g. a zip code) or run a nearby search; without this it
+    // would silently clobber that with an approximate real-world fix.
+    if (userPos) placeUserDot(userPos.lat, userPos.lng, 'You are here', 13);
+    else locateUser(false, false);
 
-    // ── Wire up UI events ───────────────────────────────────────
-    document.getElementById('sidebar-toggle')?.addEventListener('click', toggleSidebar);
+    // ── Wire up MAP-ONLY UI events ──────────────────────────────
+    // (The search box, filter popover, locate button, sort and view toggle
+    //  are wired once in initCommonUI so they work before the map loads.)
+    document.getElementById('sidebar-close')?.addEventListener('click', () => setSidebarClosed());
     document.getElementById('sheet-handle')?.addEventListener('click', toggleSidebar);
-    document.getElementById('locate-btn')?.addEventListener('click', locateUser);
     document.getElementById('tab-saved')?.addEventListener('click',  () => switchTab('saved'));
     document.getElementById('tab-nearby')?.addEventListener('click', () => switchTab('nearby'));
 
-    const addBtn = document.getElementById('add-waypoint-btn');
-    if (addBtn) {
-      addBtn.addEventListener('click', () => {
-        const c = mainMap.getCenter();
-        addBtn.href = `/locations/new/?lat=${c.lat().toFixed(6)}&lng=${c.lng().toFixed(6)}`;
-      });
-    }
-
-    document.getElementById('name-search').addEventListener('input', e => {
-      nameFilter = e.target.value.trim().toLowerCase();
-      applyFilters();
-      triggerSearch();
-    });
-
-    document.getElementById('radius-select')?.addEventListener('change', () => {
-      if (nameFilter) { showSearchAreaBtn(false); triggerSearch(); }
-    });
-
     document.getElementById('search-area-btn')?.addEventListener('click', () => {
-      if (nameFilter) { showSearchAreaBtn(false); searchGooglePlaces(nameFilter); }
-    });
-
-    document.getElementById('expand-search-btn')?.addEventListener('click', () => {
-      const TIERS = ['3219', '8047', '16093', '40234'];
-      const sel = document.getElementById('radius-select');
-      if (!sel) return;
-      const next = TIERS[TIERS.indexOf(sel.value) + 1];
-      if (next) {
-        sel.value = next;
-        document.getElementById('expand-search-bar')?.classList.add('hidden');
-        searchGooglePlaces(nameFilter);
-      }
-    });
-
-    document.getElementById('category-filter')?.addEventListener('change', e => {
-      catFilter = e.target.value;
-      applyFilters();
-    });
-
-    document.querySelectorAll('.filter-chip').forEach(chip => {
-      chip.addEventListener('click', () => {
-        const cat = chip.dataset.cat;
-        osmCatFilters[cat] = !osmCatFilters[cat];
-        chip.classList.toggle('chip-off', !osmCatFilters[cat]);
-        applyOsmFilters();
-      });
+      if (!nameFilter) return;
+      if (!hasLocationText()) { flashLocationRequired(); return; }
+      showSearchAreaBtn(false);
+      searchGooglePlaces(nameFilter);
     });
 
     document.querySelectorAll('.dist-chip').forEach(chip => {
@@ -1232,8 +2357,36 @@ const IS_AUTH = {% if user.is_authenticated %}true{% else %}false{% endif %};
         applyOsmFilters();
       });
     });
+
+    // Open the sidebar list when arriving via a ?panel= deep link (the mine
+    // filter itself is already applied by initCommonUI).
+    const panel = new URLSearchParams(window.location.search).get('panel');
+    if (panel === 'mine' || panel === 'saved') {
+      switchTab('saved');
+      openSidebar();
+      applyFilters();
+    }
+
+    // Run anything the user asked for from the list view before the map existed.
+    if (pendingLocationQuery) {
+      const locEl = document.getElementById('location-search');
+      if (locEl) locEl.value = pendingLocationQuery;
+      pendingLocationQuery = null;
+      submitLocationSearch();
+    }
+    if (pendingNearbyQuery) {
+      showSearchAreaBtn(false);
+      searchGooglePlaces(pendingNearbyQuery);
+      pendingNearbyQuery = null;
+    }
   };
+
+  // ── Kick off the always-on list view UI ───────────────────────
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initCommonUI);
+  } else {
+    initCommonUI();
+  }
 })();
 </script>
-<script src="https://maps.googleapis.com/maps/api/js?key={{ GOOGLE_MAPS_KEY }}&libraries=places,marker&v=beta&callback=initMap" async defer></script>
 {% endblock %}

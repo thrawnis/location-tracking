@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="4 1 16 22">
+  <!-- Waypoint logo: map pin outer shape (solid brand color) -->
+  <path fill="#6366f1" d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7z"/>
+  <!-- star cutout inside the pin -->
+  <path fill="#ffffff" d="M12 6l.9 2.6 2.7.1-2.1 1.6.7 2.7L12 11.4l-2.2 1.6.7-2.7-2.1-1.6 2.7-.1z"/>
+</svg>

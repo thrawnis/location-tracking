@@ -1,0 +1,90 @@
+{% extends "base.html" %}
+{% block title %}Linked Accounts – Waypoint{% endblock %}
+
+{% block content %}
+<div class="max-w-2xl mx-auto space-y-6">
+
+  <div>
+    <h1 class="text-2xl font-bold text-slate-900">Linked Accounts</h1>
+    <p class="text-sm text-slate-500 mt-1">
+      Linked accounts are one-to-one connections. Anyone you're linked with can log waypoint
+      and dish reviews <strong>on your behalf</strong> (and you on theirs) — but only the person a
+      review belongs to can edit or delete it. Connections are direct: being connected to two
+      people never connects <em>them</em> to each other.
+    </p>
+  </div>
+
+  <!-- Personal invite link -->
+  <div class="bg-white rounded-xl border border-slate-200 shadow-sm p-4 space-y-2">
+    <h2 class="text-sm font-semibold text-slate-500 uppercase tracking-wide">Your invite link</h2>
+    <p class="text-xs text-slate-400">
+      Send this to someone you want to link with. When they open it and approve, the two of you
+      are connected. Regenerating breaks the old link.
+    </p>
+    <div class="flex flex-wrap gap-2">
+      <input type="text" id="invite-url" readonly value="{{ invite_url }}"
+             class="flex-1 min-w-[220px] text-sm border border-slate-200 rounded-lg px-3 py-2 bg-slate-50 text-slate-600">
+      <button type="button" id="copy-invite"
+              class="text-sm font-semibold text-brand hover:text-brand-dark border border-brand/30
+                     hover:border-brand px-3 py-2 rounded-lg transition-all shrink-0">
+        Copy
+      </button>
+      <form method="post" action="{% url 'linked_account_invite_regenerate' %}"
+            onsubmit="return confirm('Regenerate your invite link? The old link will stop working.')">
+        {% csrf_token %}
+        <button type="submit"
+                class="text-sm font-semibold text-slate-500 hover:text-slate-700 border border-slate-200
+                       hover:border-slate-300 px-3 py-2 rounded-lg transition-all shrink-0">
+          Regenerate
+        </button>
+      </form>
+    </div>
+  </div>
+
+  <!-- Connections -->
+  <div class="bg-white rounded-xl border border-slate-200 shadow-sm p-4">
+    <h2 class="text-sm font-semibold text-slate-500 uppercase tracking-wide mb-2">
+      Connected ({{ connected|length }})
+    </h2>
+    {% if connected %}
+    <ul class="divide-y divide-slate-50">
+      {% for m in connected %}
+      <li class="flex items-center justify-between gap-2 py-2">
+        <span class="text-sm font-medium text-slate-700">{{ m.username }}</span>
+        <form method="post" action="{% url 'linked_account_disconnect' m.pk %}"
+              onsubmit="return confirm('Remove {{ m.username|escapejs }} from your linked accounts? Reviews already added stay put.')">
+          {% csrf_token %}
+          <button type="submit"
+                  class="text-xs font-semibold text-red-400 hover:text-red-600 border border-red-200
+                         hover:border-red-400 px-2.5 py-1 rounded-lg transition-all">
+            Remove
+          </button>
+        </form>
+      </li>
+      {% endfor %}
+    </ul>
+    {% else %}
+    <p class="text-sm text-slate-400">
+      No connections yet. Share your invite link above, or open a link someone sent you.
+    </p>
+    {% endif %}
+  </div>
+
+</div>
+
+<script>
+  document.getElementById('copy-invite')?.addEventListener('click', async () => {
+    const input = document.getElementById('invite-url');
+    const btn = document.getElementById('copy-invite');
+    try {
+      await navigator.clipboard.writeText(input.value);
+    } catch (_) {
+      input.select();
+      document.execCommand('copy');
+    }
+    const original = btn.textContent;
+    btn.textContent = 'Copied!';
+    setTimeout(() => { btn.textContent = original; }, 1500);
+  });
+</script>
+{% endblock %}

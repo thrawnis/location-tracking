@@ -1,0 +1,38 @@
+{% comment %}
+  Collection membership toggles on the location detail page.
+  Swapped via HTMX: id="collections-widget"
+{% endcomment %}
+<div id="collections-widget">
+  <div class="flex items-center justify-between mb-2">
+    <h2 class="text-sm font-semibold text-slate-500 uppercase tracking-wide">Collections</h2>
+    <a href="{% url 'collection_list' %}" class="text-xs text-brand hover:underline">Manage →</a>
+  </div>
+  {% if all_collections %}
+  <div class="flex flex-wrap gap-1.5">
+    {% for coll in all_collections %}
+    {% if location in coll.locations.all %}
+    <button hx-post="{% url 'collection_toggle' coll.pk location.pk %}"
+            hx-target="#collections-widget" hx-swap="outerHTML"
+            title="Remove from {{ coll.name }}"
+            class="inline-flex items-center gap-1 text-xs font-semibold px-2.5 py-1 rounded-full
+                   bg-brand text-white hover:bg-brand-dark transition-colors">
+      ✓ {{ coll.name }}
+    </button>
+    {% else %}
+    <button hx-post="{% url 'collection_toggle' coll.pk location.pk %}"
+            hx-target="#collections-widget" hx-swap="outerHTML"
+            title="Add to {{ coll.name }}"
+            class="inline-flex items-center gap-1 text-xs font-medium px-2.5 py-1 rounded-full
+                   border border-slate-300 text-slate-500 hover:border-brand hover:text-brand transition-colors">
+      ＋ {{ coll.name }}
+    </button>
+    {% endif %}
+    {% endfor %}
+  </div>
+  {% else %}
+  <p class="text-xs text-slate-400">
+    No collections yet. <a href="{% url 'collection_list' %}" class="text-brand hover:underline">Create one</a>
+    to group waypoints into trips or themes.
+  </p>
+  {% endif %}
+</div>

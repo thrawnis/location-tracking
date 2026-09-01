@@ -1,6 +1,9 @@
 from django.contrib import admin
 
-from .models import Item, ItemReview, Location, OsmSearchCache, Visit
+from .models import (
+    Collection, EmailVerification, GlutenFreeVote, Item, ItemReview, Location,
+    LocationReview, OsmSearchCache, TermsAcceptance,
+)
 
 
 class ItemInline(admin.TabularInline):
@@ -8,17 +11,26 @@ class ItemInline(admin.TabularInline):
     extra = 0
 
 
-class VisitInline(admin.TabularInline):
-    model = Visit
-    extra = 0
-
-
 @admin.register(Location)
 class LocationAdmin(admin.ModelAdmin):
-    list_display = ("name", "category", "overall_rating", "created_by", "created_at")
-    list_filter = ("category",)
+    list_display = ("name", "overall_rating", "created_by", "created_at")
+    list_filter = ("gluten_free",)
     search_fields = ("name", "address")
-    inlines = [ItemInline, VisitInline]
+    inlines = [ItemInline]
+
+
+@admin.register(Collection)
+class CollectionAdmin(admin.ModelAdmin):
+    list_display = ("name", "created_by", "created_at")
+    search_fields = ("name",)
+    filter_horizontal = ("locations",)
+
+
+@admin.register(LocationReview)
+class LocationReviewAdmin(admin.ModelAdmin):
+    list_display = ("location", "user", "rating", "updated_at")
+    list_filter = ("rating",)
+    search_fields = ("location__name", "user__username")
 
 
 @admin.register(Item)
@@ -42,7 +54,22 @@ class OsmSearchCacheAdmin(admin.ModelAdmin):
     readonly_fields = ("fetched_at",)
 
 
-@admin.register(Visit)
-class VisitAdmin(admin.ModelAdmin):
-    list_display = ("location", "date", "user")
-    list_filter = ("date",)
+@admin.register(GlutenFreeVote)
+class GlutenFreeVoteAdmin(admin.ModelAdmin):
+    list_display = ("location", "user", "agrees", "updated_at")
+    list_filter = ("agrees",)
+    search_fields = ("location__name", "user__username")
+
+
+@admin.register(EmailVerification)
+class EmailVerificationAdmin(admin.ModelAdmin):
+    list_display = ("user", "verified", "verified_at", "last_sent_at")
+    list_filter = ("verified",)
+    search_fields = ("user__username", "user__email")
+
+
+@admin.register(TermsAcceptance)
+class TermsAcceptanceAdmin(admin.ModelAdmin):
+    list_display = ("user", "version", "accepted_at", "ip_address")
+    list_filter = ("version",)
+    search_fields = ("user__username",)

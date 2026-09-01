@@ -14,6 +14,10 @@
   .form-input:focus { border-color: #6366f1; box-shadow: 0 0 0 3px #e0e7ff; }
   select.form-input { appearance: none; }
   textarea.form-input { resize: vertical; }
+  .form-input[readonly] {
+    background: #f8fafc; color: #64748b; cursor: not-allowed;
+    border-color: #e2e8f0; box-shadow: none;
+  }
 </style>
 {% endblock %}
 
@@ -34,6 +38,21 @@
     <div class="px-6 py-5 border-b border-slate-100">
       <h1 class="text-xl font-bold text-slate-900">{{ action }} Waypoint</h1>
       <p class="text-sm text-slate-500 mt-1">All fields except Name are optional.</p>
+      {% if form.google_locked %}
+      <div class="mt-3 flex items-start gap-2 p-3 rounded-lg bg-slate-50 border border-slate-200 text-sm text-slate-600">
+        <svg class="w-4 h-4 mt-0.5 shrink-0 text-slate-400" fill="currentColor" viewBox="0 0 20 20">
+          <path fill-rule="evenodd" d="M5 9V7a5 5 0 0110 0v2a2 2 0 012 2v5a2 2 0 01-2 2H5a2 2 0 01-2-2v-5a2 2 0 012-2zm8-2v2H7V7a3 3 0 016 0z" clip-rule="evenodd"/>
+        </svg>
+        <span>This waypoint comes from Google Maps, so its <strong>name, address, and location</strong> are fixed. You can still set the rating, gluten-free info, and notes.</span>
+      </div>
+      {% elif admin_override %}
+      <div class="mt-3 flex items-start gap-2 p-3 rounded-lg bg-amber-50 border border-amber-300 text-sm text-amber-800">
+        <svg class="w-4 h-4 mt-0.5 shrink-0 text-amber-500" fill="currentColor" viewBox="0 0 20 20">
+          <path fill-rule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clip-rule="evenodd"/>
+        </svg>
+        <span><strong>Admin override.</strong> This is a Google POI whose name, address, and pin are normally locked. Your changes here will overwrite the Google-sourced values.</span>
+      </div>
+      {% endif %}
     </div>
 
     <form method="post" class="p-6 space-y-8">
@@ -42,7 +61,7 @@
       {{ form.longitude }}
       {{ form.city }}
       {{ form.state }}
-      {{ form.overall_rating }}
+      {{ form.google_place_id }}
 
       <!-- Basic info -->
       <fieldset class="space-y-4">
@@ -50,27 +69,13 @@
           Basic Information
         </legend>
 
-        <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
-          <div class="sm:col-span-2">
-            <label class="block text-sm font-medium text-slate-700 mb-1">
-              Name <span class="text-red-400">*</span>
-            </label>
-            {{ form.name }}
-            {% if form.name.errors %}
-            <p class="text-red-500 text-xs mt-1">{{ form.name.errors|join:", " }}</p>
-            {% endif %}
-          </div>
-          <div>
-            <label class="block text-sm font-medium text-slate-700 mb-1">Category</label>
-            {{ form.category }}
-          </div>
-        </div>
-
         <div>
-          <label class="block text-sm font-medium text-slate-700 mb-1">Overall Rating</label>
-          {% include "tracker/partials/star_input.html" with field_name="overall_rating" current_value=form.overall_rating.value %}
-          {% if form.overall_rating.errors %}
-          <p class="text-red-500 text-xs mt-1">{{ form.overall_rating.errors|join:", " }}</p>
+          <label class="block text-sm font-medium text-slate-700 mb-1">
+            Name <span class="text-red-400">*</span>
+          </label>
+          {{ form.name }}
+          {% if form.name.errors %}
+          <p class="text-red-500 text-xs mt-1">{{ form.name.errors|join:", " }}</p>
           {% endif %}
         </div>
       </fieldset>
@@ -81,6 +86,11 @@
           Location on Map
         </legend>
 
+        {% if form.google_locked %}
+        <p class="text-sm text-slate-500">
+          This location is set by Google Maps and can't be moved.
+        </p>
+        {% else %}
         <p class="text-sm text-slate-500">
           Search for an address or click anywhere on the map to drop a pin. You can skip this entirely.
         </p>
@@ -95,12 +105,18 @@
           </button>
         </div>
         <div id="addr-error" class="hidden text-red-500 text-xs">No results found for that address.</div>
+        {% endif %}
+
+        <!-- Duplicate warning (filled by JS when pin lands near an existing waypoint) -->
+        <div id="dup-warning" class="hidden p-3 rounded-lg bg-amber-50 border border-amber-300 text-sm text-amber-800"></div>
 
         <!-- Address text field -->
         <div>
           <label class="block text-sm font-medium text-slate-700 mb-1">Address (text)</label>
           {{ form.address }}
+          {% if not form.google_locked %}
           <p class="text-xs text-slate-400 mt-1">Auto-filled from map search, or type freely.</p>
+          {% endif %}
         </div>
 
         <!-- Coordinates display -->
@@ -108,46 +124,15 @@
              {% if not form.latitude.value %}style="display:none!important"{% endif %}>
           <span>Lat: <span id="lat-display" class="font-mono text-slate-700">{{ form.latitude.value }}</span></span>
           <span>Lng: <span id="lng-display" class="font-mono text-slate-700">{{ form.longitude.value }}</span></span>
+          {% if not form.google_locked %}
           <button type="button" id="clear-pin" class="text-red-400 hover:text-red-600 ml-2">
             ✕ Remove pin
           </button>
+          {% endif %}
         </div>
 
         <!-- Map -->
         <div id="pick-map" class="rounded-xl border border-slate-200 overflow-hidden shadow-sm"></div>
-      </fieldset>
-
-      <!-- Contact info -->
-      <fieldset class="space-y-4">
-        <legend class="text-sm font-semibold text-slate-700 uppercase tracking-wide pb-2 border-b border-slate-100 w-full">
-          Contact &amp; Hours
-        </legend>
-
-        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <div>
-            <label class="block text-sm font-medium text-slate-700 mb-1">Phone</label>
-            {{ form.phone }}
-            {% if form.phone.errors %}
-            <p class="text-red-500 text-xs mt-1">{{ form.phone.errors|join:", " }}</p>
-            {% endif %}
-          </div>
-          <div>
-            <label class="block text-sm font-medium text-slate-700 mb-1">Website</label>
-            {{ form.website }}
-            {% if form.website.errors %}
-            <p class="text-red-500 text-xs mt-1">{{ form.website.errors|join:", " }}</p>
-            {% endif %}
-          </div>
-        </div>
-
-        <div>
-          <label class="block text-sm font-medium text-slate-700 mb-1">Opening Hours</label>
-          <p class="text-xs text-slate-400 mb-1.5">E.g. Mon–Fri 9am–9pm, Sat–Sun 10am–6pm</p>
-          {{ form.hours }}
-          {% if form.hours.errors %}
-          <p class="text-red-500 text-xs mt-1">{{ form.hours.errors|join:", " }}</p>
-          {% endif %}
-        </div>
       </fieldset>
 
       <!-- Dietary / Accessibility -->
@@ -238,6 +223,8 @@
 {% block extra_js %}
 <script>
 window.initFormMap = function () {
+  // Waypoints saved from a Google POI: name/address/pin are read-only.
+  const LOCKED = {% if form.google_locked %}true{% else %}false{% endif %};
   const latInput   = document.getElementById('id_latitude');
   const lngInput   = document.getElementById('id_longitude');
   const cityInput  = document.getElementById('id_city');
@@ -289,7 +276,37 @@ window.initFormMap = function () {
     latSpan.textContent = latStr;
     lngSpan.textContent = lngStr;
     coordsDiv.style.display = '';
+    if (LOCKED) return;   // Google-sourced coords are fixed; no reverse-geocode/dup calls
     reverseGeocode(parseFloat(latStr), parseFloat(lngStr));
+    checkDuplicates(latStr, lngStr);
+  }
+
+  // Warn if the pin lands within ~100 m of an existing waypoint
+  async function checkDuplicates(lat, lng) {
+    const dupDiv = document.getElementById('dup-warning');
+    if (!dupDiv) return;
+    try {
+      const params = new URLSearchParams({ lat, lng });
+      {% if location %}params.set('exclude', '{{ location.pk }}');{% endif %}
+      const res  = await fetch(`/api/locations/check-duplicate/?${params}`);
+      const data = await res.json();
+      if (data.matches && data.matches.length) {
+        const esc = s => String(s == null ? '' : s)
+          .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+          .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+        // Waypoint names are user-controlled free text — escape before
+        // injecting via innerHTML to avoid stored XSS on this form.
+        const links = data.matches.map(m =>
+          `<a href="${esc(m.url)}" target="_blank" class="font-semibold underline">${esc(m.name)}</a> (${esc(m.distance_m)} m away)`
+        ).join(', ');
+        dupDiv.innerHTML = `⚠️ Possible duplicate — there ${data.matches.length === 1 ? 'is' : 'are'} already
+          ${data.matches.length === 1 ? 'a waypoint' : 'waypoints'} here: ${links}.
+          Double-check before saving.`;
+        dupDiv.classList.remove('hidden');
+      } else {
+        dupDiv.classList.add('hidden');
+      }
+    } catch (_) { dupDiv.classList.add('hidden'); }
   }
 
   function placeMarker(lat, lng, address) {
@@ -306,15 +323,17 @@ window.initFormMap = function () {
       map:            map,
       position:       { lat, lng },
       content:        pinEl,
-      gmpDraggable:   true,
+      gmpDraggable:   !LOCKED,
     });
 
-    marker.addListener('dragend', evt => {
-      setCoords(evt.latLng.lat(), evt.latLng.lng());
-    });
+    if (!LOCKED) {
+      marker.addListener('dragend', evt => {
+        setCoords(evt.latLng.lat(), evt.latLng.lng());
+      });
+    }
 
     setCoords(lat, lng);
-    if (address) addrInput.value = address;
+    if (address && !addrInput.value) addrInput.value = address;
   }
 
   function clearPin() {
@@ -331,6 +350,9 @@ window.initFormMap = function () {
   if (latInput.value && lngInput.value) {
     placeMarker(parseFloat(latInput.value), parseFloat(lngInput.value), null);
   }
+
+  // A locked (Google-sourced) waypoint shows its pin but is otherwise read-only.
+  if (LOCKED) return;
 
   // Click map to place/move pin
   map.addListener('click', e => {
@@ -356,6 +378,8 @@ window.initFormMap = function () {
     map.setCenter({ lat, lng });
     map.setZoom(15);
     if (place.address_components) parseCityState(place.address_components);
+    const pidInput = document.getElementById('id_google_place_id');
+    if (pidInput && place.place_id) pidInput.value = place.place_id;
     placeMarker(lat, lng, place.formatted_address);
   });
 
