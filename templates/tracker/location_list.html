@@ -405,9 +405,11 @@
       <div id="nearby-list" class="space-y-1.5"></div>
     </div>
 
-    <!-- Saved-waypoint list — hidden while a nearby search is showing above it
-         (see syncSavedListVisibility), so the two lists never stack. -->
-    <div id="saved-list-section">
+    <!-- Saved-waypoint list — hidden by default (and while a nearby search is
+         showing above it, see syncSavedListVisibility) so the two lists never
+         stack, and the opening view never flashes it before the opening
+         nearby search takes over (see showOpeningSearchLoading/?panel=mine). -->
+    <div id="saved-list-section" class="hidden">
       <!-- Sort / paging controls -->
       <div class="flex flex-wrap items-center gap-2 mb-3">
         <span id="wp-list-count" class="text-sm font-semibold text-slate-600 mr-auto">Loading…</span>
@@ -648,6 +650,13 @@ const CSRF_TOKEN = '{{ csrf_token }}';
   let savedIndexCbs  = [];
   let searchCenter   = null;   // {lat,lng} centre for the text search + distances
   let lastNearbyQuery = '';
+  // Opening the app lands on what's around you rather than your own saved
+  // list: once a position is known, run this search automatically. The
+  // nearby-search term itself isn't persisted between sessions (only the
+  // location is), so this is what actually runs on every reopen with a
+  // known location — it just doesn't fire if the user starts typing first.
+  const DEFAULT_NEARBY_QUERY = 'restaurant';
+  let defaultSearchDone = false;
 
   let mainMap        = null;
   let geocoder       = null;
@@ -1355,6 +1364,7 @@ const CSRF_TOKEN = '{{ csrf_token }}';
       // silently moving the centre while stale results stay on screen.
       runTextSearch(lastNearbyQuery);
     }
+    maybeRunDefaultSearch();            // fresh open, nothing active yet → show what's nearby
   }
 
   // ── User location dot (map only) ──────────────────────────────
@@ -1422,6 +1432,7 @@ const CSRF_TOKEN = '{{ csrf_token }}';
     } else {
       showGeoError('Could not determine location automatically');
     }
+    if (data.status !== 'ok') giveUpOnOpeningSearch();
     // ipFallback only ever runs because a precise GPS fix wasn't available.
     if (explicit) openPreciseHelp();
   }
@@ -1810,6 +1821,49 @@ const CSRF_TOKEN = '{{ csrf_token }}';
     });
   }
 
+  // Run the opening "what's nearby" search as soon as a position is known.
+  // Deliberately skipped when anything was restored or the user is already
+  // searching, so it can never clobber what they left off with — and it runs
+  // at most once per page load (one Places call, same as tapping the chip).
+  function maybeRunDefaultSearch() {
+    if (defaultSearchDone || !MAP_DISABLED) return;
+    if (lastNearbyQuery || nameFilter) return;      // a search is already active
+    if (!searchCenter && !userPos) return;          // no position to search around yet
+    defaultSearchDone = true;
+    const ni = document.getElementById('name-search');
+    if (ni) ni.value = DEFAULT_NEARBY_QUERY;
+    nameFilter = DEFAULT_NEARBY_QUERY;
+    listPage = 1;
+    renderList();
+    runTextSearch(DEFAULT_NEARBY_QUERY);
+  }
+
+  // Shown the instant the page opens (before a position is even known) so the
+  // opening view never flashes the full saved-waypoint list before flipping
+  // over to nearby results once maybeRunDefaultSearch's search resolves.
+  function showOpeningSearchLoading() {
+    const wrap = document.getElementById('nearby-results');
+    const list = document.getElementById('nearby-list');
+    if (!wrap || !list) return;
+    wrap.classList.remove('hidden');
+    const qEl = document.getElementById('nearby-query');
+    const cEl = document.getElementById('nearby-count');
+    if (qEl) qEl.textContent = `"${DEFAULT_NEARBY_QUERY}"`;
+    if (cEl) cEl.textContent = '';
+    list.innerHTML = '<p class="text-sm text-slate-400 py-4">🔎 Finding what’s nearby…</p>';
+    document.getElementById('saved-list-section')?.classList.add('hidden');
+  }
+
+  // Locating the user can fail outright (denied permission, no network, a
+  // rate-limited IP lookup) — with nothing to search around, fall back to the
+  // saved-waypoint list instead of leaving the loading placeholder up forever.
+  function giveUpOnOpeningSearch() {
+    if (defaultSearchDone) return;   // a real search already started/finished
+    defaultSearchDone = true;
+    document.getElementById('nearby-results')?.classList.add('hidden');
+    document.getElementById('saved-list-section')?.classList.remove('hidden');
+  }
+
   // The saved-waypoint list is redundant clutter directly under an active
   // nearby search — hide it while results are showing, restore it once
   // they're cleared, so the two lists never stack on top of each other.
@@ -2080,6 +2134,19 @@ const CSRF_TOKEN = '{{ csrf_token }}';
       if (mineEl) mineEl.checked = true;
       updateFilterBadge();
       renderList();
+      // They asked for their own list — show it immediately (it's hidden by
+      // default so the opening view never flashes it before a nearby search
+      // takes over) and don't let that opening search run at all.
+      defaultSearchDone = true;
+      document.getElementById('saved-list-section')?.classList.remove('hidden');
+    } else {
+      // Default open: show the "finding what's nearby" placeholder right away
+      // instead of the saved list, so there's nothing to flip away from once
+      // the opening restaurant search actually starts (see maybeRunDefaultSearch).
+      showOpeningSearchLoading();
+      // Safety net — if locating fails in a way ipFallback doesn't catch
+      // (e.g. it never resolves at all), don't leave the placeholder up forever.
+      setTimeout(giveUpOnOpeningSearch, 20000);
     }
 
     // Continue where you left off. These persist across app restarts
@@ -2105,6 +2172,12 @@ const CSRF_TOKEN = '{{ csrf_token }}';
       if (!userPos) userPos = savedCenter;
       renderList();
     }
+
+    // The nearby-search term (POI name field) is deliberately NOT persisted —
+    // only the location. If a location is already known, open on what's
+    // nearby right away; when we still have to locate, onLocated fires this
+    // instead as soon as the fix lands.
+    if (savedCenter) maybeRunDefaultSearch();
 
     // Auto-locate on a truly fresh start (nothing remembered), and also when
     // the only thing remembered was an automatic label — otherwise the box
