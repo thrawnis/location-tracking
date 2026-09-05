@@ -651,10 +651,8 @@ const CSRF_TOKEN = '{{ csrf_token }}';
   let searchCenter   = null;   // {lat,lng} centre for the text search + distances
   let lastNearbyQuery = '';
   // Opening the app lands on what's around you rather than your own saved
-  // list: once a position is known, run this search automatically. The
-  // nearby-search term itself isn't persisted between sessions (only the
-  // location is), so this is what actually runs on every reopen with a
-  // known location — it just doesn't fire if the user starts typing first.
+  // list: once a position is known, run this search automatically. Only ever
+  // on a fresh open — a restored search (see loadQuery) always wins.
   const DEFAULT_NEARBY_QUERY = 'restaurant';
   let defaultSearchDone = false;
 
@@ -1281,13 +1279,12 @@ const CSRF_TOKEN = '{{ csrf_token }}';
 
   // ── Persisted session state (localStorage, so it survives closing/reopening
   // the app after it's been idle — you continue where you left off instead of
-  // re-locating). Only the location box label + search/distance centre
-  // persist — deliberately NOT the nearby-search term (POI name field):
-  // that's a one-off "what am I looking for right now" query, not something
-  // that should reappear unasked next time the app opens.
+  // re-locating). We keep the location box label, the search/distance centre
+  // coordinates, and the last nearby-search term. ──
   const LOC_KEY    = 'wp_last_location';   // location box label text
   const SRC_KEY    = 'wp_last_location_src'; // 'user' (typed a place) | 'auto' (from a locate)
   const CENTER_KEY = 'wp_last_center';     // {lat,lng} JSON — nearby-search + distance centre
+  const QUERY_KEY  = 'wp_last_query';      // last nearby-search term
 
   // Where the text in the location box came from matters. A typed place
   // ("Oceanside, CA") is a fixed spot worth restoring verbatim. An automatic
@@ -1307,6 +1304,8 @@ const CSRF_TOKEN = '{{ csrf_token }}';
   }
   function saveCenter(c)     { try { if (c) localStorage.setItem(CENTER_KEY, JSON.stringify(c)); } catch(_){} }
   function loadCenter()      { try { const r = localStorage.getItem(CENTER_KEY); return r ? JSON.parse(r) : null; } catch(_){ return null; } }
+  function saveQuery(q)      { try { if (q) localStorage.setItem(QUERY_KEY, q); else localStorage.removeItem(QUERY_KEY); } catch(_){} }
+  function loadQuery()       { try { return localStorage.getItem(QUERY_KEY) || ''; } catch(_){ return ''; } }
 
   // Set the search/distance centre and persist it so a reopen doesn't re-locate.
   function setSearchCenter(c) { searchCenter = c; saveCenter(c); }
@@ -1798,6 +1797,7 @@ const CSRF_TOKEN = '{{ csrf_token }}';
     if (!query) { clearTextResults(); return; }
     if (!searchCenter && !userPos && !hasLocationText()) { flashLocationRequired(); return; }
     lastNearbyQuery = query;
+    saveQuery(query);              // remember so a reopen restores this search
     const token = ++searchToken;
     osmSpinner(true);
     ensurePlacesLib(() => {
@@ -1840,15 +1840,17 @@ const CSRF_TOKEN = '{{ csrf_token }}';
 
   // Shown the instant the page opens (before a position is even known) so the
   // opening view never flashes the full saved-waypoint list before flipping
-  // over to nearby results once maybeRunDefaultSearch's search resolves.
-  function showOpeningSearchLoading() {
+  // over to nearby results once the opening search (restored or default)
+  // resolves. query is whatever's about to run: a restored search if one was
+  // saved (see loadQuery), otherwise the default "restaurant" search.
+  function showOpeningSearchLoading(query) {
     const wrap = document.getElementById('nearby-results');
     const list = document.getElementById('nearby-list');
     if (!wrap || !list) return;
     wrap.classList.remove('hidden');
     const qEl = document.getElementById('nearby-query');
     const cEl = document.getElementById('nearby-count');
-    if (qEl) qEl.textContent = `"${DEFAULT_NEARBY_QUERY}"`;
+    if (qEl) qEl.textContent = `"${query}"`;
     if (cEl) cEl.textContent = '';
     list.innerHTML = '<p class="text-sm text-slate-400 py-4">🔎 Finding what’s nearby…</p>';
     document.getElementById('saved-list-section')?.classList.add('hidden');
@@ -1858,7 +1860,7 @@ const CSRF_TOKEN = '{{ csrf_token }}';
   // rate-limited IP lookup) — with nothing to search around, fall back to the
   // saved-waypoint list instead of leaving the loading placeholder up forever.
   function giveUpOnOpeningSearch() {
-    if (defaultSearchDone) return;   // a real search already started/finished
+    if (defaultSearchDone || lastNearbyQuery) return;   // a real search already started/finished
     defaultSearchDone = true;
     document.getElementById('nearby-results')?.classList.add('hidden');
     document.getElementById('saved-list-section')?.classList.remove('hidden');
@@ -1877,6 +1879,7 @@ const CSRF_TOKEN = '{{ csrf_token }}';
 
   function clearTextResults() {
     lastNearbyQuery = '';
+    saveQuery('');                 // forget the remembered search
     document.getElementById('nearby-results')?.classList.add('hidden');
     const list = document.getElementById('nearby-list');
     if (list) list.innerHTML = '';
@@ -2128,6 +2131,10 @@ const CSRF_TOKEN = '{{ csrf_token }}';
     const params = new URLSearchParams(window.location.search);
     if (!MAP_DISABLED && params.get('view') === 'map') showView('map');
     const wantsMine = params.get('panel') === 'mine';
+    // A search you were running last session (see saveQuery in runTextSearch)
+    // takes over completely on reopen — the "restaurant" default only ever
+    // applies to a fresh session that never searched for anything else.
+    const savedQuery = loadQuery();
     if (wantsMine) {
       mineFilter = true;
       const mineEl = document.getElementById('mine-filter');
@@ -2142,8 +2149,8 @@ const CSRF_TOKEN = '{{ csrf_token }}';
     } else {
       // Default open: show the "finding what's nearby" placeholder right away
       // instead of the saved list, so there's nothing to flip away from once
-      // the opening restaurant search actually starts (see maybeRunDefaultSearch).
-      showOpeningSearchLoading();
+      // the opening search (restored or default) actually starts.
+      showOpeningSearchLoading(savedQuery || DEFAULT_NEARBY_QUERY);
       // Safety net — if locating fails in a way ipFallback doesn't catch
       // (e.g. it never resolves at all), don't leave the placeholder up forever.
       setTimeout(giveUpOnOpeningSearch, 20000);
@@ -2173,11 +2180,21 @@ const CSRF_TOKEN = '{{ csrf_token }}';
       renderList();
     }
 
-    // The nearby-search term (POI name field) is deliberately NOT persisted —
-    // only the location. If a location is already known, open on what's
-    // nearby right away; when we still have to locate, onLocated fires this
-    // instead as soon as the fix lands.
-    if (savedCenter) maybeRunDefaultSearch();
+    // Restore the last nearby search and re-run it (text-only mode) so the
+    // results reappear right where you left them — no location prompt, since
+    // the centre is already known.
+    if (savedQuery) {
+      const ni = document.getElementById('name-search');
+      if (ni) ni.value = savedQuery;
+      nameFilter = savedQuery.trim().toLowerCase();
+      renderList();
+      if (MAP_DISABLED) runTextSearch(savedQuery);
+    }
+
+    // Nothing to return to, but a location is already known (a remembered
+    // place) — open on what's nearby right away. When we still have to locate,
+    // onLocated fires this instead as soon as the fix lands.
+    if (!savedQuery && savedCenter) maybeRunDefaultSearch();
 
     // Auto-locate on a truly fresh start (nothing remembered), and also when
     // the only thing remembered was an automatic label — otherwise the box
