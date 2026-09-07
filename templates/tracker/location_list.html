@@ -1926,17 +1926,18 @@ const CSRF_TOKEN = '{{ csrf_token }}';
       const saved   = placeId ? savedByPlaceId[placeId] : null;
       const rateParams = { name, latitude: lat.toFixed(6), longitude: lng.toFixed(6),
                            address: addr || '', google_place_id: placeId || '' };
-      // Already a tracked waypoint → the whole card opens its detail page
-      // (see the delegated click/keydown handler below, not a plain <a>: this
-      // card also contains the "Rate Me!" form, and an <a> wrapping a <form>
-      // would race the form's own submit navigation).
+      // The whole card opens a detail page — an already-tracked waypoint's own
+      // page directly, or (not yet tracked) the same get-or-create-then-open
+      // flow as "Rate Me!" (see the delegated click/keydown handler below,
+      // not a plain <a>: this card also contains the "Rate Me!" form, and an
+      // <a> wrapping a <form> would race the form's own submit navigation).
       const detailUrl = saved && saved.url ? saved.url : '';
-      const cardAttrs = detailUrl
-        ? `data-href="${escapeHtml(detailUrl)}" role="link" tabindex="0"`
-        : '';
+      const clickable = detailUrl || IS_AUTH;
+      const cardAttrs = clickable ? `role="link" tabindex="0"` : '';
+      const hrefAttr = detailUrl ? ` data-href="${escapeHtml(detailUrl)}"` : '';
       const cardClass = 'flex items-start gap-2.5 bg-white border border-slate-200 rounded-lg p-3'
-        + (detailUrl ? ' cursor-pointer hover:border-brand/40 hover:shadow-sm transition-shadow' : '');
-      return `<div class="${cardClass}" ${cardAttrs}>
+        + (clickable ? ' cursor-pointer hover:border-brand/40 hover:shadow-sm transition-shadow' : '');
+      return `<div class="${cardClass}" ${cardAttrs}${hrefAttr}>
         <div class="w-2.5 h-2.5 rounded-full shrink-0 mt-1.5" style="background:${info.color}"></div>
         <div class="min-w-0 flex-1">
           <div class="flex items-start justify-between gap-2">
@@ -2036,23 +2037,29 @@ const CSRF_TOKEN = '{{ csrf_token }}';
       if (ni) { ni.value = ''; nameFilter = ''; listPage = 1; renderList(); }
     });
 
-    // Tapping anywhere on an already-tracked result opens its detail page —
-    // not just the "Rate Me!" pill. Delegated (cards are rebuilt on every
-    // search) and deliberately NOT a plain <a> wrapping the card, since the
-    // card also contains the Rate Me <form> and a wrapping <a>'s own
-    // navigation would race that form's submit.
+    // Tapping anywhere on a result opens its detail page — not just the
+    // "Rate Me!" pill: an already-tracked waypoint goes straight there, and an
+    // untracked one goes through the same get-or-create flow "Rate Me!" uses
+    // (its own form, submitted programmatically). Delegated (cards are
+    // rebuilt on every search) and deliberately NOT a plain <a> wrapping the
+    // card, since a wrapping <a>'s own navigation would race the form's submit.
     const nearbyList = document.getElementById('nearby-list');
+    const openNearbyCard = card => {
+      if (card.dataset.href) { window.location.href = card.dataset.href; return; }
+      card.querySelector('form')?.requestSubmit();
+    };
     nearbyList?.addEventListener('click', e => {
       if (e.target.closest('form, button, a')) return;   // let Rate Me! work normally
-      const card = e.target.closest('[data-href]');
-      if (card) window.location.href = card.dataset.href;
+      const card = e.target.closest('[role="link"]');
+      if (card) openNearbyCard(card);
     });
     nearbyList?.addEventListener('keydown', e => {
       if (e.key !== 'Enter' && e.key !== ' ') return;
-      const card = e.target.closest('[data-href]');
+      if (e.target.closest('form, button, a')) return;   // let Rate Me! work normally
+      const card = e.target.closest('[role="link"]');
       if (!card) return;
       e.preventDefault();
-      window.location.href = card.dataset.href;
+      openNearbyCard(card);
     });
 
     fitQuickChips();
