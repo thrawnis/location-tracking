@@ -653,6 +653,7 @@ const CSRF_TOKEN = '{{ csrf_token }}';
   let savedIndexCbs  = [];
   let searchCenter   = null;   // {lat,lng} centre for the text search + distances
   let lastNearbyQuery = '';
+  let lastNearbyResults = null;   // {query, center, results, status} — so a filter change can re-render without a new Places call
   // Opening the app lands on what's around you rather than your own saved
   // list: once a position is known, run this search automatically. Only ever
   // on a fresh open — a restored search (see loadQuery) always wins.
@@ -706,6 +707,11 @@ const CSRF_TOKEN = '{{ csrf_token }}';
   })();
   WAYPOINTS.forEach(w => { w._name = (w.name || '').toLowerCase();
                            w._loc  = [w.city, w.state, w.address].filter(Boolean).join(' ').toLowerCase(); });
+  // Looked up by Google Place ID so a nearby-search result that's already a
+  // tracked waypoint can be filtered (GF/mine/Waypoint rating) the same way
+  // the saved list is — those fields aren't part of a live Places result.
+  const WAYPOINTS_BY_PLACE_ID = {};
+  WAYPOINTS.forEach(w => { if (w.google_place_id) WAYPOINTS_BY_PLACE_ID[w.google_place_id] = w; });
 
   const MAX_RADIUS_M = 16093;   // 10 miles — the widest area the user may view/search
 
@@ -1667,6 +1673,12 @@ const CSRF_TOKEN = '{{ csrf_token }}';
     renderList();
     updateFilterBadge();
     if (mainMap) applyFilters();
+    // Re-filter the currently showing nearby search in place — no new Places
+    // API call, since the raw results are already in hand.
+    if (lastNearbyResults) {
+      const r = lastNearbyResults;
+      renderTextResults(r.query, r.center, r.results, r.status);
+    }
   }
 
   // ── "Location required" gate ────────────────────────────────────
@@ -1817,6 +1829,7 @@ const CSRF_TOKEN = '{{ csrf_token }}';
           }, (results, status) => {
             osmSpinner(false);
             if (token !== searchToken) return;   // a newer search already replaced this one
+            lastNearbyResults = { query, center, results, status };
             renderTextResults(query, center, results, status);
           });
         });
@@ -1882,11 +1895,29 @@ const CSRF_TOKEN = '{{ csrf_token }}';
 
   function clearTextResults() {
     lastNearbyQuery = '';
+    lastNearbyResults = null;
     saveQuery('');                 // forget the remembered search
     document.getElementById('nearby-results')?.classList.add('hidden');
     const list = document.getElementById('nearby-list');
     if (list) list.innerHTML = '';
     syncSavedListVisibility();
+  }
+
+  // Same filters as the saved list (GF/mine/Waypoint rating come from the
+  // tracked-waypoint record, if any; Google rating comes straight off the
+  // live Places result) — a nearby result with no tracked waypoint can never
+  // satisfy a GF/mine/Waypoint-rating filter, since that data doesn't exist
+  // for it.
+  function nearbyResultFilterOk(place) {
+    const w = place.place_id ? WAYPOINTS_BY_PLACE_ID[place.place_id] : null;
+    const gfOk = !gfFilter
+               || (!!w && gfFilter === 'dedicated' && w.gluten_free === 'dedicated')
+               || (!!w && gfFilter === 'gf-any'    && (w.gluten_free === 'dedicated' || w.gluten_free === 'options'));
+    const mineOk = !mineFilter || !!(w && w.mine);
+    const ratingOk = !ratingFilter || !!(w && w.rating != null && w.rating >= ratingFilter);
+    const gRating = place.rating;
+    const googleRatingOk = !googleRatingFilter || (gRating != null && gRating >= googleRatingFilter);
+    return gfOk && mineOk && ratingOk && googleRatingOk;
   }
 
   function renderTextResults(query, center, results, status) {
@@ -1909,11 +1940,19 @@ const CSRF_TOKEN = '{{ csrf_token }}';
       list.innerHTML = `<p class="text-sm text-slate-400 py-4">Search failed — please try again.</p>`;
       return;
     }
-    const sorted = results.map(place => {
+    const allSorted = results.map(place => {
       const plat = place.geometry.location.lat(), plng = place.geometry.location.lng();
       return { place, lat: plat, lng: plng, distKm: haversineKm(center.lat, center.lng, plat, plng) };
     }).sort((a, b) => a.distKm - b.distKm);
-    if (cEl) cEl.textContent = `(${sorted.length})`;
+    const sorted = allSorted.filter(({ place }) => nearbyResultFilterOk(place));
+    if (cEl) {
+      cEl.textContent = sorted.length === allSorted.length
+        ? `(${sorted.length})` : `(${sorted.length} of ${allSorted.length})`;
+    }
+    if (!sorted.length) {
+      list.innerHTML = `<p class="text-sm text-slate-500 py-4">😕 No results match your filters. Try loosening them.</p>`;
+      return;
+    }
     list.innerHTML = sorted.map(({ place, lat, lng, distKm }) => {
       const name    = place.name || '';
       const types   = place.types || [];
