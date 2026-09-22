@@ -40,7 +40,7 @@
     <div class="dish bg-slate-50 rounded-xl border border-slate-100 overflow-hidden"
          data-name="{{ item.name|lower }}"
          data-rating="{{ item.avg_rating|default:0 }}"
-         data-recent="{{ item.latest_review|date:'U'|default:'0' }}"
+         data-recent="{{ item.latest_review|date:'Ym'|default:'0' }}"
          x-data="{ open: {% if review_item_pk == item.pk or edit_item_pk == item.pk %}true{% else %}false{% endif %}, page: 1, per: 10, total: {{ item.reviews.all|length }} }">
 
       <!-- Header row (tap to expand) -->
