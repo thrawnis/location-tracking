@@ -715,7 +715,7 @@ def location_detail(request, pk):
     return render(request, "tracker/location_detail.html", {
         "location": location,
         "item_form": ItemForm(),
-        "photo_form": PhotoForm(),
+        "photo_form": PhotoForm(location=location),
         "my_review": my_review,
         "gf_my_vote": gf_my_vote,
         "all_collections": Collection.objects.filter(created_by=request.user),
@@ -1315,7 +1315,7 @@ def item_delete(request, pk, item_pk):
 def _render_photos_section(request, location, photo_form=None, show_form=False):
     return render(request, "tracker/partials/photos_section.html", {
         "location": location,
-        "photo_form": photo_form or PhotoForm(),
+        "photo_form": photo_form or PhotoForm(location=location),
         "show_form": show_form,
     })
 
@@ -1324,13 +1324,15 @@ def _render_photos_section(request, location, photo_form=None, show_form=False):
 def photo_add(request, pk):
     location = get_object_or_404(Location, pk=pk)
     if request.method == "POST":
-        form = PhotoForm(request.POST, request.FILES)
+        form = PhotoForm(request.POST, request.FILES, location=location)
         if form.is_valid():
             photo = form.save(commit=False)
             photo.location = location
             photo.uploaded_by = request.user
             photo.save()
             detail = 'Uploaded photo to "{}"'.format(location.name)
+            if photo.item:
+                detail += ' tagged as "{}"'.format(photo.item.name)
             if photo.caption:
                 detail += ' with caption "{}"'.format(photo.caption)
             _log(request, AuditLog.ACTION_CREATE, photo, detail)

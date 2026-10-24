@@ -255,6 +255,10 @@ def _photo_upload_path(instance, filename):
 
 class Photo(models.Model):
     location = models.ForeignKey(Location, on_delete=models.CASCADE, related_name="photos")
+    item = models.ForeignKey(
+        Item, on_delete=models.SET_NULL, null=True, blank=True, related_name="photos",
+        help_text="Optionally tag this photo as a specific dish/item",
+    )
     image = models.ImageField(upload_to=_photo_upload_path)
     caption = models.CharField(max_length=255, blank=True)
     uploaded_by = models.ForeignKey(
