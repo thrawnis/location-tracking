@@ -274,26 +274,36 @@ class Photo(models.Model):
 
     def save(self, *args, **kwargs):
         super().save(*args, **kwargs)
-        self._resize_to_2mp()
+        self._strip_metadata_and_resize()
 
-    def _resize_to_2mp(self):
-        from PIL import Image, UnidentifiedImageError
+    def _strip_metadata_and_resize(self):
+        from PIL import Image, ImageOps, UnidentifiedImageError
         # Bombs/oversize files are rejected up front in PhotoForm.clean_image,
         # so this is best-effort; keep the cap set as defence in depth and skip
-        # (leaving the original) on anything we can't process.
+        # (leaving the original — metadata included — on anything we can't
+        # process, rather than risk mangling or losing the upload).
         Image.MAX_IMAGE_PIXELS = MAX_IMAGE_PIXELS_CAP
         try:
             img = Image.open(self.image.path)
+            fmt = img.format or "JPEG"   # must capture before transpose/resize — neither preserves it
+            # Bake in any EXIF-only rotation (phones often store orientation
+            # as a tag rather than rotating the actual pixels) BEFORE the
+            # metadata that tag lives in gets stripped below — otherwise the
+            # photo would come out sideways/upside-down once that's gone.
+            img = ImageOps.exif_transpose(img)
             w, h = img.size
             if w * h > MAX_PHOTO_PIXELS:
                 ratio = (MAX_PHOTO_PIXELS / (w * h)) ** 0.5
                 new_size = (max(1, int(w * ratio)), max(1, int(h * ratio)))
-                fmt = img.format or "JPEG"
                 img = img.resize(new_size, Image.LANCZOS)
-                if fmt == "JPEG":
-                    img.save(self.image.path, format=fmt, optimize=True, quality=85)
-                else:
-                    img.save(self.image.path, format=fmt, optimize=True)
+            # Re-encoding from the decoded pixel data alone, with no exif= or
+            # icc_profile= passed to save(), is what actually drops EXIF/GPS/
+            # ICC metadata — always do this, even when no resize was needed,
+            # so a small upload doesn't keep its original metadata intact.
+            if fmt == "JPEG":
+                img.save(self.image.path, format=fmt, optimize=True, quality=85)
+            else:
+                img.save(self.image.path, format=fmt, optimize=True)
         except (FileNotFoundError, UnidentifiedImageError, Image.DecompressionBombError, OSError):
             return
 
