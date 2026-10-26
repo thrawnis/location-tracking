@@ -429,6 +429,7 @@ def passkey_register_options(request):
         return JsonResponse({"error": "Please log in again."}, status=400)
     from webauthn import generate_registration_options, options_to_json
     from webauthn.helpers import bytes_to_base64url
+    from webauthn.helpers.cose import COSEAlgorithmIdentifier
     from webauthn.helpers.structs import AuthenticatorSelectionCriteria, ResidentKeyRequirement
 
     options = generate_registration_options(
@@ -443,6 +444,12 @@ def passkey_register_options(request):
         authenticator_selection=AuthenticatorSelectionCriteria(
             resident_key=ResidentKeyRequirement.PREFERRED,
         ),
+        # ES256 only: offering the full default algorithm list (EdDSA, ES512,
+        # various RSA variants) has been seen to make some passkey providers
+        # (e.g. Bitwarden's) fail outright during creation with an opaque
+        # vendor error, rather than just picking the one they do support.
+        # ES256 alone is already supported essentially everywhere.
+        supported_pub_key_algs=[COSEAlgorithmIdentifier.ECDSA_SHA_256],
     )
     request.session["passkey_reg_challenge"] = bytes_to_base64url(options.challenge)
     request.session["passkey_reg_user"] = user.pk
