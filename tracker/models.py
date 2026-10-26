@@ -390,7 +390,9 @@ class EmailVerification(models.Model):
 class TOTPDevice(models.Model):
     """A user's TOTP (authenticator-app) secret. `confirmed` becomes True once
     the user verifies a code during setup; 2FA is active only when confirmed.
-    Optional for regular users, required for admins."""
+    The secondary/backup MFA method — see WebAuthnCredential for the default
+    one. Optional for regular users, required for admins (either method, or
+    both, satisfies that requirement; they're alternatives, not additive)."""
     user = models.OneToOneField(User, on_delete=models.CASCADE, related_name="totp")
     secret = models.CharField(max_length=64)
     confirmed = models.BooleanField(default=False)
@@ -398,6 +400,32 @@ class TOTPDevice(models.Model):
 
     def __str__(self):
         return f"{self.user.username}: 2FA {'on' if self.confirmed else 'pending'}"
+
+
+class WebAuthnCredential(models.Model):
+    """A registered passkey. The default/primary MFA method — a user may
+    register several (one per device/browser); any single one of them, same
+    as a confirmed TOTPDevice, satisfies the account's MFA requirement."""
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="webauthn_credentials")
+    credential_id = models.BinaryField(unique=True)
+    public_key = models.BinaryField()
+    # WebAuthn's per-credential use counter — rising on every successful
+    # assertion. Many platform authenticators (Face ID, Windows Hello, …)
+    # never increment it and always report 0; verify_authentication_response
+    # (see tracker.views) already accounts for that when checking it.
+    sign_count = models.BigIntegerField(default=0)
+    name = models.CharField(
+        max_length=100, blank=True,
+        help_text='Your label for this passkey, e.g. "iPhone" or "YubiKey"',
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    last_used_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+
+    def __str__(self):
+        return f"{self.user.username}: passkey {self.name or self.pk}"
 
 
 class PendingRegistration(models.Model):
